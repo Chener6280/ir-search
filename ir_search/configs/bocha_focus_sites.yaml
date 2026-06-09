@@ -1,0 +1,36 @@
+focus_sites:
+  # 深度财经 / 政经媒体
+  - name: 第一财经
+    domain: yicai.com
+  - name: 财新传媒
+    domain: caixin.com
+  - name: 财经网
+    domain: caijing.com.cn
+  - name: 经济观察网
+    domain: eeo.com.cn
+  - name: 21世纪经济报道
+    domain: 21jingji.com
+  - name: 每日经济新闻
+    domain: nbd.com.cn
+  - name: 界面新闻
+    domain: jiemian.com
+  - name: 财联社
+    domain: cls.cn
+  - name: 中新经纬
+    domain: jwview.com
+  - name: 华尔街见闻
+    domain: wallstreetcn.com
+
+  # 证券报 / 官方财经媒体
+  - name: 中国证券报
+    domain: cs.com.cn
+  - name: 上海证券报
+    domain: cnstock.com
+  - name: 证券时报
+    domain: stcn.com
+  - name: 新华社
+    domain: xinhuanet.com
+  - name: 新华社
+    domain: news.cn
+  - name: 经济日报 / 中国经济网
+    domain: ce.cn

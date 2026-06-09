@@ -1,0 +1,20 @@
+{
+  "announcements": [
+    {
+      "secCode": "300308",
+      "secName": "中际旭创",
+      "announcementTitle": "<em>中际旭创</em>：关于经营情况的公告",
+      "announcementTime": 1784160000000,
+      "adjunctUrl": "finalpage/2026-07-16/123456789.PDF",
+      "announcementType": "临时公告"
+    },
+    {
+      "secCode": "300308",
+      "secName": "中际旭创",
+      "announcementTitle": "中际旭创：关于投资者关系活动记录表",
+      "announcementTime": 1784073600000,
+      "adjunctUrl": "finalpage/2026-07-15/987654321.PDF",
+      "announcementType": "投资者关系"
+    }
+  ]
+}

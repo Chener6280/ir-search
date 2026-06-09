@@ -1,0 +1,8 @@
+ir_search.env
+.env
+*.env
+.pytest_cache/
+__pycache__/
+*.pyc
+work/pycache/
+.DS_Store

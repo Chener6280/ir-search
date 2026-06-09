@@ -1,0 +1,45 @@
+cn:
+  # P0：A 股注意力 / 讨论热度
+  - priority: P0-1
+    name: 东方财富股吧
+    domain: guba.eastmoney.com
+    category: retail_attention_discussion
+    fields: [post_count, comment_count, read_count, popularity_rank, board_heat, post_time]
+  - priority: P0-2
+    name: 同花顺热门股
+    domain: 10jqka.com.cn
+    category: market_attention_capital_heat
+    fields: [hot_stock_rank, attention_score, capital_heat, theme_tags, rank_change]
+  - priority: P0-2
+    name: 问财
+    domain: iwencai.com
+    category: market_attention_capital_heat
+    fields: [hot_stock_rank, attention_score, capital_heat, theme_tags, rank_change]
+  - priority: P0-3
+    name: 雪球
+    domain: xueqiu.com
+    category: investor_discussion_crowding
+    fields: [discussion_volume, follower_count, comment_count, repost_count, keywords, core_user_posts]
+
+us:
+  # P1：海外风险偏好 overlay
+  - priority: P1-1
+    name: StockTwits
+    domain: stocktwits.com
+    category: equity_social_sentiment
+    fields: [ticker, bullish_bearish_sentiment, message_volume, trending_symbols]
+  - priority: P1-2
+    name: AAII Sentiment Survey
+    domain: aaii.com
+    category: retail_market_sentiment_survey
+    fields: [bullish, neutral, bearish, spread]
+  - priority: P1-3
+    name: NAAIM Exposure Index
+    domain: naaim.org
+    category: active_manager_exposure
+    fields: [exposure_index, historical_percentile]
+  - priority: P1-4
+    name: CBOE Put/Call Ratio
+    domain: cboe.com
+    category: options_fear_greed
+    fields: [total_put_call, equity_put_call, index_put_call]

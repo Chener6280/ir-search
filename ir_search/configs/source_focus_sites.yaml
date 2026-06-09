@@ -1,0 +1,82 @@
+bocha:
+  COMPANY_NEWS:
+    - yicai.com
+    - caixin.com
+    - caijing.com.cn
+    - eeo.com.cn
+    - 21jingji.com
+    - nbd.com.cn
+    - jiemian.com
+    - cls.cn
+    - jwview.com
+    - wallstreetcn.com
+    - cs.com.cn
+    - cnstock.com
+    - stcn.com
+    - xinhuanet.com
+    - news.cn
+    - ce.cn
+  BROKER_RESEARCH:
+    - yicai.com
+    - caixin.com
+    - cls.cn
+    - stcn.com
+    - weixin.qq.com
+  INDUSTRY_CHAIN:
+    - yicai.com
+    - caixin.com
+    - cls.cn
+    - stcn.com
+    - 21jingji.com
+  PRICE_SUPPLY_DEMAND:
+    - yicai.com
+    - cls.cn
+    - stcn.com
+    - nbd.com.cn
+  FILING:
+    - cninfo.com.cn
+    - sse.com.cn
+    - szse.cn
+    - hkexnews.hk
+  EARNINGS:
+    - cninfo.com.cn
+    - sse.com.cn
+    - szse.cn
+    - hkexnews.hk
+  POLICY:
+    - gov.cn
+    - miit.gov.cn
+    - mofcom.gov.cn
+    - ndrc.gov.cn
+    - csrc.gov.cn
+  SENTIMENT:
+    - guba.eastmoney.com
+    - 10jqka.com.cn
+    - iwencai.com
+    - xueqiu.com
+
+exa:
+  COMPANY_NEWS:
+    - wsj.com
+    - bloomberg.com
+    - ft.com
+    - reuters.com
+    - cnbc.com
+    - marketwatch.com
+    - finance.yahoo.com
+  INDUSTRY_CHAIN:
+    - wsj.com
+    - bloomberg.com
+    - ft.com
+    - reuters.com
+  OVERSEAS_MAPPING:
+    - wsj.com
+    - bloomberg.com
+    - ft.com
+    - reuters.com
+    - sec.gov
+  SENTIMENT:
+    - stocktwits.com
+    - aaii.com
+    - naaim.org
+    - cboe.com

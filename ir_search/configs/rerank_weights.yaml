@@ -1,0 +1,42 @@
+default:
+  authority: 0.30
+  relevance: 0.25
+  evidence_type: 0.20
+  freshness: 0.15
+  agreement: 0.10
+FILING:
+  authority: 0.40
+  evidence_type: 0.30
+  relevance: 0.15
+  freshness: 0.10
+  agreement: 0.05
+EARNINGS:
+  authority: 0.30
+  evidence_type: 0.30
+  relevance: 0.15
+  freshness: 0.15
+  agreement: 0.10
+BROKER_RESEARCH:
+  authority: 0.20
+  evidence_type: 0.30
+  freshness: 0.25
+  relevance: 0.15
+  agreement: 0.10
+POLICY:
+  authority: 0.45
+  evidence_type: 0.25
+  relevance: 0.15
+  freshness: 0.10
+  agreement: 0.05
+INDUSTRY_CHAIN:
+  relevance: 0.25
+  evidence_type: 0.20
+  freshness: 0.25
+  authority: 0.20
+  agreement: 0.10
+PRICE_SUPPLY_DEMAND:
+  freshness: 0.30
+  relevance: 0.25
+  evidence_type: 0.20
+  authority: 0.15
+  agreement: 0.10

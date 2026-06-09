@@ -1,0 +1,106 @@
+from ir_search.adapters.base import AdapterError
+from ir_search.models import Hit, Query
+from ir_search.pipeline import run_pipeline
+
+
+class FailingAdapter:
+    mode = "test"
+
+    def __init__(self, name: str, error: str) -> None:
+        self.name = name
+        self.error = error
+
+    def query(self, q: Query):
+        raise AdapterError(self.error, retryable=True)
+
+
+class OneHitAdapter:
+    mode = "test"
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def query(self, q: Query):
+        return [
+            Hit(
+                title=f"{self.name} fallback result",
+                url=f"https://{self.name}.example.com/result",
+                snippet="fallback hit",
+                source=self.name,
+            )
+        ]
+
+
+def test_no_fallback_by_default():
+    result = run_pipeline(
+        Query(text="中际旭创 最新", sources=["bocha"]),
+        {
+            "bocha": FailingAdapter("bocha", "HTTP 402 quota_exhausted"),
+            "anysearch": OneHitAdapter("anysearch"),
+            "web_search": OneHitAdapter("web_search"),
+        },
+    )
+
+    assert [status.source for status in result.diagnostics] == ["bocha"]
+    assert result.hits == []
+
+
+def test_allow_fallback_explicitly():
+    result = run_pipeline(
+        Query(text="中际旭创 最新", sources=["bocha"], allow_fallback=True, fallback_policy="all"),
+        {
+            "bocha": FailingAdapter("bocha", "HTTP 402 quota_exhausted"),
+            "anysearch": OneHitAdapter("anysearch"),
+            "web_search": OneHitAdapter("web_search"),
+        },
+    )
+
+    assert [status.source for status in result.diagnostics] == ["bocha", "anysearch"]
+    assert result.failed_sources == ["bocha"]
+    assert result.hits[0].source == "anysearch"
+    assert "fallback_after=bocha" in result.diagnostics[1].error
+    assert result.hits[0].extra["fallback_from"] == "bocha"
+    assert result.hits[0].extra["is_fallback_result"] is True
+
+
+def test_fallback_diagnostics_are_recorded():
+    result = run_pipeline(
+        Query(text="NVDA sentiment", sources=["exa"], allow_fallback=True, fallback_policy="all"),
+        {
+            "exa": FailingAdapter("exa", "HTTP 429 rate limit"),
+            "tavily": FailingAdapter("tavily", "TAVILY_API_KEY is not set"),
+            "anysearch": OneHitAdapter("anysearch"),
+        },
+    )
+
+    assert [status.source for status in result.diagnostics] == [
+        "exa",
+        "tavily",
+        "anysearch",
+    ]
+    assert result.failed_sources == ["exa", "tavily"]
+    assert result.hits[0].source == "anysearch"
+    assert "fallback_after=tavily" in result.diagnostics[2].error
+
+
+def test_fallback_hits_are_marked():
+    result = run_pipeline(
+        Query(text="中际旭创 最新", sources=["bocha"], allow_fallback=True, fallback_policy="all"),
+        {
+            "bocha": FailingAdapter("bocha", "HTTP 429 rate limit"),
+            "anysearch": FailingAdapter("anysearch", "HTTP 402 quota_exhausted"),
+            "web_search": OneHitAdapter("web_search"),
+        },
+    )
+
+    assert [status.source for status in result.diagnostics] == ["bocha", "anysearch", "web_search"]
+    assert result.hits[0].source == "web_search"
+    assert result.hits[0].extra["fallback_from"] == "anysearch"
+    assert result.hits[0].extra["is_fallback_result"] is True
+
+
+def test_non_quota_unknown_source_does_not_fallback():
+    result = run_pipeline(Query(text="中际旭创", sources=["missing"]), {})
+
+    assert [status.source for status in result.diagnostics] == ["missing"]
+    assert result.hits == []

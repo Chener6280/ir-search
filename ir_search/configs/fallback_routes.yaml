@@ -1,0 +1,20 @@
+fallbacks:
+  bocha: [anysearch, web_search]
+  exa: [tavily, anysearch, web_search]
+  tavily: [anysearch, web_search]
+  anysearch: [web_search]
+
+trigger_error_contains:
+  - api key
+  - quota
+  - exhausted
+  - limit
+  - rate
+  - 401
+  - 402
+  - 403
+  - 429
+  - timeout
+  - timed out
+  - network
+  - request failed

@@ -1,0 +1,50 @@
+focus_sites:
+  # 权威财经通讯社 / 国际财经报纸
+  - name: WSJ
+    domain: wsj.com
+    category: authoritative_financial_press
+  - name: Bloomberg
+    domain: bloomberg.com
+    category: authoritative_financial_press
+  - name: Financial Times
+    domain: ft.com
+    category: authoritative_financial_press
+  - name: Reuters
+    domain: reuters.com
+    category: authoritative_financial_press
+
+  # 市场实时资讯 / 行情入口
+  - name: CNBC
+    domain: cnbc.com
+    category: market_news_realtime
+  - name: MarketWatch
+    domain: marketwatch.com
+    category: market_news_realtime
+  - name: Yahoo Finance
+    domain: finance.yahoo.com
+    category: market_news_realtime
+
+  # 商业杂志 / 深度商业媒体
+  - name: The Economist
+    domain: economist.com
+    category: business_magazines
+  - name: Forbes
+    domain: forbes.com
+    category: business_magazines
+  - name: Fortune
+    domain: fortune.com
+    category: business_magazines
+  - name: Business Insider
+    domain: businessinsider.com
+    category: business_magazines
+
+  # 投资研究 / 投资者观点
+  - name: Barron's
+    domain: barrons.com
+    category: investor_research_opinion
+  - name: Morningstar
+    domain: morningstar.com
+    category: investor_research_opinion
+  - name: Seeking Alpha
+    domain: seekingalpha.com
+    category: investor_research_opinion

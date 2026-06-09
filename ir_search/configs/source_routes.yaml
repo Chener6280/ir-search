@@ -1,0 +1,26 @@
+routes:
+  FILING:
+    # Official filings must use disclosure sources directly. Bocha is not an authoritative filing source.
+    default: [cninfo, sse, szse, hkex, sec]
+  EARNINGS:
+    default: [cninfo, company_ir, bocha, exa]
+  BROKER_RESEARCH:
+    default: [broker_research, bocha]
+  POLICY:
+    default: [regulator_sites, bocha, exa]
+  INDUSTRY_CHAIN:
+    default: [bocha, exa]
+  PRICE_SUPPLY_DEMAND:
+    default: [bocha, exa, industry_media, broker_research]
+  OVERSEAS_MAPPING:
+    default: [exa, sec, bocha]
+  COMPANY_NEWS:
+    default: [bocha, exa, company_ir]
+  SENTIMENT:
+    zh: [bocha]
+    en: [exa]
+    mixed: [bocha, exa]
+  GENERAL:
+    zh: [bocha]
+    en: [exa]
+    mixed: [bocha, exa]

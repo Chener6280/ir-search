@@ -1,0 +1,82 @@
+evidence_patterns:
+  FINANCIAL_REPORT:
+    title_contains:
+      - 年报
+      - 半年报
+      - 季报
+      - 一季报
+      - 三季报
+      - annual report
+      - quarterly report
+      - form 10-k
+      - form 10-q
+  ANNOUNCEMENT:
+    title_contains:
+      - 公告
+      - 问询函
+      - 回复公告
+      - 临时公告
+      - disclosure
+      - announcement
+  BROKER_REPORT:
+    title_contains:
+      - 证券
+      - 研报
+      - 首次覆盖
+      - 维持买入
+      - 目标价
+      - 盈利预测
+      - 投资评级
+      - research report
+      - initiate coverage
+  POLICY_DOC:
+    title_contains:
+      - 政策
+      - 通知
+      - 征求意见
+      - 出口管制
+      - regulation
+      - guidance
+    domain_contains:
+      - gov.cn
+      - miit.gov.cn
+      - mofcom.gov.cn
+      - ndrc.gov.cn
+      - bis.gov
+  SOCIAL_POST:
+    domain_contains:
+      - xueqiu.com
+      - guba.eastmoney.com
+      - weibo.com
+      - zhihu.com
+      - seekingalpha.com
+      - stocktwits.com
+  EARNINGS_CALL:
+    title_contains:
+      - 电话会
+      - 业绩会
+      - 调研纪要
+      - earnings call
+  DATA_TABLE:
+    domain_contains:
+      - aaii.com
+      - naaim.org
+      - cboe.com
+    title_contains:
+      - 数据
+      - 价格表
+      - 热度榜
+      - 人气榜
+      - put/call
+      - exposure index
+      - sentiment survey
+      - database
+      - data table
+  OPINION:
+    domain_contains:
+      - weixin.qq.com
+      - morningstar.com
+    title_contains:
+      - 观点
+      - 深度
+      - 解读
