@@ -29,6 +29,7 @@ def classify_tier(url: str, source: str = "") -> SourceTier:
         "broker_research": SourceTier.BROKER,
         "company_ir": SourceTier.COMPANY,
         "wechat_opencli": SourceTier.MEDIA,
+        "manual_wechat": SourceTier.MEDIA,
     }
     return source_map.get(source, SourceTier.MEDIA)
 

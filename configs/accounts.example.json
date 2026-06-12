@@ -1,0 +1,12 @@
+{
+  "_说明": "每个公众号一条；三路定位符按你实际可得填写，缺哪路就删哪路（运行时会跳过并记入 source_errors）",
+  "郭磊宏观茶座": {
+    "dajiala": {"name": "郭磊宏观茶座"},
+    "wewe":    {"mp_id": "在 wewe-rss 管理界面该号 feed 链接里的 id"},
+    "rss":     {"url": "https://你的rsshub或其它feed地址"}
+  },
+  "一凌策略研究": {
+    "dajiala": {"biz": "该号的 __biz（极致了返回或文章 URL 里可取，比 name 更精确）"},
+    "wewe":    {"mp_id": "..."}
+  }
+}

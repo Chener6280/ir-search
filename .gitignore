@@ -1,8 +1,10 @@
 ir_search.env
 .env
 *.env
+accounts.json
 .pytest_cache/
 __pycache__/
 *.pyc
 work/pycache/
+work/
 .DS_Store

@@ -34,6 +34,48 @@ def test_non_json_stdout_raises_adapter_error(monkeypatch):
         WechatOpenCLIAdapter().query(Query(text="测试"))
 
 
+def test_stdout_object_with_articles_is_supported(monkeypatch):
+    payload = {
+        "articles": [
+            {
+                "title": "文章",
+                "url": "https://mp.weixin.qq.com/s/example",
+                "published_at": "2026-06-08 09:30",
+                "account_name": "一凌策略研究",
+                "content": "正文",
+                "content_source": "dajiala_detail",
+                "content_errors": ["mp.weixin: blocked"],
+                "found_in": ["dajiala", "wewe"],
+                "url_key": "sn:abc",
+            }
+        ],
+        "crosscheck": {
+            "per_source_counts": {"dajiala": 1, "wewe": 1},
+            "union": 1,
+            "matrix": [{"title": "文章", "dajiala": True, "wewe": True}],
+            "only_in_one_source": [],
+            "source_errors": {},
+        },
+    }
+
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload, ensure_ascii=False))
+
+    monkeypatch.setenv("WECHAT_OPENCLI_COMMAND", "gzh-fetch")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    hit = WechatOpenCLIAdapter().query(Query(text="一凌策略研究 最新文章"))[0]
+
+    assert hit.title == "文章"
+    assert hit.published_at.year == 2026
+    assert hit.extra["extraction_method"] == "gzh_crosscheck"
+    assert hit.extra["requires_login"] is False
+    assert hit.extra["found_in"] == ["dajiala", "wewe"]
+    assert hit.extra["content_source"] == "dajiala_detail"
+    assert hit.extra["content_errors"] == ["mp.weixin: blocked"]
+    assert hit.extra["crosscheck"]["union"] == 1
+
+
 def test_missing_required_fields_are_skipped():
     hits = rows_to_hits([
         {"title": "missing url"},

@@ -8,6 +8,7 @@ from .adapters.base import SearchAdapter
 from .adapters.bocha import BochaAdapter
 from .adapters.cninfo import CninfoAdapter
 from .adapters.exa import ExaAdapter
+from .adapters.manual_wechat import ManualWechatAdapter
 from .adapters.mock import MockSearchAdapter
 from .adapters.placeholder import PlaceholderAdapter
 from .adapters.tavily import TavilyAdapter
@@ -48,6 +49,7 @@ def build_registry(live: Optional[bool] = None) -> dict[str, SearchAdapter]:
                 f"{filing_source} live filing adapter is not implemented; do not rely on Bocha for official filings",
             )
     registry["wechat_opencli"] = WechatOpenCLIAdapter()
+    registry["manual_wechat"] = ManualWechatAdapter()
     registry["tavily"] = TavilyAdapter()
     registry["anysearch"] = AnySearchAdapter(name="anysearch", auth_mode="required")
     registry["web_search"] = AnySearchAdapter(name="web_search", auth_mode="anonymous")

@@ -20,6 +20,7 @@ def test_broker_research_does_not_default_to_opencli():
 
 def test_wechat_trigger_is_explicit():
     sources = _sources("某公众号 最新文章 光模块")
+    assert "manual_wechat" in sources
     assert "wechat_opencli" in sources
 
 

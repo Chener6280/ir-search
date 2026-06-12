@@ -4,10 +4,11 @@ import json
 import os
 import shlex
 import subprocess
-from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from ir_search.adapters.base import AdapterError
+from ir_search.adapters.manual_wechat import ManualWechatAdapter
+from ir_search.adapters.wechat_dates import parse_wechat_published_at
 from ir_search.models import EvidenceType, Hit, Query, SourceTier
 
 
@@ -22,7 +23,7 @@ class WechatOpenCLIAdapter:
     def query(self, q: Query) -> list[Hit]:
         command = os.environ.get("WECHAT_OPENCLI_COMMAND")
         if not command:
-            raise AdapterError("WECHAT_OPENCLI_COMMAND is not set; browser adapter is unavailable")
+            return manual_fallback_or_raise(q, "WECHAT_OPENCLI_COMMAND is not set; browser adapter is unavailable")
 
         try:
             completed = subprocess.run(
@@ -33,16 +34,19 @@ class WechatOpenCLIAdapter:
                 timeout=int(os.environ.get("WECHAT_OPENCLI_TIMEOUT", "60")),
             )
         except FileNotFoundError as exc:
-            raise AdapterError(f"wechat opencli command not found: {exc}", retryable=True) from exc
+            return manual_fallback_or_raise(q, f"wechat opencli command not found: {exc}", retryable=True)
         except subprocess.TimeoutExpired as exc:
-            raise AdapterError(f"wechat opencli timed out: {exc}", retryable=True) from exc
+            return manual_fallback_or_raise(q, f"wechat opencli timed out: {exc}", retryable=True)
         except subprocess.CalledProcessError as exc:
-            raise AdapterError(f"wechat opencli failed: {exc.stderr or exc}", retryable=True) from exc
+            return manual_fallback_or_raise(q, f"wechat opencli failed: {exc.stderr or exc}", retryable=True)
 
-        rows = _parse_stdout(completed.stdout)
+        try:
+            rows = _parse_stdout(completed.stdout)
+        except AdapterError as exc:
+            return manual_fallback_or_raise(q, str(exc), retryable=True)
         hits = rows_to_hits(rows)
         if not hits:
-            raise AdapterError("wechat opencli returned no valid rows", retryable=True)
+            return manual_fallback_or_raise(q, "wechat opencli returned no valid rows", retryable=True)
         return hits
 
 
@@ -51,9 +55,18 @@ def _parse_stdout(stdout: str) -> list[dict[str, Any]]:
         data = json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise AdapterError(f"wechat opencli stdout is not JSON: {exc}", retryable=True) from exc
-    if not isinstance(data, list):
-        raise AdapterError("wechat opencli stdout must be a JSON list", retryable=True)
-    return [row for row in data if isinstance(row, dict)]
+    if isinstance(data, list):
+        return [row for row in data if isinstance(row, dict)]
+    if isinstance(data, dict) and isinstance(data.get("articles"), list):
+        crosscheck = data.get("crosscheck")
+        rows = []
+        for row in data["articles"]:
+            if isinstance(row, dict):
+                copied = dict(row)
+                copied.setdefault("crosscheck", crosscheck)
+                rows.append(copied)
+        return rows
+    raise AdapterError("wechat opencli stdout must be a JSON list or an object with articles", retryable=True)
 
 
 def rows_to_hits(rows: list[dict[str, Any]]) -> list[Hit]:
@@ -74,9 +87,12 @@ def rows_to_hits(rows: list[dict[str, Any]]) -> list[Hit]:
         extra = {
             "platform": "wechat",
             "account_name": row.get("account_name"),
-            "extraction_method": "opencli_browser",
-            "requires_login": True,
+            "extraction_method": row.get("extraction_method") or ("gzh_crosscheck" if row.get("found_in") else "opencli_browser"),
+            "requires_login": False if row.get("found_in") else True,
         }
+        for field in ["content", "content_source", "content_errors", "found_in", "url_key", "crosscheck"]:
+            if row.get(field):
+                extra[field] = row.get(field)
         if warnings:
             extra["parse_warning"] = ",".join(warnings)
 
@@ -96,23 +112,19 @@ def rows_to_hits(rows: list[dict[str, Any]]) -> list[Hit]:
 
 
 def parse_published_at(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    text = value.strip()
-    now = datetime.now(timezone.utc)
-    if text == "昨天":
-        return now - timedelta(days=1)
-    if text == "前天":
-        return now - timedelta(days=2)
-    if text.endswith("小时前"):
-        try:
-            return now - timedelta(hours=int(text[:-3]))
-        except ValueError:
-            return None
+    return parse_wechat_published_at(value)
 
-    for fmt in ["%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d"]:
-        try:
-            return datetime.strptime(text, fmt).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    return None
+
+def manual_fallback_or_raise(q: Query, primary_error: str, retryable: bool = False) -> list[Hit]:
+    try:
+        hits = ManualWechatAdapter().query(q)
+    except AdapterError as exc:
+        raise AdapterError(
+            f"{primary_error}; manual_wechat fallback unavailable: {exc}",
+            retryable=retryable,
+        ) from exc
+    for hit in hits:
+        hit.extra["fallback_from"] = "wechat_opencli"
+        hit.extra["is_manual_wechat_fallback"] = True
+        hit.extra["wechat_opencli_error"] = primary_error
+    return hits

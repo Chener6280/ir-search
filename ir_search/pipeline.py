@@ -108,8 +108,12 @@ def select_sources(q: Query) -> list[str]:
     route = routes.get(intent_key, routes["GENERAL"])
     sources = route.get(q.lang.value) or route.get("default") or routes["GENERAL"].get(q.lang.value, [])
 
-    if _mentions_wechat(q.text) and "wechat_opencli" not in sources:
-        sources = list(sources) + ["wechat_opencli"]
+    if _mentions_wechat(q.text):
+        sources = list(sources)
+        if "manual_wechat" not in sources:
+            sources.append("manual_wechat")
+        if "wechat_opencli" not in sources:
+            sources.append("wechat_opencli")
     if q.allow_browser_fallback and q.intent == Intent.BROKER_RESEARCH and "wechat_opencli" not in sources:
         sources = list(sources) + ["wechat_opencli"]
     return sources
@@ -302,7 +306,7 @@ def canonicalize_url(url: str) -> str:
 
 def _normalize_source_name(source: str) -> str:
     source = source.strip()
-    aliases = {"wechat": "wechat_opencli", "公众号": "wechat_opencli"}
+    aliases = {"wechat": "wechat_opencli", "公众号": "wechat_opencli", "微信手工": "manual_wechat"}
     return aliases.get(source, source)
 
 
