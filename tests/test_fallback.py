@@ -1,6 +1,13 @@
+import pytest
+
 from ir_search.adapters.base import AdapterError
 from ir_search.models import Hit, Query
-from ir_search.pipeline import classify_fallback_error, run_pipeline
+from ir_search.pipeline import classify_fallback_error, retry_backoff_seconds, run_pipeline
+
+
+@pytest.fixture(autouse=True)
+def no_retry_sleep(monkeypatch):
+    monkeypatch.setattr("ir_search.pipeline.time.sleep", lambda seconds: None)
 
 
 class FailingAdapter:
@@ -108,6 +115,21 @@ def test_retryable_error_is_retried_once_before_fallback():
     assert [status.source for status in result.diagnostics] == ["bocha"]
     assert result.hits[0].source == "bocha"
     assert "retry_after=temporary timeout" in result.diagnostics[0].error
+
+
+def test_retryable_quota_error_backs_off_before_retry(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("ir_search.pipeline.time.sleep", sleeps.append)
+
+    run_pipeline(
+        Query(text="中际旭创 最新", sources=["bocha"], allow_fallback=True, fallback_policy="all"),
+        {
+            "bocha": FailingAdapter("bocha", "HTTP 429 rate limit"),
+            "anysearch": OneHitAdapter("anysearch"),
+        },
+    )
+
+    assert sleeps == [retry_backoff_seconds("HTTP 429 rate limit")]
 
 
 def test_fallback_on_empty_is_explicit():

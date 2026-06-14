@@ -57,7 +57,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-from ir_search.urlnorm import wechat_url_key
+from ir_search.urlnorm import wechat_url_aliases, wechat_url_key
 
 CST = timezone(timedelta(hours=8))  # 公众号时间一律按北京时间处理
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -377,9 +377,18 @@ META_PRIORITY = ["dajiala", "wewe", "rss"]
 
 def merge(per_source: dict[str, list[Article]]):
     by_key: dict[str, dict[str, Article]] = {}
+    alias_to_key: dict[str, str] = {}
     for src, arts in per_source.items():
         for a in arts:
-            by_key.setdefault(a.url_key, {})[src] = a
+            aliases = wechat_url_aliases(a.url, title=a.title, published=a.published_at)
+            if a.url_key not in aliases:
+                aliases.insert(0, a.url_key)
+            key = next((alias_to_key[alias] for alias in aliases if alias in alias_to_key), a.url_key)
+            if _url_key_priority(a.url_key) > _url_key_priority(key):
+                key = _promote_merge_key(by_key, alias_to_key, key, a.url_key)
+            by_key.setdefault(key, {})[src] = a
+            for alias in aliases:
+                alias_to_key[alias] = key
 
     merged, matrix = [], []
     for key, variants in by_key.items():
@@ -409,6 +418,33 @@ def merge(per_source: dict[str, list[Article]]):
     merged.sort(key=lambda x: x["published_at"], reverse=True)
     matrix.sort(key=lambda x: x["published_at"], reverse=True)
     return merged, matrix
+
+
+def _url_key_priority(key: str) -> int:
+    if key.startswith("wechat:sn:"):
+        return 3
+    if key.startswith("wechat:bmi:"):
+        return 2
+    if key.startswith("wechat:tok:"):
+        return 1
+    return 0
+
+
+def _promote_merge_key(
+    by_key: dict[str, dict[str, Article]],
+    alias_to_key: dict[str, str],
+    old_key: str,
+    new_key: str,
+) -> str:
+    if old_key == new_key:
+        return old_key
+    old_variants = by_key.pop(old_key, {})
+    if old_variants:
+        by_key.setdefault(new_key, {}).update(old_variants)
+    for alias, mapped_key in list(alias_to_key.items()):
+        if mapped_key == old_key:
+            alias_to_key[alias] = new_key
+    return new_key
 
 
 # --------------------------------------------------------------------------

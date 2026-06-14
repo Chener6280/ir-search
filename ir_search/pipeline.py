@@ -11,7 +11,13 @@ from .entity import match_entities, normalize_entities
 from .evidence import classify_hit
 from .models import FallbackPolicy, Hit, Intent, Lang, Query, SearchResult, SourceStatus
 from .rerank import rerank
-from .urlnorm import canonicalize_url
+from .urlnorm import canonicalize_url, canonicalize_url_aliases
+
+
+RETRY_BACKOFF_SECONDS = {
+    "quota": 0.3,
+    "network": 0.2,
+}
 
 
 def prepare_query(x: Union[str, Query]) -> Query:
@@ -196,6 +202,9 @@ def _query_source(
                 if exc.retryable and len(errors) > 1:
                     error = f"retryable failed after {len(errors)} attempts: {'; '.join(errors)}"
                 return [], SourceStatus(source=source, ok=False, n_results=0, error=error, elapsed_ms=elapsed_ms, cache_hit=False, adapter_mode=adapter_mode)
+            delay = retry_backoff_seconds(str(exc))
+            if delay > 0:
+                time.sleep(delay)
 
     raise AssertionError("unreachable")
 
@@ -261,11 +270,15 @@ def normalize_hits(q: Query, hits: list[Hit]) -> list[Hit]:
 
 def dedup_hits(hits: list[Hit]) -> list[Hit]:
     by_url: dict[str, Hit] = {}
+    alias_to_key: dict[str, str] = {}
     for hit in hits:
-        key = hit.canonical_url or canonicalize_url(hit.url, title=hit.title, published=hit.published_at)
+        primary_key, aliases = _hit_dedup_keys(hit)
+        key = next((alias_to_key[alias] for alias in aliases if alias in alias_to_key), primary_key)
         existing = by_url.get(key)
         if existing is None:
             by_url[key] = hit
+            for alias in aliases:
+                alias_to_key[alias] = key
             continue
         existing.found_by = sorted(set(existing.found_by + hit.found_by))
         if len(hit.snippet) > len(existing.snippet):
@@ -277,7 +290,24 @@ def dedup_hits(hits: list[Hit]) -> list[Hit]:
         if not existing.published_at and hit.published_at:
             existing.published_at = hit.published_at
         existing.matched_entities = sorted(set(existing.matched_entities + hit.matched_entities))
+        if primary_key.startswith("wechat:sn:") and not (existing.canonical_url or "").startswith("wechat:sn:"):
+            existing.canonical_url = primary_key
+        for alias in aliases:
+            alias_to_key[alias] = key
     return list(by_url.values())
+
+
+def retry_backoff_seconds(error: str) -> float:
+    error_type = classify_fallback_error(error)
+    return RETRY_BACKOFF_SECONDS.get(error_type, 0.0)
+
+
+def _hit_dedup_keys(hit: Hit) -> tuple[str, list[str]]:
+    primary_key = hit.canonical_url or canonicalize_url(hit.url, title=hit.title, published=hit.published_at)
+    aliases = canonicalize_url_aliases(hit.url, title=hit.title, published=hit.published_at)
+    if primary_key not in aliases:
+        aliases.insert(0, primary_key)
+    return primary_key, aliases
 
 
 def _normalize_source_name(source: str) -> str:

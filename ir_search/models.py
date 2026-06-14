@@ -87,6 +87,12 @@ class TimeWindow:
 
 @dataclass
 class Query:
+    """Search request options.
+
+    fallback_on_empty only triggers configured fallback routes when
+    fallback_policy is ALL; QUOTA_ONLY and NETWORK_ONLY apply to errors only.
+    """
+
     text: str
     intent: Intent = Intent.GENERAL
     lang: Lang = Lang.AUTO
@@ -100,6 +106,7 @@ class Query:
     allow_browser_fallback: bool = False
     allow_fallback: bool = False
     fallback_policy: FallbackPolicy = FallbackPolicy.NONE
+    # Empty-result fallback is intentionally limited to fallback_policy=ALL.
     fallback_on_empty: bool = False
     # Reserved flag; LLM query rewriting must stay outside the deterministic search hot path.
     llm_rewrite: bool = False

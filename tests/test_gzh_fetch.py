@@ -134,3 +134,30 @@ def test_fulltext_falls_back_to_dajiala_detail(tmp_path, monkeypatch):
     assert article["content"] == "极致了详情正文"
     assert article["content_source"] == "dajiala_detail"
     assert article["content_errors"][0].startswith("mp.weixin: RuntimeError: blocked")
+
+
+def test_merge_uses_wechat_bmi_alias_for_sn_links():
+    dajiala_article = gzh_fetch.Article(
+        title="同一篇",
+        url="https://mp.weixin.qq.com/s?__biz=MzA3&mid=1&idx=1",
+        published_at=gzh_fetch.parse_dt("2026-06-03 09:00"),
+        snippet="摘要",
+        account_name="测试号",
+        source="dajiala",
+    )
+    wewe_article = gzh_fetch.Article(
+        title="同一篇",
+        url="https://mp.weixin.qq.com/s?__biz=MzA3&mid=1&idx=1&sn=abcdef",
+        published_at=gzh_fetch.parse_dt("2026-06-03 09:01"),
+        content="正文",
+        account_name="测试号",
+        source="wewe",
+    )
+
+    merged, matrix = gzh_fetch.merge({"dajiala": [dajiala_article], "wewe": [wewe_article]})
+
+    assert len(merged) == 1
+    assert merged[0]["url_key"] == "wechat:sn:abcdef"
+    assert merged[0]["found_in"] == ["dajiala", "wewe"]
+    assert matrix[0]["dajiala"] is True
+    assert matrix[0]["wewe"] is True
