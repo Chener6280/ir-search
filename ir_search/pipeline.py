@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 from typing import Mapping, Optional, Union
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from .adapters.base import AdapterError, SearchAdapter
 from .cache import CallLogger, FileCache, cache_key
@@ -12,6 +11,7 @@ from .entity import match_entities, normalize_entities
 from .evidence import classify_hit
 from .models import FallbackPolicy, Hit, Intent, Lang, Query, SearchResult, SourceStatus
 from .rerank import rerank
+from .urlnorm import canonicalize_url
 
 
 def prepare_query(x: Union[str, Query]) -> Query:
@@ -38,7 +38,11 @@ def classify_language(text: str) -> Lang:
 
 def detect_intent(text: str) -> Intent:
     scores = score_intents(text)
-    return max(scores, key=scores.get) if scores else Intent.COMPANY_NEWS if any(ch.isdigit() for ch in text) else Intent.GENERAL
+    if scores:
+        return max(scores, key=scores.get)
+    if any(ch.isdigit() for ch in text):
+        return Intent.COMPANY_NEWS
+    return Intent.GENERAL
 
 
 def apply_intent_detection(q: Query) -> Query:
@@ -57,46 +61,24 @@ def apply_intent_detection(q: Query) -> Query:
 
 def score_intents(text: str) -> dict[Intent, float]:
     lower = text.lower()
-    rules: list[tuple[Intent, list[str]]] = [
-        (Intent.EARNINGS, ["一季报", "季报", "年报", "半年报", "业绩", "财报", "earnings", "10-k", "10-q"]),
-        (Intent.FILING, ["公告", "披露", "问询函", "disclosure", "announcement", "filing"]),
-        (Intent.BROKER_RESEARCH, ["研报", "评级", "目标价", "盈利预测", "券商", "分析师", "观点", "research report"]),
-        (Intent.POLICY, ["政策", "监管", "出口管制", "商务部", "工信部", "发改委", "bis", "regulation"]),
-        (Intent.PRICE_SUPPLY_DEMAND, ["价格", "批价", "供需", "库存", "产能", "涨价", "price", "supply", "demand"]),
-        (Intent.OVERSEAS_MAPPING, ["英伟达", "nvidia", "capex", "海外", "sec", "tsmc", "coWoS".lower()]),
-        (Intent.INDUSTRY_CHAIN, ["产业链", "光模块", "cpo", "800g", "1.6t", "半导体", "储能"]),
-        (
-            Intent.SENTIMENT,
-            [
-                "舆情",
-                "情绪",
-                "雪球",
-                "股吧",
-                "微博",
-                "热度",
-                "人气榜",
-                "热门股",
-                "关注度",
-                "拥挤",
-                "stocktwits",
-                "aaii",
-                "naaim",
-                "put/call",
-                "put call",
-                "sentiment",
-                "bullish",
-                "bearish",
-            ],
-        ),
-    ]
+    rules = intent_rules()
     scores: dict[Intent, float] = {}
-    for intent, needles in rules:
+    for intent, needles in rules.items():
         matched = [needle for needle in needles if needle in lower]
         if matched:
             scores[intent] = min(1.0, 0.45 + 0.18 * len(matched))
     if not scores and any(ch.isdigit() for ch in text):
         scores[Intent.COMPANY_NEWS] = 0.4
     return scores
+
+
+def intent_rules() -> dict[Intent, list[str]]:
+    raw_rules = load_yaml("intent_rules.yaml").get("rules", {})
+    rules: dict[Intent, list[str]] = {}
+    for intent_name, needles in raw_rules.items():
+        if intent_name in Intent.__members__ and isinstance(needles, list):
+            rules[Intent[intent_name]] = [str(needle).lower() for needle in needles]
+    return rules
 
 
 def select_sources(q: Query) -> list[str]:
@@ -192,19 +174,30 @@ def _query_source(
         adapter_mode = getattr(adapter, "mode", "unknown")
         return cached, SourceStatus(source=source, ok=True, n_results=len(cached), error=None, elapsed_ms=elapsed_ms, cache_hit=True, adapter_mode=adapter_mode)
 
-    try:
-        source_hits = adapter.query(q)
-        elapsed_ms = int((time.perf_counter() - start) * 1000)
-        adapter_mode = getattr(adapter, "mode", "unknown")
-        for hit in source_hits:
-            hit.extra.setdefault("adapter_mode", adapter_mode)
-        if cache:
-            cache.set(key, source_hits)
-        return source_hits, SourceStatus(source=source, ok=True, n_results=len(source_hits), error=None, elapsed_ms=elapsed_ms, cache_hit=False, adapter_mode=adapter_mode)
-    except AdapterError as exc:
-        elapsed_ms = int((time.perf_counter() - start) * 1000)
-        adapter_mode = getattr(adapter, "mode", "unknown")
-        return [], SourceStatus(source=source, ok=False, n_results=0, error=str(exc), elapsed_ms=elapsed_ms, cache_hit=False, adapter_mode=adapter_mode)
+    errors: list[str] = []
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
+        try:
+            source_hits = adapter.query(q)
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            adapter_mode = getattr(adapter, "mode", "unknown")
+            for hit in source_hits:
+                hit.extra.setdefault("adapter_mode", adapter_mode)
+            if cache:
+                cache.set(key, source_hits)
+            error = f"retry_after={errors[0]}" if errors else None
+            return source_hits, SourceStatus(source=source, ok=True, n_results=len(source_hits), error=error, elapsed_ms=elapsed_ms, cache_hit=False, adapter_mode=adapter_mode)
+        except AdapterError as exc:
+            errors.append(str(exc))
+            if not exc.retryable or attempt == max_attempts:
+                elapsed_ms = int((time.perf_counter() - start) * 1000)
+                adapter_mode = getattr(adapter, "mode", "unknown")
+                error = str(exc)
+                if exc.retryable and len(errors) > 1:
+                    error = f"retryable failed after {len(errors)} attempts: {'; '.join(errors)}"
+                return [], SourceStatus(source=source, ok=False, n_results=0, error=error, elapsed_ms=elapsed_ms, cache_hit=False, adapter_mode=adapter_mode)
+
+    raise AssertionError("unreachable")
 
 
 def fallback_sources_for(source: str) -> list[str]:
@@ -217,7 +210,7 @@ def should_trigger_fallback(q: Query, status: SourceStatus) -> bool:
     if q.fallback_policy == FallbackPolicy.NONE:
         return False
     if status.ok:
-        return False
+        return q.fallback_on_empty and status.n_results == 0 and q.fallback_policy == FallbackPolicy.ALL
     if not status.error:
         return False
     if q.fallback_policy == FallbackPolicy.ALL:
@@ -232,19 +225,14 @@ def should_trigger_fallback(q: Query, status: SourceStatus) -> bool:
 
 def classify_fallback_error(error: str) -> str:
     lower = error.lower()
-    quota_needles = ["api key", "quota", "exhausted", "limit", "rate", "401", "402", "403", "429"]
+    classes = load_yaml("fallback_routes.yaml").get("error_classes", {})
+    quota_needles = [str(needle).lower() for needle in classes.get("quota", [])]
     if any(needle in lower for needle in quota_needles):
         return "quota"
-    network_needles = ["timeout", "timed out", "network", "request failed", "urlopen", "connection"]
+    network_needles = [str(needle).lower() for needle in classes.get("network", [])]
     if any(needle in lower for needle in network_needles):
         return "network"
     return "unknown"
-
-
-def legacy_error_matches_fallback_config(status: SourceStatus) -> bool:
-    needles = load_yaml("fallback_routes.yaml").get("trigger_error_contains", [])
-    error = status.error.lower()
-    return any(str(needle).lower() in error for needle in needles)
 
 
 def _with_fallback_reason(primary_source: str, primary_status: SourceStatus, fallback_status: SourceStatus) -> str:
@@ -263,7 +251,7 @@ def mark_fallback_hits(hits: list[Hit], fallback_from: str) -> None:
 def normalize_hits(q: Query, hits: list[Hit]) -> list[Hit]:
     normalized: list[Hit] = []
     for hit in hits:
-        hit.canonical_url = canonicalize_url(hit.url)
+        hit.canonical_url = canonicalize_url(hit.url, title=hit.title, published=hit.published_at)
         text = f"{hit.title} {hit.snippet}"
         hit.matched_entities = match_entities(text, q.entities)
         hit.fetched_at = hit.fetched_at or datetime.now(timezone.utc)
@@ -274,7 +262,7 @@ def normalize_hits(q: Query, hits: list[Hit]) -> list[Hit]:
 def dedup_hits(hits: list[Hit]) -> list[Hit]:
     by_url: dict[str, Hit] = {}
     for hit in hits:
-        key = hit.canonical_url or canonicalize_url(hit.url)
+        key = hit.canonical_url or canonicalize_url(hit.url, title=hit.title, published=hit.published_at)
         existing = by_url.get(key)
         if existing is None:
             by_url[key] = hit
@@ -290,18 +278,6 @@ def dedup_hits(hits: list[Hit]) -> list[Hit]:
             existing.published_at = hit.published_at
         existing.matched_entities = sorted(set(existing.matched_entities + hit.matched_entities))
     return list(by_url.values())
-
-
-def canonicalize_url(url: str) -> str:
-    parsed = urlparse(url)
-    query = [
-        (k, v)
-        for k, v in parse_qsl(parsed.query, keep_blank_values=True)
-        if not (k.lower().startswith("utm_") or k.lower() in {"spm", "from", "share"})
-    ]
-    netloc = parsed.netloc.lower().removeprefix("www.")
-    path = parsed.path.rstrip("/") or "/"
-    return urlunparse(("", netloc, path, "", urlencode(query), ""))
 
 
 def _normalize_source_name(source: str) -> str:

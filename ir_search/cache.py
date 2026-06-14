@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 import threading
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Union
 
@@ -30,6 +31,19 @@ class FileCache:
             json.dump([_hit_to_dict(hit) for hit in hits], f, ensure_ascii=False, indent=2)
         os.replace(tmp_path, path)
 
+    def prune(self, days: int) -> int:
+        """Remove cache files older than ``days`` and return the removal count."""
+        if days < 0:
+            raise ValueError("days must be non-negative")
+        cutoff = utc_now() - timedelta(days=days)
+        removed = 0
+        for path in self.root.glob("*.json"):
+            modified = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+            if modified < cutoff:
+                path.unlink()
+                removed += 1
+        return removed
+
 
 class CallLogger:
     def __init__(self, path: Union[str, Path]) -> None:
@@ -45,7 +59,8 @@ class CallLogger:
 
 def cache_key(source: str, q: Query) -> str:
     bucket = utc_now().strftime("%Y-%m-%d")
-    return f"{source}|{q.text}|{q.window.raw}|{q.count}|{bucket}"
+    source_mode = "forced" if q.sources is not None else "auto"
+    return f"{source}|{q.text}|intent={q.intent.name}|lang={q.lang.value}|sources={source_mode}|{q.window.raw}|{q.count}|{bucket}"
 
 
 def utc_now() -> datetime:
@@ -53,7 +68,9 @@ def utc_now() -> datetime:
 
 
 def _safe_key(key: str) -> str:
-    return "".join(ch if ch.isalnum() else "_" for ch in key)[:180]
+    safe = "".join(ch if ch.isalnum() else "_" for ch in key)
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+    return f"{safe[:140]}_{digest}"
 
 
 def _hit_to_dict(hit: Hit) -> dict:

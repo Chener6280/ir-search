@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .models import Query, TimeWindow
+from .models import FallbackPolicy, Intent, Query, TimeWindow
 
 
 TOOL_NAMES = ["search"]
@@ -10,6 +10,32 @@ TOOL_NAMES = ["search"]
 
 def list_tool_names() -> list[str]:
     return TOOL_NAMES[:]
+
+
+def build_query(
+    query: str,
+    sources: Optional[list[str]] = None,
+    count: int = 10,
+    freshness: str = "noLimit",
+    allow_browser_fallback: bool = False,
+    intent: Optional[str] = None,
+    fallback_policy: str = "none",
+    fallback_on_empty: bool = False,
+) -> Query:
+    policy = FallbackPolicy(fallback_policy.lower())
+    q = Query(
+        text=query,
+        sources=sources,
+        count=count,
+        window=TimeWindow(raw=freshness),
+        allow_browser_fallback=allow_browser_fallback,
+        allow_fallback=policy != FallbackPolicy.NONE,
+        fallback_policy=policy,
+        fallback_on_empty=fallback_on_empty,
+    )
+    if intent:
+        q.intent = Intent(intent.lower())
+    return q
 
 
 def run() -> None:
@@ -29,13 +55,19 @@ def run() -> None:
         count: int = 10,
         freshness: str = "noLimit",
         allow_browser_fallback: bool = False,
+        intent: Optional[str] = None,
+        fallback_policy: str = "none",
+        fallback_on_empty: bool = False,
     ) -> dict:
-        q = Query(
-            text=query,
+        q = build_query(
+            query=query,
             sources=sources,
             count=count,
-            window=TimeWindow(raw=freshness),
+            freshness=freshness,
             allow_browser_fallback=allow_browser_fallback,
+            intent=intent,
+            fallback_policy=fallback_policy,
+            fallback_on_empty=fallback_on_empty,
         )
         return ir_search(q).to_dict()
 

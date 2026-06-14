@@ -33,6 +33,7 @@ def validate_configs(registry: Optional[Mapping[str, object]] = None, configs: O
         "source_focus_sites": load_yaml("source_focus_sites.yaml"),
         "fallback_routes": load_yaml("fallback_routes.yaml"),
         "sentiment_sites": load_yaml("sentiment_sites.yaml"),
+        "intent_rules": load_yaml("intent_rules.yaml"),
     }
     errors: list[str] = []
     _validate_source_routes(cfg.get("source_routes", {}), known_sources, errors)
@@ -41,6 +42,7 @@ def validate_configs(registry: Optional[Mapping[str, object]] = None, configs: O
     _validate_source_focus_sites(cfg.get("source_focus_sites", {}), known_sources, errors)
     _validate_fallback_routes(cfg.get("fallback_routes", {}), known_sources, errors)
     _validate_sentiment_sites(cfg.get("sentiment_sites", {}), errors)
+    _validate_intent_rules(cfg.get("intent_rules", {}), errors)
     return errors
 
 
@@ -115,6 +117,15 @@ def _validate_fallback_routes(config: dict, known_sources: set[str], errors: lis
             errors.append(f"fallback_routes.{source} cannot fallback to itself")
     for source in fallbacks:
         _check_cycle(source, fallbacks, [], errors)
+    error_classes = config.get("error_classes", {})
+    if not isinstance(error_classes, dict):
+        errors.append("fallback_routes.error_classes must be a mapping")
+        return
+    for class_name, needles in error_classes.items():
+        if class_name not in {"quota", "network"}:
+            errors.append(f"fallback_routes.error_classes unknown class {class_name}")
+        if not isinstance(needles, list) or not all(isinstance(item, str) and item for item in needles):
+            errors.append(f"fallback_routes.error_classes.{class_name} must be non-empty list[str]")
 
 
 def _validate_sentiment_sites(config: dict, errors: list[str]) -> None:
@@ -127,6 +138,17 @@ def _validate_sentiment_sites(config: dict, errors: list[str]) -> None:
             domain = row.get("domain") if isinstance(row, dict) else None
             if not isinstance(domain, str) or not domain or "://" in domain:
                 errors.append(f"sentiment_sites.{region}[{idx}] invalid domain")
+
+
+def _validate_intent_rules(config: dict, errors: list[str]) -> None:
+    rules = config.get("rules", {})
+    if not isinstance(rules, dict):
+        errors.append("intent_rules.rules must be a mapping")
+        return
+    for intent_name, needles in rules.items():
+        _check_intent(intent_name, "intent_rules", errors)
+        if not isinstance(needles, list) or not all(isinstance(needle, str) and needle for needle in needles):
+            errors.append(f"intent_rules.{intent_name} must be non-empty list[str]")
 
 
 def _check_sources(sources: list[str], known_sources: set[str], path: str, errors: list[str]) -> None:

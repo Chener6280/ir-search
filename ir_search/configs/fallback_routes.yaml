@@ -4,17 +4,21 @@ fallbacks:
   tavily: [anysearch, web_search]
   anysearch: [web_search]
 
-trigger_error_contains:
-  - api key
-  - quota
-  - exhausted
-  - limit
-  - rate
-  - 401
-  - 402
-  - 403
-  - 429
-  - timeout
-  - timed out
-  - network
-  - request failed
+error_classes:
+  quota:
+    - api key
+    - quota
+    - exhausted
+    - limit
+    - rate
+    - "401"
+    - "402"
+    - "403"
+    - "429"
+  network:
+    - timeout
+    - timed out
+    - network
+    - request failed
+    - urlopen
+    - connection

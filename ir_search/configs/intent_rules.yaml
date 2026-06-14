@@ -1,0 +1,81 @@
+rules:
+  EARNINGS:
+    - 一季报
+    - 季报
+    - 年报
+    - 半年报
+    - 业绩
+    - 财报
+    - earnings
+    - 10-k
+    - 10-q
+  FILING:
+    - 公告
+    - 披露
+    - 问询函
+    - disclosure
+    - announcement
+    - filing
+  BROKER_RESEARCH:
+    - 研报
+    - 评级
+    - 目标价
+    - 盈利预测
+    - 券商
+    - 分析师
+    - 观点
+    - research report
+  POLICY:
+    - 政策
+    - 监管
+    - 出口管制
+    - 商务部
+    - 工信部
+    - 发改委
+    - bis
+    - regulation
+  PRICE_SUPPLY_DEMAND:
+    - 价格
+    - 批价
+    - 供需
+    - 库存
+    - 产能
+    - 涨价
+    - price
+    - supply
+    - demand
+  OVERSEAS_MAPPING:
+    - 英伟达
+    - nvidia
+    - capex
+    - 海外
+    - sec
+    - tsmc
+    - cowos
+  INDUSTRY_CHAIN:
+    - 产业链
+    - 光模块
+    - cpo
+    - 800g
+    - 1.6t
+    - 半导体
+    - 储能
+  SENTIMENT:
+    - 舆情
+    - 情绪
+    - 雪球
+    - 股吧
+    - 微博
+    - 热度
+    - 人气榜
+    - 热门股
+    - 关注度
+    - 拥挤
+    - stocktwits
+    - aaii
+    - naaim
+    - put/call
+    - put call
+    - sentiment
+    - bullish
+    - bearish

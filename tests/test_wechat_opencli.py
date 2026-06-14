@@ -98,6 +98,7 @@ def test_published_at_is_parsed():
     assert parse_published_at("2026-06-08").year == 2026
     assert parse_published_at("2026/06/08").month == 6
     assert parse_published_at("2026-06-08 12:30").hour == 12
+    assert parse_published_at("2026-06-08 21:00").utcoffset().total_seconds() == 8 * 3600
     assert parse_published_at("3小时前") is not None
 
 

@@ -44,16 +44,20 @@ gzh_fetch.py — 读取某公众号在指定日期范围内的文章及正文（
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
 import sys
-import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, date, timezone, timedelta
 from html.parser import HTMLParser
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from ir_search.urlnorm import wechat_url_key
 
 CST = timezone(timedelta(hours=8))  # 公众号时间一律按北京时间处理
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -88,20 +92,7 @@ def normalize_wechat_url(url: str, title: str = "", published: datetime | None =
     """mp.weixin 链接的规范化键：
     优先 sn 参数（同一篇文章跨渠道 sn 一致）；否则 (biz, mid, idx)；
     短链 /s/<token> 用 token；都没有则 title+日期 哈希兜底。"""
-    try:
-        p = urllib.parse.urlparse(url or "")
-        q = urllib.parse.parse_qs(p.query)
-        if q.get("sn"):
-            return "sn:" + q["sn"][0][:24]
-        if q.get("__biz") and q.get("mid"):
-            return f"bmi:{q['__biz'][0]}:{q['mid'][0]}:{(q.get('idx') or ['1'])[0]}"
-        m = re.match(r"^/s/([A-Za-z0-9_-]{10,})$", p.path or "")
-        if m and "mp.weixin" in (p.netloc or ""):
-            return "tok:" + m.group(1)
-    except Exception:
-        pass
-    d = published.strftime("%Y-%m-%d") if published else ""
-    return "th:" + hashlib.md5(f"{(title or '').strip()}|{d}".encode()).hexdigest()[:16]
+    return wechat_url_key(url, title=title, published=published)
 
 
 def parse_dt(v) -> datetime | None:
@@ -567,7 +558,7 @@ def selftest():
     check("url_key: sn 一致即同键",
           normalize_wechat_url(u1) == normalize_wechat_url(u2))
     check("url_key: 短链 token",
-          normalize_wechat_url("https://mp.weixin.qq.com/s/AbC123xyz_九").startswith(("tok:", "th:")))
+          normalize_wechat_url("https://mp.weixin.qq.com/s/AbC123xyz_九").startswith(("wechat:tok:", "wechat:th:")))
 
     # 2) 日期窗（含 unix 秒与字符串两种来源）
     a = Article("t", "https://mp.weixin.qq.com/s/x1234567890", parse_dt(1750000000))

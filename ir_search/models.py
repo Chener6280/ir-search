@@ -100,6 +100,7 @@ class Query:
     allow_browser_fallback: bool = False
     allow_fallback: bool = False
     fallback_policy: FallbackPolicy = FallbackPolicy.NONE
+    fallback_on_empty: bool = False
     # Reserved flag; LLM query rewriting must stay outside the deterministic search hot path.
     llm_rewrite: bool = False
 

@@ -4,6 +4,7 @@ import json
 import os
 import shlex
 import subprocess
+from datetime import datetime
 from typing import Any, Optional
 
 from ir_search.adapters.base import AdapterError

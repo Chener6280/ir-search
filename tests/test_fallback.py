@@ -1,6 +1,6 @@
 from ir_search.adapters.base import AdapterError
 from ir_search.models import Hit, Query
-from ir_search.pipeline import run_pipeline
+from ir_search.pipeline import classify_fallback_error, run_pipeline
 
 
 class FailingAdapter:
@@ -26,6 +26,37 @@ class OneHitAdapter:
                 title=f"{self.name} fallback result",
                 url=f"https://{self.name}.example.com/result",
                 snippet="fallback hit",
+                source=self.name,
+            )
+        ]
+
+
+class EmptyAdapter:
+    mode = "test"
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def query(self, q: Query):
+        return []
+
+
+class FlakyAdapter:
+    mode = "test"
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.calls = 0
+
+    def query(self, q: Query):
+        self.calls += 1
+        if self.calls == 1:
+            raise AdapterError("temporary timeout", retryable=True)
+        return [
+            Hit(
+                title="recovered",
+                url="https://recovered.example.com",
+                snippet="retry success",
                 source=self.name,
             )
         ]
@@ -61,6 +92,55 @@ def test_allow_fallback_explicitly():
     assert "fallback_after=bocha" in result.diagnostics[1].error
     assert result.hits[0].extra["fallback_from"] == "bocha"
     assert result.hits[0].extra["is_fallback_result"] is True
+
+
+def test_retryable_error_is_retried_once_before_fallback():
+    flaky = FlakyAdapter("bocha")
+    result = run_pipeline(
+        Query(text="中际旭创 最新", sources=["bocha"], allow_fallback=True, fallback_policy="all"),
+        {
+            "bocha": flaky,
+            "anysearch": OneHitAdapter("anysearch"),
+        },
+    )
+
+    assert flaky.calls == 2
+    assert [status.source for status in result.diagnostics] == ["bocha"]
+    assert result.hits[0].source == "bocha"
+    assert "retry_after=temporary timeout" in result.diagnostics[0].error
+
+
+def test_fallback_on_empty_is_explicit():
+    result = run_pipeline(
+        Query(text="中际旭创 最新", sources=["bocha"], allow_fallback=True, fallback_policy="all"),
+        {
+            "bocha": EmptyAdapter("bocha"),
+            "anysearch": OneHitAdapter("anysearch"),
+        },
+    )
+
+    assert [status.source for status in result.diagnostics] == ["bocha"]
+    assert result.hits == []
+
+
+def test_fallback_on_empty_uses_configured_route():
+    result = run_pipeline(
+        Query(
+            text="中际旭创 最新",
+            sources=["bocha"],
+            allow_fallback=True,
+            fallback_policy="all",
+            fallback_on_empty=True,
+        ),
+        {
+            "bocha": EmptyAdapter("bocha"),
+            "anysearch": OneHitAdapter("anysearch"),
+        },
+    )
+
+    assert [status.source for status in result.diagnostics] == ["bocha", "anysearch"]
+    assert result.hits[0].source == "anysearch"
+    assert "fallback_after=bocha" in result.diagnostics[1].error
 
 
 def test_fallback_diagnostics_are_recorded():
@@ -104,3 +184,9 @@ def test_non_quota_unknown_source_does_not_fallback():
 
     assert [status.source for status in result.diagnostics] == ["missing"]
     assert result.hits == []
+
+
+def test_error_classification_uses_fallback_config():
+    assert classify_fallback_error("HTTP 429 rate limit") == "quota"
+    assert classify_fallback_error("urlopen connection timed out") == "network"
+    assert classify_fallback_error("semantic parse failed") == "unknown"
