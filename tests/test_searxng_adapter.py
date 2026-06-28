@@ -78,9 +78,12 @@ def test_searxng_parses_json_results(monkeypatch):
     assert hit.evidence_type == EvidenceType.UNKNOWN
     assert hit.fetched_at is not None
     assert hit.extra["adapter_mode"] == "fallback"
-    assert hit.extra["coverage_status"] == "partial"
+    assert hit.extra["result_kind"] == "discovery_url"
+    assert hit.extra["coverage_status"] == "partial_discovery"
     assert hit.extra["evidence_type"] == "search_result"
     assert hit.extra["confidence"] == "low_to_medium"
+    assert hit.extra["promotable"] is True
+    assert hit.extra["promotion_required"] is True
     assert hit.extra["query"] == "中信证券 AI 算力"
     assert hit.extra["engine"] == "bing"
     assert hit.extra["rank"] == 1

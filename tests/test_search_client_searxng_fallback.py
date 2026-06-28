@@ -24,7 +24,8 @@ class OneHitAdapter:
         extra = {}
         if self.name == "searxng":
             extra = {
-                "coverage_status": "partial",
+                "result_kind": "discovery_url",
+                "coverage_status": "partial_discovery",
                 "evidence_type": "search_result",
                 "confidence": "low_to_medium",
             }
@@ -60,7 +61,8 @@ def test_searxng_is_low_priority_fallback_after_anysearch_failure():
     assert result.hits[0].source == "searxng"
     assert result.hits[0].extra["fallback_from"] == "anysearch"
     assert result.hits[0].extra["is_fallback_result"] is True
-    assert result.hits[0].extra["coverage_status"] == "partial"
+    assert result.hits[0].extra["result_kind"] == "discovery_url"
+    assert result.hits[0].extra["coverage_status"] == "partial_discovery"
 
 
 def test_disabled_searxng_fallback_continues_to_web_search(monkeypatch):

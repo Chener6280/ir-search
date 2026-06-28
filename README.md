@@ -69,6 +69,12 @@ tushare -> longbridge -> market_public
 longbridge -> market_public
 ```
 
+fallback 会经过 source capability 防火墙过滤，规则见 [docs/fallback_firewall.md](docs/fallback_firewall.md)。关键约束：
+
+- `FILING` / 公告 / 监管披露类查询不会降级到 `searxng`、`web_search`、普通媒体或 UGC。
+- 结构化市场数据查询只在 `tushare` / `longbridge` / `market_public` 这类数据源之间 fallback。
+- 被 policy 拦截的 fallback 不会静默跳过，会在 `SearchResult.diagnostics` 中记录 `skipped=true`、`failure_kind=blocked_by_policy` 和 `skipped_reason`。
+
 海外 fallback key：
 
 ```bash

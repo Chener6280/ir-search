@@ -84,9 +84,12 @@ class SearXNGAdapter:
                         "query": q.text,
                         "engine": engine,
                         "rank": rank,
-                        "coverage_status": "partial",
+                        "result_kind": "discovery_url",
+                        "coverage_status": "partial_discovery",
                         "evidence_type": "search_result",
                         "confidence": "low_to_medium",
+                        "promotable": True,
+                        "promotion_required": True,
                     },
                 )
             )

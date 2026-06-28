@@ -37,6 +37,62 @@ class SourceTier(IntEnum):
     REGULATOR = 6
 
 
+class ResultKind(str, Enum):
+    FILING_DOCUMENT = "filing_document"
+    ANNOUNCEMENT = "announcement"
+    WEB_DOCUMENT = "web_document"
+    NEWS = "news"
+    POLICY_DOC = "policy_doc"
+    DISCOVERY_URL = "discovery_url"
+    MARKET_QUOTE = "market_quote"
+    FINANCIAL_TABLE = "financial_table"
+    TIMESERIES = "timeseries"
+    RATING_SNAPSHOT = "rating_snapshot"
+    PUBLIC_SNAPSHOT = "public_snapshot"
+    SOCIAL_POST = "social_post"
+    OPINION = "opinion"
+    UNKNOWN = "unknown"
+
+
+class SourceAuthority(str, Enum):
+    OFFICIAL_FILING = "official_filing"
+    REGULATOR = "regulator"
+    COMPANY = "company"
+    BROKER_RESEARCH = "broker_research"
+    COMMERCIAL_SEARCH = "commercial_search"
+    DISCOVERY = "discovery"
+    ANONYMOUS_SEARCH = "anonymous_search"
+    DATA_VENDOR = "data_vendor"
+    BROKER_PLATFORM = "broker_platform"
+    PUBLIC_MARKET_DATA = "public_market_data"
+    MEDIA = "media"
+    UGC = "ugc"
+    UNKNOWN = "unknown"
+
+
+class CoverageStatus(str, Enum):
+    COVERED = "covered"
+    PARTIAL_DISCOVERY = "partial_discovery"
+    PARTIAL_DATA = "partial_data"
+    TRUE_NEGATIVE = "true_negative"
+    BLOCKED_BY_POLICY = "blocked_by_policy"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+
+class FailureKind(str, Enum):
+    NONE = "none"
+    NO_CREDENTIAL = "no_credential"
+    QUOTA = "quota"
+    RATE_LIMIT = "rate_limit"
+    NETWORK = "network"
+    TIMEOUT = "timeout"
+    UPSTREAM_SCHEMA = "upstream_schema"
+    UNIMPLEMENTED = "unimplemented"
+    BLOCKED_BY_POLICY = "blocked_by_policy"
+    UNKNOWN = "unknown"
+
+
 class EvidenceType(str, Enum):
     ANNOUNCEMENT = "announcement"
     FINANCIAL_REPORT = "financial_report"
@@ -153,6 +209,14 @@ class SourceStatus:
     elapsed_ms: int
     cache_hit: Optional[bool] = None
     adapter_mode: str = "unknown"
+    result_kinds: list[ResultKind] = field(default_factory=list)
+    authority: SourceAuthority = SourceAuthority.UNKNOWN
+    coverage_status: CoverageStatus = CoverageStatus.UNKNOWN
+    failure_kind: FailureKind = FailureKind.NONE
+    fallback_parent: Optional[str] = None
+    fallback_hop: int = 0
+    skipped: bool = False
+    skipped_reason: Optional[str] = None
 
 
 @dataclass
@@ -184,4 +248,9 @@ class SearchResult:
             hit_data["evidence_type"] = hit.evidence_type.value
             hit_data["published_at"] = hit.published_at.isoformat() if hit.published_at else None
             hit_data["fetched_at"] = hit.fetched_at.isoformat() if hit.fetched_at else None
+        for status, status_data in zip(self.diagnostics, data["diagnostics"]):
+            status_data["result_kinds"] = [kind.value for kind in status.result_kinds]
+            status_data["authority"] = status.authority.value
+            status_data["coverage_status"] = status.coverage_status.value
+            status_data["failure_kind"] = status.failure_kind.value
         return data

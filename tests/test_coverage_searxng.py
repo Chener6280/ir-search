@@ -16,6 +16,7 @@ class SearXNGDiscoveryAdapter:
                 source=self.name,
                 extra={
                     "coverage_status": "partial",
+                    "result_kind": "discovery_url",
                     "evidence_type": "search_result",
                     "confidence": "low_to_medium",
                     "query": q.text,
@@ -47,7 +48,7 @@ def test_search_result_marker_blocks_title_based_evidence_upgrade():
             url="https://research.example.com/title-only",
             snippet="盈利预测和投资评级",
             source="searxng",
-            extra={"coverage_status": "partial", "evidence_type": "search_result"},
+            extra={"coverage_status": "partial_discovery", "evidence_type": "search_result"},
         )
     )
 
