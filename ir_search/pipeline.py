@@ -102,6 +102,16 @@ def select_sources(q: Query) -> list[str]:
             sources.append("manual_wechat")
         if "wechat_opencli" not in sources:
             sources.append("wechat_opencli")
+    if _mentions_zsxq(q.text) and "zsxq" not in sources:
+        sources = list(sources) + ["zsxq"]
+    if _mentions_longbridge(q.text) and "longbridge" not in sources:
+        sources = list(sources) + ["longbridge"]
+    if _mentions_tushare(q.text) and "tushare" not in sources:
+        sources = list(sources) + ["tushare"]
+    if _mentions_dajiala(q.text) and "dajiala" not in sources:
+        sources = list(sources) + ["dajiala"]
+    if _mentions_market_public(q.text) and "market_public" not in sources:
+        sources = list(sources) + ["market_public"]
     if q.allow_browser_fallback and q.intent == Intent.BROKER_RESEARCH and "wechat_opencli" not in sources:
         sources = list(sources) + ["wechat_opencli"]
     return sources
@@ -312,10 +322,77 @@ def _hit_dedup_keys(hit: Hit) -> tuple[str, list[str]]:
 
 def _normalize_source_name(source: str) -> str:
     source = source.strip()
-    aliases = {"wechat": "wechat_opencli", "公众号": "wechat_opencli", "微信手工": "manual_wechat"}
+    lower = source.lower()
+    if lower in {"tushare", "longbridge", "zsxq", "wechat", "dajiala", "market_public", "searxng", "searx"}:
+        return {"wechat": "wechat_opencli", "searx": "searxng"}.get(lower, lower)
+    aliases = {
+        "wechat": "wechat_opencli",
+        "公众号": "wechat_opencli",
+        "微信手工": "manual_wechat",
+        "自建搜索": "searxng",
+        "元搜索": "searxng",
+        "searx": "searxng",
+        "searxng": "searxng",
+        "知识星球": "zsxq",
+        "星球": "zsxq",
+        "长桥": "longbridge",
+        "长桥证券": "longbridge",
+        "tushare": "tushare",
+        "TuShare": "tushare",
+        "A股数据": "tushare",
+        "极致了": "dajiala",
+        "dajiala": "dajiala",
+        "公共行情": "market_public",
+        "公开行情": "market_public",
+        "腾讯行情": "market_public",
+    }
     return aliases.get(source, source)
 
 
 def _mentions_wechat(text: str) -> bool:
     lower = text.lower()
     return "公众号" in text or "wechat" in lower or "微信" in text
+
+
+def _mentions_zsxq(text: str) -> bool:
+    lower = text.lower()
+    return "知识星球" in text or "星球" in text or "zsxq" in lower
+
+
+def _mentions_longbridge(text: str) -> bool:
+    lower = text.lower()
+    return "长桥" in text or "longbridge" in lower
+
+
+def _mentions_tushare(text: str) -> bool:
+    lower = text.lower()
+    if "tushare" in lower or "a-stock-data" in lower:
+        return True
+    data_needles = [
+        "股东人数",
+        "股东户数",
+        "龙虎榜",
+        "限售",
+        "解禁",
+        "财务指标",
+        "业绩预告",
+        "业绩快报",
+        "日行情",
+        "换手率",
+        "资金流",
+        "主力净流入",
+        "市值",
+    ]
+    if any(needle in lower or needle in text for needle in data_needles):
+        return True
+    return any(token in lower.split() for token in ["pe", "pb", "ps", "roe", "roa", "eps"])
+
+
+def _mentions_dajiala(text: str) -> bool:
+    lower = text.lower()
+    return "极致了" in text or "dajiala" in lower
+
+
+def _mentions_market_public(text: str) -> bool:
+    lower = text.lower()
+    return "market_public" in lower or "公共行情" in text or "公开行情" in text or "腾讯行情" in text

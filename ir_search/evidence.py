@@ -30,6 +30,11 @@ def classify_tier(url: str, source: str = "") -> SourceTier:
         "company_ir": SourceTier.COMPANY,
         "wechat_opencli": SourceTier.MEDIA,
         "manual_wechat": SourceTier.MEDIA,
+        "zsxq": SourceTier.UGC,
+        "longbridge": SourceTier.MEDIA,
+        "tushare": SourceTier.MEDIA,
+        "dajiala": SourceTier.MEDIA,
+        "market_public": SourceTier.MEDIA,
     }
     return source_map.get(source, SourceTier.MEDIA)
 
@@ -37,6 +42,8 @@ def classify_tier(url: str, source: str = "") -> SourceTier:
 def classify_evidence_type(hit: Hit) -> EvidenceType:
     if hit.evidence_type != EvidenceType.UNKNOWN:
         return hit.evidence_type
+    if hit.extra.get("evidence_type") == "search_result" or hit.extra.get("coverage_status") == "partial":
+        return EvidenceType.UNKNOWN
 
     domain = _domain(hit.url)
     text = f"{hit.title} {hit.snippet}".lower()

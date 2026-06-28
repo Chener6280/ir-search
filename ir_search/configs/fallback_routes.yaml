@@ -1,8 +1,11 @@
 fallbacks:
-  bocha: [anysearch, web_search]
-  exa: [tavily, anysearch, web_search]
-  tavily: [anysearch, web_search]
-  anysearch: [web_search]
+  bocha: [anysearch, searxng, web_search]
+  exa: [tavily, anysearch, searxng, web_search]
+  tavily: [anysearch, searxng, web_search]
+  anysearch: [searxng, web_search]
+  searxng: [web_search]
+  tushare: [longbridge, market_public]
+  longbridge: [market_public]
 
 error_classes:
   quota:
