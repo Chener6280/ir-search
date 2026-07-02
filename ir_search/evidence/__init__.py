@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from .config import load_yaml
-from .models import EvidenceType, Hit, SourceTier
+from ir_search.config import load_yaml
+from ir_search.models import EvidenceType, Hit, SourceTier
+
+from .extractor import extract_evidence
+from .models import ClaimVerification, EvidenceSpan
+from .verifier import verify_claims
 
 
 def classify_hit(hit: Hit) -> Hit:
@@ -79,3 +83,14 @@ def _domain(url: str) -> str:
 
 def _any_contains(text: str, needles: list[str]) -> bool:
     return any(needle.lower() in text for needle in needles)
+
+
+__all__ = [
+    "ClaimVerification",
+    "EvidenceSpan",
+    "classify_evidence_type",
+    "classify_hit",
+    "classify_tier",
+    "extract_evidence",
+    "verify_claims",
+]

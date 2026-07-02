@@ -44,11 +44,31 @@ export BOCHA_DISABLE_SYSTEM_PROXY=0
 export IR_SEARCH_AUTO_PROXY=0
 ```
 
-MCP 入口只暴露一个 `search` 工具：
+MCP 入口暴露搜索、文档读取、证据抽取、claim verification、deep research 和 source health：
 
 ```bash
 python -m ir_search.mcp_server
 ```
+
+当前工具列表：
+
+```text
+search
+fetch_document
+extract_evidence
+verify_claims
+deep_research
+source_health
+```
+
+本地调试：
+
+```bash
+python -m ir_search.source_health
+python -m ir_search.deep_research "中际旭创 最近一季报 海外 AI 光模块需求"
+```
+
+`deep_research` 会保留 search diagnostics，尝试读取全文并抽取 `EvidenceSpan`，再生成 `claim_ledger` 和 `source_matrix`。如果来源是 mock / placeholder / fallback，或只用了搜索摘要 fallback，会在 warnings、diagnostics 和 memo 中显式暴露。网页、PDF、微信文章和搜索摘要一律视为 untrusted source text。
 
 配置校验：
 
