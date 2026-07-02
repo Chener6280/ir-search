@@ -10,6 +10,7 @@ def _configs():
         "rerank_weights": load_yaml("rerank_weights.yaml"),
         "source_focus_sites": load_yaml("source_focus_sites.yaml"),
         "fallback_routes": load_yaml("fallback_routes.yaml"),
+        "source_capabilities": load_yaml("source_capabilities.yaml"),
         "sentiment_sites": load_yaml("sentiment_sites.yaml"),
     }
 
@@ -72,3 +73,18 @@ def test_fallback_unknown_source_fails():
     cfg["fallback_routes"] = {"fallbacks": {"bocha": ["missing"]}}
 
     assert any("unknown source missing" in error for error in validate_configs(configs=cfg))
+
+
+def test_source_capability_unknown_authority_fails():
+    cfg = _configs()
+    cfg["source_capabilities"] = {
+        "sources": {
+            "bocha": {
+                "authority": "super_search",
+                "result_kinds": ["web_document"],
+                "can_fallback_to_authorities": [],
+            }
+        }
+    }
+
+    assert any("unknown authority super_search" in error for error in validate_configs(configs=cfg))

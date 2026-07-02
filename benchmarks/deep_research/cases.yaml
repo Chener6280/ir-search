@@ -1,0 +1,26 @@
+cases:
+  - id: company_earnings_001
+    question: "中际旭创 最新季报是否验证海外 AI 光模块需求？"
+    required_behaviors:
+      - "attempt_official_filing"
+      - "read_documents"
+      - "extract_evidence_spans"
+      - "show_diagnostics"
+      - "show_source_matrix"
+
+  - id: wechat_crosscheck_001
+    question: "某公众号关于产业链涨价的说法能否被公告或新闻交叉验证？"
+    required_behaviors:
+      - "use_wechat_as_candidate_not_authority"
+      - "extract_evidence_spans"
+      - "show_diagnostics"
+      - "mark_unverified_if_no_primary_source"
+
+  - id: policy_001
+    question: "最近某监管政策相比旧口径有什么变化？"
+    required_behaviors:
+      - "attempt_regulator_source"
+      - "read_documents"
+      - "extract_evidence_spans"
+      - "show_diagnostics"
+      - "show_source_matrix"

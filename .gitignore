@@ -2,10 +2,13 @@ ir_search.env
 .env
 *.env
 accounts.json
+accounts.json.*.bak
 .pytest_cache/
 __pycache__/
 *.pyc
 work/pycache/
 work/
+output/
+outputs/
 .DS_Store
 docs/chat_backup_*.md

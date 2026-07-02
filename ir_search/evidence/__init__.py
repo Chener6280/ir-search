@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from .config import load_yaml
-from .models import EvidenceType, Hit, SourceTier
+from ir_search.config import load_yaml
+from ir_search.models import EvidenceType, Hit, SourceTier
+
+from .extractor import extract_evidence
+from .models import ClaimVerification, EvidenceSpan
+from .verifier import verify_claims
 
 
 def classify_hit(hit: Hit) -> Hit:
@@ -30,6 +34,11 @@ def classify_tier(url: str, source: str = "") -> SourceTier:
         "company_ir": SourceTier.COMPANY,
         "wechat_opencli": SourceTier.MEDIA,
         "manual_wechat": SourceTier.MEDIA,
+        "zsxq": SourceTier.UGC,
+        "longbridge": SourceTier.MEDIA,
+        "tushare": SourceTier.MEDIA,
+        "dajiala": SourceTier.MEDIA,
+        "market_public": SourceTier.MEDIA,
     }
     return source_map.get(source, SourceTier.MEDIA)
 
@@ -37,6 +46,8 @@ def classify_tier(url: str, source: str = "") -> SourceTier:
 def classify_evidence_type(hit: Hit) -> EvidenceType:
     if hit.evidence_type != EvidenceType.UNKNOWN:
         return hit.evidence_type
+    if hit.extra.get("evidence_type") == "search_result" or hit.extra.get("coverage_status") == "partial":
+        return EvidenceType.UNKNOWN
 
     domain = _domain(hit.url)
     text = f"{hit.title} {hit.snippet}".lower()
@@ -72,3 +83,14 @@ def _domain(url: str) -> str:
 
 def _any_contains(text: str, needles: list[str]) -> bool:
     return any(needle.lower() in text for needle in needles)
+
+
+__all__ = [
+    "ClaimVerification",
+    "EvidenceSpan",
+    "classify_evidence_type",
+    "classify_hit",
+    "classify_tier",
+    "extract_evidence",
+    "verify_claims",
+]
