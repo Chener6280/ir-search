@@ -138,9 +138,31 @@ def document_from_hit(hit: Hit, *, max_chars: int = 20000, fetch_errors: Optiona
     """Build a Document from a search hit when full fetching is unavailable or unnecessary."""
 
     if hit.source == "manual_wechat" or hit.extra.get("content"):
-        return document_from_wechat_hit(hit, max_chars=max_chars)
+        document = document_from_wechat_hit(hit, max_chars=max_chars)
+        evidence_type, classification_warnings = normalize_evidence_type_for_source(
+            source_tier=document.source_tier,
+            source=document.source,
+            url=document.url,
+            title=document.title,
+            content_type=document.content_type,
+            current_evidence_type=document.evidence_type,
+        )
+        document.evidence_type = evidence_type
+        document.warnings.extend(classification_warnings)
+        if fetch_errors:
+            document.warnings.extend(fetch_errors)
+        return document
     text = hit.snippet or hit.title
+    evidence_type, classification_warnings = normalize_evidence_type_for_source(
+        source_tier=hit.tier or SourceTier.MEDIA,
+        source=hit.source,
+        url=hit.url,
+        title=hit.title,
+        content_type="snippet",
+        current_evidence_type=hit.evidence_type,
+    )
     warnings = ["document built from search hit snippet; fetch full document for stronger evidence"]
+    warnings.extend(classification_warnings)
     if hit.extra.get("adapter_mode") == "mock":
         warnings.append("source hit came from mock adapter")
     if fetch_errors:
@@ -155,7 +177,7 @@ def document_from_hit(hit: Hit, *, max_chars: int = 20000, fetch_errors: Optiona
         title=hit.title,
         source=hit.source,
         source_tier=hit.tier or SourceTier.MEDIA,
-        evidence_type=hit.evidence_type if hit.evidence_type != EvidenceType.UNKNOWN else EvidenceType.UNKNOWN,
+        evidence_type=evidence_type,
         content_type="snippet",
         published_at=hit.published_at,
         fetched_at=utc_now(),
@@ -171,6 +193,63 @@ def document_from_hit(hit: Hit, *, max_chars: int = 20000, fetch_errors: Optiona
             "source_text_trust": "untrusted",
         },
     )
+
+
+def normalize_evidence_type_for_source(
+    *,
+    source_tier: SourceTier,
+    source: str,
+    url: str,
+    title: str,
+    content_type: str,
+    current_evidence_type: EvidenceType,
+) -> tuple[EvidenceType, list[str]]:
+    """Prevent secondary sources from masquerading as primary financial evidence."""
+
+    evidence_type = current_evidence_type or EvidenceType.UNKNOWN
+    warnings: list[str] = []
+    descriptor = f"{source} {url} {title} {content_type}".lower()
+    is_wechat = source in {"manual_wechat", "wechat_opencli", "dajiala"} or "mp.weixin.qq.com" in descriptor
+    is_media_domain = any(domain in descriptor for domain in MEDIA_DOMAINS)
+
+    if is_wechat:
+        if evidence_type in {EvidenceType.FINANCIAL_REPORT, EvidenceType.ANNOUNCEMENT, EvidenceType.POLICY_DOC}:
+            warnings.append(f"evidence_type downgraded from {evidence_type.value} to opinion for WeChat/social source")
+        return EvidenceType.OPINION if source_tier != SourceTier.UGC else EvidenceType.SOCIAL_POST, warnings
+
+    if source_tier == SourceTier.UGC:
+        if evidence_type == EvidenceType.FINANCIAL_REPORT:
+            warnings.append("evidence_type downgraded from financial_report to social_post for UGC source")
+        return EvidenceType.SOCIAL_POST, warnings
+
+    if source_tier == SourceTier.MEDIA or is_media_domain:
+        if evidence_type == EvidenceType.FINANCIAL_REPORT:
+            warnings.append("evidence_type downgraded from financial_report to news for media source")
+            return EvidenceType.NEWS, warnings
+        if evidence_type in {EvidenceType.UNKNOWN, EvidenceType.ANNOUNCEMENT}:
+            return EvidenceType.NEWS, warnings
+        return evidence_type, warnings
+
+    if source_tier == SourceTier.BROKER:
+        if evidence_type == EvidenceType.FINANCIAL_REPORT:
+            warnings.append("evidence_type downgraded from financial_report to broker_report for broker source")
+        return EvidenceType.BROKER_REPORT if evidence_type in {EvidenceType.UNKNOWN, EvidenceType.FINANCIAL_REPORT} else evidence_type, warnings
+
+    if source_tier == SourceTier.REGULATOR:
+        if _has_any(descriptor, POLICY_TERMS):
+            return EvidenceType.POLICY_DOC, warnings
+        if evidence_type == EvidenceType.UNKNOWN:
+            return EvidenceType.ANNOUNCEMENT, warnings
+        return evidence_type, warnings
+
+    if source_tier in {SourceTier.COMPANY, SourceTier.EXCHANGE_FILING}:
+        if _has_any(descriptor, REPORT_TERMS):
+            return EvidenceType.FINANCIAL_REPORT, warnings
+        if _has_any(descriptor, ANNOUNCEMENT_TERMS) or evidence_type == EvidenceType.UNKNOWN:
+            return EvidenceType.ANNOUNCEMENT, warnings
+        return evidence_type, warnings
+
+    return evidence_type, warnings
 
 
 def _text_document(
@@ -246,3 +325,53 @@ def _attach_redirect_metadata(document: Document, *, requested_url: str, redirec
 
 
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+
+MEDIA_DOMAINS = {
+    "stcn.com",
+    "cnstock.com",
+    "cs.com.cn",
+    "21jingji.com",
+    "yicai.com",
+    "sina.com.cn",
+    "eastmoney.com",
+    "finance.qq.com",
+}
+
+REPORT_TERMS = {
+    "annual report",
+    "quarterly report",
+    "interim report",
+    "earnings release",
+    "financial statement",
+    "一季报",
+    "季报",
+    "半年报",
+    "年报",
+    "财报",
+    "年度报告",
+    "季度报告",
+}
+
+ANNOUNCEMENT_TERMS = {
+    "announcement",
+    "disclosure",
+    "公告",
+    "披露",
+    "临时公告",
+}
+
+POLICY_TERMS = {
+    "policy",
+    "regulation",
+    "notice",
+    "guideline",
+    "政策",
+    "监管",
+    "通知",
+    "办法",
+    "规则",
+}
+
+
+def _has_any(text: str, needles: set[str]) -> bool:
+    return any(needle in text for needle in needles)

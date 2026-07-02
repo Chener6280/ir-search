@@ -1,0 +1,54 @@
+cases:
+  - id: test_01_source_health
+    mode: agent
+    category: source_health
+    requires_mcp: true
+    question: "请调用 ir_search.source_health，并说明哪些源是 live、mock、placeholder 或 unavailable。"
+    required_tool_sequence:
+      - ir_search.source_health
+    required_output_sections:
+      - 检索状态
+      - 未验证事项
+    assertions:
+      - no_secret_leak
+      - source_health_not_actual_evidence
+      - placeholder_disclosed
+      - reviewer_rating_present
+
+  - id: test_02_ai_optical_module_demand
+    mode: agent
+    category: current_info
+    requires_mcp: true
+    question: "请分析最近 AI 光模块海外需求的公开证据信号。"
+    required_tool_sequence:
+      - ir_search.source_health
+      - ir_search.deep_research
+    required_output_sections:
+      - 检索状态
+      - 核心结论
+      - 证据表
+      - 未验证事项
+    assertions:
+      - no_raw_json
+      - no_secret_leak
+      - claim_status_present
+      - placeholder_not_evidence
+      - official_confirmation_requires_official_document
+      - freshness_caveat_present
+      - run_id_present
+
+  - id: test_14_verify_claims
+    mode: agent
+    category: claim_verification
+    requires_mcp: true
+    question: "请核验以下三条说法，并明确 supported / mixed / insufficient_evidence / contradicted。"
+    required_tool_sequence:
+      - ir_search.verify_claims
+    required_output_sections:
+      - 检索状态
+      - 证据表
+    assertions:
+      - no_secret_leak
+      - claim_status_present
+      - verify_claims_called
+      - reviewer_rating_present

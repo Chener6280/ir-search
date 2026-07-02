@@ -11,7 +11,6 @@ REQUIRED_FILES = [
     "README.md",
     ".cursorignore",
     ".cursorindexingignore",
-    ".cursor/mcp.json",
     ".cursor/mcp.json.template",
     ".cursor/rules/00-research-defaults.mdc",
     ".cursor/rules/10-finance-research-style.mdc",
@@ -92,6 +91,8 @@ def collect_validation_issues(root: Path, *, strict: bool = False) -> tuple[list
 
 
 def _validate_mcp(root: Path, errors: list[str], warnings: list[str]) -> None:
+    if not (root / ".cursor/mcp.json").exists():
+        warnings.append("Missing .cursor/mcp.json; bootstrap renders this file for generated workspaces.")
     for rel in [".cursor/mcp.json.template", ".cursor/mcp.json"]:
         path = root / rel
         if not path.exists():
@@ -200,14 +201,30 @@ def _validate_ignore_files(root: Path, errors: list[str]) -> None:
         path = root / rel
         if not path.exists():
             continue
-        lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        text = path.read_text(encoding="utf-8")
+        lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        if len(text) > 120 and text.count("\n") < 4:
+            errors.append(f"{rel} appears single-line; active rules may be swallowed by comments")
         if not lines:
             errors.append(f"{rel} must contain active ignore rules")
             continue
         if lines[0] != "/*":
             errors.append(f"{rel} must use default deny mode")
         if rel == ".cursorindexingignore":
-            required_rules = ["!/outputs/", "!/outputs/**", "!/scripts/", "!/scripts/**", "/outputs/raw/", "/outputs/tmp/"]
+            required_rules = [
+                "!/outputs/reports/",
+                "!/outputs/reports/**",
+                "!/outputs/memos/",
+                "!/outputs/memos/**",
+                "!/outputs/source_tables/",
+                "!/outputs/source_tables/**",
+                "!/scripts/",
+                "!/scripts/**",
+                "/outputs/raw/",
+                "/outputs/raw/**",
+                "/outputs/tmp/",
+                "/outputs/tmp/**",
+            ]
             for rule in required_rules:
                 if rule not in lines:
                     errors.append(f"{rel} missing indexing rule: {rule}")

@@ -74,6 +74,7 @@ def extract_evidence(
                     "adapter_mode": document.extra.get("adapter_mode"),
                     "content_type": document.content_type,
                     "document_warnings": list(document.warnings),
+                    "freshness_bucket": freshness_bucket(document.published_at),
                     "score_breakdown": breakdown,
                 },
             )
@@ -164,6 +165,25 @@ def freshness_bonus(published_at: Optional[datetime]) -> float:
     if days <= 90:
         return 0.02
     return 0.0
+
+
+def freshness_bucket(published_at: Optional[datetime], *, now: Optional[datetime] = None) -> str:
+    """Classify source recency for current-information evidence gating."""
+
+    if not published_at:
+        return "missing_date"
+    dt = published_at
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    anchor = now or datetime.now(timezone.utc)
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=timezone.utc)
+    days = max(0, (anchor.astimezone(timezone.utc) - dt.astimezone(timezone.utc)).days)
+    if days <= 30:
+        return "recent_30d"
+    if days <= 90:
+        return "recent_90d"
+    return "historical"
 
 
 def terms_for_text(text: str) -> set[str]:

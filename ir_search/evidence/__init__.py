@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from ir_search.config import load_yaml
 from ir_search.models import EvidenceType, Hit, SourceTier
 
-from .extractor import extract_evidence
+from .extractor import extract_evidence, freshness_bucket
 from .models import ClaimVerification, EvidenceSpan
 from .verifier import verify_claims
 
@@ -92,5 +92,6 @@ __all__ = [
     "classify_hit",
     "classify_tier",
     "extract_evidence",
+    "freshness_bucket",
     "verify_claims",
 ]

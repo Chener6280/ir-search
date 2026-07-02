@@ -22,7 +22,18 @@ def test_cursorindexingignore_indexes_outputs_and_scripts_but_excludes_raw_tmp()
     rules = _active_rules(TEMPLATE_ROOT / ".cursorindexingignore")
 
     assert rules[0] == "/*"
-    for rule in ["!/docs/", "!/docs/**", "!/outputs/", "!/outputs/**", "!/scripts/", "!/scripts/**"]:
+    for rule in [
+        "!/docs/",
+        "!/docs/**",
+        "!/outputs/reports/",
+        "!/outputs/reports/**",
+        "!/outputs/memos/",
+        "!/outputs/memos/**",
+        "!/outputs/source_tables/",
+        "!/outputs/source_tables/**",
+        "!/scripts/",
+        "!/scripts/**",
+    ]:
         assert rule in rules
     for rule in ["/outputs/raw/", "/outputs/raw/**", "/outputs/tmp/", "/outputs/tmp/**"]:
         assert rule in rules

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from ir_search.documents import document_from_hit, fetch_document
+from ir_search.documents.fetcher import normalize_evidence_type_for_source
 from ir_search.documents.models import Document
 from ir_search.evidence import extract_evidence, verify_claims
 from ir_search.evidence.models import ClaimVerification, EvidenceSpan
@@ -36,7 +37,6 @@ def deep_research(
 ) -> ResearchRun:
     """Run bounded search, fetch, evidence extraction, and claim verification."""
 
-    del language, output_style
     started = datetime.now(timezone.utc)
     run_id = _run_id(question, started)
     max_rounds = max(1, min(max_rounds, 3))
@@ -55,8 +55,14 @@ def deep_research(
 
     search_log: list[dict] = []
     diagnostics: list[dict] = source_health_diagnostics(plan.required_sources, health)
+    reserved_parameters = {
+        "language": {"value": language, "status": "reserved_not_applied"},
+        "output_style": {"value": output_style, "status": "reserved_not_applied"},
+    }
+    diagnostics.append({"source": "deep_research", "ok": True, "reserved_parameters": reserved_parameters})
     hits_by_url: dict[str, Hit] = {}
-    for query_text in plan.queries[:max_searches]:
+    initial_search_budget = max_searches - 1 if plan.required_sources and max_searches > 1 else max_searches
+    for query_text in plan.queries[:initial_search_budget]:
         q = Query(
             text=query_text,
             count=max_documents,
@@ -72,6 +78,8 @@ def deep_research(
                 "query": query_text,
                 "n_hits": len(result.hits),
                 "sources": [status.source for status in result.diagnostics],
+                "hit_sources": sorted({hit.source for hit in result.hits}),
+                "official_only": False,
             }
         )
         diagnostics.extend(result.to_dict()["diagnostics"])
@@ -80,6 +88,18 @@ def deep_research(
             hits_by_url.setdefault(key, hit)
         if len(hits_by_url) >= max_documents:
             break
+
+    official_second_pass = maybe_run_official_second_pass(
+        question=question,
+        freshness=freshness,
+        max_documents=max_documents,
+        max_searches=max_searches,
+        search_log=search_log,
+        hits_by_url=hits_by_url,
+        required_sources=plan.required_sources,
+        intent=plan.intent,
+        search_fn=search_fn,
+    )
 
     selected_hits = list(hits_by_url.values())[:max_documents]
     documents = [fetch_document_for_hit(hit) for hit in selected_hits]
@@ -98,9 +118,26 @@ def deep_research(
         max_rounds=max_rounds - 1,
         required_source_tiers=[tier for tier in tiers if tier is not None] or None,
     )
+    apply_freshness_requirements(question, claim_ledger)
     source_matrix = build_source_matrix(claim_ledger)
+    source_capabilities = build_source_capabilities(plan.required_sources, health)
+    actual_evidence_by_source = build_actual_evidence_by_source(search_log, documents, evidence_spans, claim_ledger)
+    official_source_attempts = build_official_source_attempts(
+        plan.required_sources,
+        source_capabilities,
+        actual_evidence_by_source,
+    )
+    official_gap_report = build_official_gap_report(
+        question,
+        plan.required_sources,
+        source_capabilities,
+        actual_evidence_by_source,
+        claim_ledger,
+    )
     unverified_items = build_unverified_items(claim_ledger, diagnostics, documents)
     unverified_items.extend(plan.warnings)
+    if official_gap_report.get("verdict") == "insufficient_primary_source_evidence":
+        unverified_items.append("官方一手证据不足：请按 official_gap_report 的 manual_checklist 继续核验。")
     answer = synthesize_answer(
         run_id=run_id,
         question=question,
@@ -110,6 +147,7 @@ def deep_research(
         source_matrix=source_matrix,
         diagnostics=diagnostics,
         unverified_items=unverified_items,
+        official_gap_report=official_gap_report,
     )
     return ResearchRun(
         run_id=run_id,
@@ -130,6 +168,12 @@ def deep_research(
             "max_documents": max_documents,
             "source_text_trust": "untrusted",
             "source_health": health,
+            "source_capabilities": source_capabilities,
+            "actual_evidence_by_source": actual_evidence_by_source,
+            "official_source_attempts": official_source_attempts,
+            "official_gap_report": official_gap_report,
+            "official_second_pass": official_second_pass,
+            "reserved_parameters": reserved_parameters,
             "claim_candidates": claim_candidates,
             "plan_warnings": plan.warnings,
         },
@@ -145,11 +189,71 @@ def fetch_document_for_hit(hit: Hit) -> Document:
     fetched.title = fetched.title or hit.title
     fetched.source = hit.source
     fetched.source_tier = hit.tier
-    fetched.evidence_type = hit.evidence_type
+    evidence_type, warnings = normalize_evidence_type_for_source(
+        source_tier=hit.tier,
+        source=hit.source,
+        url=fetched.canonical_url or fetched.url or hit.url,
+        title=fetched.title or hit.title,
+        content_type=fetched.content_type,
+        current_evidence_type=hit.evidence_type,
+    )
+    fetched.evidence_type = evidence_type
+    fetched.warnings.extend(warnings)
     fetched.published_at = fetched.published_at or hit.published_at
     fetched.extra["adapter_mode"] = hit.extra.get("adapter_mode")
     fetched.extra["is_fallback_result"] = hit.extra.get("is_fallback_result", False)
     return fetched
+
+
+def maybe_run_official_second_pass(
+    *,
+    question: str,
+    freshness: str,
+    max_documents: int,
+    max_searches: int,
+    search_log: list[dict],
+    hits_by_url: dict[str, Hit],
+    required_sources: list[str],
+    intent: Optional[str],
+    search_fn: Callable[[Query], SearchResult],
+) -> dict:
+    if not required_sources:
+        return {"triggered": False, "reason": "no_required_official_sources"}
+    if len(search_log) >= max_searches:
+        return {"triggered": False, "reason": "search_budget_exhausted"}
+    if any(hit.tier >= SourceTier.COMPANY for hit in hits_by_url.values()):
+        return {"triggered": False, "reason": "official_hit_already_present"}
+
+    query_text = f"{question} 官方公告 交易所 监管 披露"
+    q = Query(
+        text=query_text,
+        count=max_documents,
+        window=TimeWindow(raw=freshness),
+        intent=_intent_from_string(intent),
+        sources=required_sources,
+        allow_fallback=True,
+        fallback_policy=FallbackPolicy.QUOTA_ONLY,
+        fallback_on_empty=False,
+    )
+    result = search_fn(q)
+    search_log.append(
+        {
+            "query": query_text,
+            "n_hits": len(result.hits),
+            "sources": [status.source for status in result.diagnostics],
+            "hit_sources": sorted({hit.source for hit in result.hits}),
+            "official_only": True,
+        }
+    )
+    for hit in result.hits:
+        key = hit.canonical_url or hit.url
+        hits_by_url.setdefault(key, hit)
+    return {
+        "triggered": True,
+        "query": query_text,
+        "required_sources": required_sources,
+        "n_hits": len(result.hits),
+    }
 
 
 def draft_claim_candidates(question: str, intent: str, evidence_spans: list[EvidenceSpan]) -> list[dict]:
@@ -242,6 +346,173 @@ def build_unverified_items(claim_ledger: list[ClaimVerification], diagnostics: l
     if authority_unavailable:
         items.append("部分权威源当前为 mock/placeholder，未能取得真实官方全文。")
     return items
+
+
+def build_source_capabilities(required_sources: list[str], health: dict) -> dict[str, dict]:
+    capabilities: dict[str, dict] = {}
+    sources = health.get("sources", {}) if isinstance(health, dict) else {}
+    for source in sorted(set(required_sources) | set(sources)):
+        status = sources.get(source, {})
+        capabilities[source] = {
+            "adapter_mode": status.get("adapter_mode", "unknown"),
+            "ok": bool(status.get("ok")),
+            "notes": list(status.get("notes") or []),
+        }
+    return capabilities
+
+
+def build_actual_evidence_by_source(
+    search_log: list[dict],
+    documents: list[Document],
+    evidence_spans: list[EvidenceSpan],
+    claim_ledger: list[ClaimVerification],
+) -> dict[str, dict]:
+    searched_sources = {
+        source
+        for item in search_log
+        for source in (item.get("sources") or []) + (item.get("hit_sources") or [])
+        if source
+    }
+    sources = searched_sources | {document.source for document in documents} | {span.source for span in evidence_spans}
+    supporting_claims_by_source: dict[str, set[str]] = {}
+    for entry in claim_ledger:
+        for span in entry.supporting_spans:
+            supporting_claims_by_source.setdefault(span.source, set()).add(entry.claim)
+
+    matrix: dict[str, dict] = {}
+    for source in sorted(sources):
+        source_documents = [document for document in documents if document.source == source]
+        fetched_documents = [
+            document
+            for document in source_documents
+            if document.text.strip()
+            and not document.errors
+            and document.content_type != "snippet"
+            and document.extraction_method != "search_hit_snippet_fallback"
+        ]
+        source_spans = [span for span in evidence_spans if span.source == source]
+        matrix[source] = {
+            "searched": source in searched_sources,
+            "documents_seen": len(source_documents),
+            "fetched_documents": len(fetched_documents),
+            "evidence_spans": len(source_spans),
+            "supporting_claims": sorted(supporting_claims_by_source.get(source, set())),
+        }
+    return matrix
+
+
+def build_official_source_attempts(
+    required_sources: list[str],
+    source_capabilities: dict[str, dict],
+    actual_evidence_by_source: dict[str, dict],
+) -> list[dict]:
+    attempts: list[dict] = []
+    for source in required_sources:
+        capability = source_capabilities.get(source, {})
+        actual = actual_evidence_by_source.get(source, {})
+        fetched_documents = int(actual.get("fetched_documents", 0))
+        evidence_spans = int(actual.get("evidence_spans", 0))
+        searched = bool(actual.get("searched"))
+        if evidence_spans:
+            status = "evidence_retrieved"
+        elif fetched_documents:
+            status = "document_fetched_no_evidence_spans"
+        elif searched:
+            status = "searched_no_evidence_retrieved"
+        elif capability.get("adapter_mode") in {"mock", "placeholder", "unknown"} or not capability.get("ok", False):
+            status = "source_unavailable_or_placeholder"
+        else:
+            status = "not_attempted"
+        attempts.append(
+            {
+                "source": source,
+                "capability": capability.get("adapter_mode", "unknown"),
+                "searched": searched,
+                "fetched_documents": fetched_documents,
+                "evidence_spans": evidence_spans,
+                "status": status,
+            }
+        )
+    return attempts
+
+
+def build_official_gap_report(
+    question: str,
+    required_sources: list[str],
+    source_capabilities: dict,
+    actual_evidence_by_source: dict,
+    claim_ledger: list[ClaimVerification],
+) -> dict:
+    official_sources_required = required_sources or default_official_sources_for_question(question)
+    official_sources_with_evidence = [
+        source
+        for source in official_sources_required
+        if actual_evidence_by_source.get(source, {}).get("evidence_spans", 0) > 0
+    ]
+    official_supported_claims = [
+        entry.claim
+        for entry in claim_ledger
+        if any(span.source_tier >= SourceTier.COMPANY for span in entry.supporting_spans)
+    ]
+    if official_sources_with_evidence and official_supported_claims:
+        verdict = "primary_source_evidence_present"
+    else:
+        verdict = "insufficient_primary_source_evidence"
+    return {
+        "verdict": verdict,
+        "official_sources_required": official_sources_required,
+        "source_capability": {source: source_capabilities.get(source, {}) for source in official_sources_required},
+        "actual_retrieval": {source: actual_evidence_by_source.get(source, {}) for source in official_sources_required},
+        "official_sources_with_evidence": official_sources_with_evidence,
+        "official_supported_claims": official_supported_claims,
+        "manual_checklist": manual_checklist_for_official_gap(question, official_sources_required),
+    }
+
+
+def default_official_sources_for_question(question: str) -> list[str]:
+    if any(needle in question for needle in ["财报", "季报", "年报", "公告", "公司", "业绩"]):
+        return ["cninfo", "company_ir", "sse", "szse", "hkex", "sec"]
+    if any(needle in question for needle in ["政策", "监管", "通知", "办法", "规则"]):
+        return ["regulator_sites"]
+    return ["cninfo", "company_ir", "sse", "szse", "hkex", "sec"]
+
+
+def manual_checklist_for_official_gap(question: str, official_sources_required: list[str]) -> list[str]:
+    checklist = []
+    if any(source in official_sources_required for source in ["cninfo", "sse", "szse", "hkex", "sec"]):
+        checklist.extend(["cninfo announcements", "exchange filings"])
+    if "company_ir" in official_sources_required:
+        checklist.append("company IR")
+    if "regulator_sites" in official_sources_required:
+        checklist.append("regulator or ministry policy text")
+    if any(term in question.lower() for term in ["overseas", "海外", "cloud", "ai"]):
+        checklist.append("overseas cloud vendor 10-K / earnings call")
+    return checklist or ["official filings", "company IR", "regulator disclosures"]
+
+
+def apply_freshness_requirements(question: str, claim_ledger: list[ClaimVerification]) -> None:
+    if not is_current_information_question(question):
+        return
+    for entry in claim_ledger:
+        spans = entry.supporting_spans
+        if not spans:
+            if "current-information question has no supporting evidence spans" not in entry.caveats:
+                entry.caveats.append("current-information question has no supporting evidence spans")
+            continue
+        buckets = {span.extra.get("freshness_bucket", "missing_date") for span in spans}
+        if buckets <= {"historical", "missing_date"}:
+            if entry.status == "supported":
+                entry.status = "mixed"
+                entry.confidence = min(entry.confidence, 0.62)
+            entry.caveats.append("current claim lacks recent_30d or recent_90d evidence; historical/missing_date evidence is background only")
+
+
+def is_current_information_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(
+        needle in question or needle in lowered
+        for needle in ["最近", "最新", "近30天", "近 30 天", "本月", "本季度", "2026", "latest", "recent"]
+    )
 
 
 def source_health_diagnostics(required_sources: list[str], health: dict) -> list[dict]:

@@ -1,14 +1,14 @@
 # Default deny indexing.
 /*
 
-# Index Cursor workspace configuration and research policy.
+# Index only research-relevant files.
 !/.cursor/
 !/.cursor/**
 !/AGENTS.md
 !/README.md
 !/.env.example
 
-# Index reusable docs, prompts, notes, source summaries, selected outputs, and local validation scripts.
+# Index reusable docs, prompts, notes, and curated source material.
 !/docs/
 !/docs/**
 !/prompts/
@@ -17,12 +17,20 @@
 !/notes/**
 !/sources/
 !/sources/**
-!/outputs/
-!/outputs/**
+
+# Index curated research outputs for follow-up analysis.
+!/outputs/reports/
+!/outputs/reports/**
+!/outputs/memos/
+!/outputs/memos/**
+!/outputs/source_tables/
+!/outputs/source_tables/**
+
+# Index workspace scripts for troubleshooting.
 !/scripts/
 !/scripts/**
 
-# Keep bulky or raw generated artifacts out of index.
+# Do not index raw MCP payloads or temporary files.
 /outputs/raw/
 /outputs/raw/**
 /outputs/tmp/
