@@ -1,6 +1,6 @@
 # ir_search
 
-面向投研工作的确定性搜索内核。核心入口是 `ir_search.search()`，返回 `SearchResult(query, hits, diagnostics)`。
+面向投研工作的确定性搜索与证据编排内核。核心入口是 `ir_search.search()`，返回 `SearchResult(query, hits, diagnostics)`；`ir_search.research.deep_research()` 当前定位为 evidence orchestration engine v0，不是完整 GPT/Claude 网页版 Deep Research clone。
 
 默认使用本地 mock adapter，便于无 API key 跑通管线和测试。设置 `IR_SEARCH_LIVE=1` 后，Bocha / Exa adapter 会读取 `BOCHA_API_KEY` / `EXA_API_KEY` 调真实接口。所有 diagnostics 都会带 `adapter_mode`，用于区分 `live` / `mock` / `unknown`。
 
@@ -68,7 +68,9 @@ python -m ir_search.source_health
 python -m ir_search.deep_research "中际旭创 最近一季报 海外 AI 光模块需求"
 ```
 
-`deep_research` 会保留 search diagnostics，尝试读取全文并抽取 `EvidenceSpan`，再生成 `claim_ledger` 和 `source_matrix`。如果来源是 mock / placeholder / fallback，或只用了搜索摘要 fallback，会在 warnings、diagnostics 和 memo 中显式暴露。网页、PDF、微信文章和搜索摘要一律视为 untrusted source text。
+建议 current-info research 先调用 `source_health`，再调用 `deep_research`。`deep_research` 会保留 search diagnostics，尝试读取全文并抽取 `EvidenceSpan`，再生成 `claim_ledger` 和 `source_matrix`。最终综合行文仍主要由宿主 LLM（Cursor/Codex）完成；只有 `supported` claim 才能写成事实，`mixed` / `insufficient_evidence` 必须显式标注。如果来源是 mock / placeholder / fallback，或只用了搜索摘要 fallback，会在 warnings、diagnostics 和 memo 中显式暴露。网页、PDF、微信文章和搜索摘要一律视为 untrusted source text。
+
+如果要把 Cursor 配成独立投研问答工作台，请使用 Cursor research workspace template 和 bootstrap 脚本生成单独的 research workspace，避免代码仓库上下文污染。详见 [docs/cursor_research_workspace_setup.md](docs/cursor_research_workspace_setup.md)。
 
 配置校验：
 
@@ -164,7 +166,7 @@ gzh_fetch -> 极致了 API + wewe-rss + 通用 RSS 三 provider cross-check
 手工库默认读取当前目录下的 `manual_wechat_articles/`，也可以显式设置：
 
 ```bash
-export MANUAL_WECHAT_ROOT="/Users/chen/macro-strategy/manual_wechat_articles"
+export MANUAL_WECHAT_ROOT="/ABSOLUTE/PATH/TO/manual_wechat_articles"
 ```
 
 支持 `.md` / `.json` / `.jsonl`。Markdown 推荐格式：
@@ -182,7 +184,7 @@ account_name: "一凌策略研究"
 如果要先用公开网页搜索找候选文章，可把搜狗微信候选脚本接到 OpenCLI 命令位：
 
 ```bash
-export WECHAT_OPENCLI_COMMAND="python3 /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/tools/wechat_search_sogou.py --json"
+export WECHAT_OPENCLI_COMMAND="python3 /ABSOLUTE/PATH/TO/ir-search/tools/wechat_search_sogou.py --json"
 ```
 
 搜狗微信可能触发验证码或返回滞后结果，因此它只适合作为候选发现；关键投研文章建议落到 `manual_wechat` 手工库。更多配置见 [docs/wechat_opencli_setup.md](docs/wechat_opencli_setup.md)。
@@ -192,7 +194,7 @@ export WECHAT_OPENCLI_COMMAND="python3 /Users/chen/Documents/Codex/2026-06-08/fi
 ```bash
 cp configs/accounts.example.json accounts.json
 export DAJIALA_KEY="..."
-export WECHAT_OPENCLI_COMMAND="python3 /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/tools/gzh_fetch.py --accounts /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/accounts.json --opencli --providers dajiala,wewe,rss --default-days 14"
+export WECHAT_OPENCLI_COMMAND="python3 /ABSOLUTE/PATH/TO/ir-search/tools/gzh_fetch.py --accounts /ABSOLUTE/PATH/TO/ir-search/accounts.json --opencli --providers dajiala,wewe,rss --default-days 14"
 python3 -m ir_search "一凌策略研究 最新文章" --source wechat --count 5
 ```
 
@@ -206,7 +208,7 @@ python3 -m ir_search "一凌策略研究 最新文章" --source wechat --count 5
 
 ```bash
 export DAJIALA_KEY="..."
-export DAJIALA_ACCOUNTS_PATH="/Users/chen/Documents/ir_search/accounts.json"
+export DAJIALA_ACCOUNTS_PATH="/ABSOLUTE/PATH/TO/ir-search/accounts.json"
 
 # 可选：默认回看 14 天；需要正文兜底时打开。
 export DAJIALA_DEFAULT_DAYS=14
@@ -238,7 +240,7 @@ zsxq-cli group +list --json
 ```bash
 export ZSXQ_GROUP_IDS="12345,67890"
 # 如果 zsxq-cli 不在当前 shell PATH，可显式指定：
-export ZSXQ_CLI_COMMAND="/Users/chen/.hermes/node/bin/zsxq-cli"
+export ZSXQ_CLI_COMMAND="/ABSOLUTE/PATH/TO/zsxq-cli"
 ```
 
 显式查询：

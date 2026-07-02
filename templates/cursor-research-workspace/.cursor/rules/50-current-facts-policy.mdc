@@ -1,0 +1,25 @@
+---
+description: Current facts and recency policy
+alwaysApply: true
+---
+
+# Current Facts Policy
+
+Current or time-sensitive claims include:
+
+- latest company earnings;
+- company announcements and filings;
+- market prices and market-moving news;
+- policy or regulatory changes;
+- macroeconomic data;
+- broker reports and WeChat articles;
+- industry-chain updates;
+- anything likely to have changed after the model's knowledge cutoff.
+
+For these questions:
+
+1. do not answer from model memory alone;
+2. call ir_search.source_health first when available;
+3. call ir_search.deep_research or the search/fetch/extract/verify sequence;
+4. disclose freshness, source status, and limitations;
+5. if external verification is unavailable, provide only a framework and verification checklist.

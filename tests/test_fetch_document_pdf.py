@@ -3,7 +3,7 @@ from ir_search.documents import fetch_document
 
 def test_fetch_document_pdf_records_extraction_errors_or_warnings(monkeypatch):
     raw = b"%PDF-1.4\n1 0 obj <<>>\nendobj\ntrailer <<>>\n%%EOF"
-    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: _response(raw, "application/pdf"))
+    monkeypatch.setattr("ir_search.documents.fetcher._open_once", lambda opener, req, timeout: _response(raw, "application/pdf"))
 
     document = fetch_document("https://example.com/report.pdf")
 

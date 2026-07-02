@@ -17,7 +17,7 @@ def test_fetch_document_extracts_html_fixture(monkeypatch):
         </article>
       </body>
     </html>"""
-    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: _response(html.encode("utf-8"), "text/html"))
+    monkeypatch.setattr("ir_search.documents.fetcher._open_once", lambda opener, req, timeout: _response(html.encode("utf-8"), "text/html"))
 
     document = fetch_document("https://example.com/article.html")
 

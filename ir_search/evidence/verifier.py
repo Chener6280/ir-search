@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from urllib.parse import urlparse
 from typing import Callable, Optional
 
 from ir_search.models import Query, SearchResult, SourceTier
@@ -42,6 +43,8 @@ def verify_claims(
         support_spans = [span for _, span in supporting[:5]]
         contradiction_spans = [span for _, span in contradicting[:5]]
         caveats: list[str] = []
+        if any(has_risk_caveat(span.text) for span in support_spans + contradiction_spans):
+            caveats.append("evidence includes risk or uncertainty caveats")
         status = "insufficient_evidence"
         confidence = 0.0
 
@@ -66,10 +69,10 @@ def verify_claims(
                 caveats.append("no evidence span matched the required source tiers")
             else:
                 status = "supported"
-            confidence = min(0.92, supporting[0][0])
+            confidence = confidence_for_evidence(support_spans, contradiction_spans, best_score=supporting[0][0])
         elif contradiction_spans:
             status = "contradicted"
-            confidence = min(0.88, contradicting[0][0])
+            confidence = min(0.88, confidence_for_evidence([], contradiction_spans, best_score=contradicting[0][0]))
         else:
             caveats.append("no extracted evidence span had meaningful term overlap with this claim")
 
@@ -96,15 +99,47 @@ def text_overlap_score(left_terms: set[str], right_terms: set[str]) -> float:
 
 
 def looks_contradictory(claim: str, evidence_text: str) -> bool:
-    claim_negative = _has_any(claim, NEGATIVE_TERMS)
-    evidence_negative = _has_any(evidence_text, NEGATIVE_TERMS)
+    if _has_any(evidence_text, EXPLICIT_REFUTATION_TERMS):
+        return True
     claim_positive = _has_any(claim, POSITIVE_TERMS)
-    evidence_positive = _has_any(evidence_text, POSITIVE_TERMS)
-    if claim_positive and evidence_negative:
+    evidence_directional_negative = _has_any(evidence_text, DIRECTIONAL_NEGATIVE_TERMS)
+    return claim_positive and evidence_directional_negative and shares_metric_or_entity(claim, evidence_text)
+
+
+def has_risk_caveat(text: str) -> bool:
+    return _has_any(text, RISK_CAVEAT_TERMS)
+
+
+def shares_metric_or_entity(claim: str, evidence_text: str) -> bool:
+    claim_lower = claim.lower()
+    evidence_lower = evidence_text.lower()
+    if any(term in claim_lower and term in evidence_lower for term in SHARED_METRIC_TERMS):
         return True
-    if claim_negative and evidence_positive:
-        return True
-    return _has_any(evidence_text, EXPLICIT_REFUTATION_TERMS)
+    claim_terms = _important_overlap_terms(terms_for_text(claim))
+    evidence_terms = _important_overlap_terms(terms_for_text(evidence_text))
+    return bool(claim_terms & evidence_terms)
+
+
+def confidence_for_evidence(
+    supporting_spans: list[EvidenceSpan],
+    contradicting_spans: list[EvidenceSpan],
+    *,
+    best_score: float,
+) -> float:
+    spans = supporting_spans or contradicting_spans
+    domains = {_domain(span.url) or span.source for span in spans}
+    has_official = any(span.source_tier >= SourceTier.EXCHANGE_FILING for span in spans)
+    has_company_or_exchange = any(span.source_tier in {SourceTier.COMPANY, SourceTier.EXCHANGE_FILING} for span in spans)
+    has_only_snippet = bool(spans) and all(span.extra.get("content_type") == "snippet" for span in spans)
+    has_mock = any(span.extra.get("adapter_mode") in {"mock", "placeholder"} for span in spans)
+    confidence = min(best_score, 0.72)
+    confidence += 0.05 * min(max(len(domains) - 1, 0), 3)
+    confidence += 0.06 if has_official else 0.0
+    confidence += 0.04 if has_company_or_exchange else 0.0
+    confidence -= 0.10 if has_only_snippet else 0.0
+    confidence -= 0.15 if has_mock else 0.0
+    confidence -= 0.20 if contradicting_spans and supporting_spans else 0.0
+    return max(0.0, min(0.92, confidence))
 
 
 def verification_queries_for(claim: str, *, max_rounds: int) -> list[str]:
@@ -125,22 +160,55 @@ def _has_any(text: str, needles: set[str]) -> bool:
     return any(needle in lower or needle in text for needle in needles)
 
 
-NEGATIVE_TERMS = {
-    "未",
-    "不",
-    "无",
-    "否认",
+def _important_overlap_terms(terms: set[str]) -> set[str]:
+    return {
+        term
+        for term in terms
+        if len(term) >= 2
+        and term not in POSITIVE_TERMS
+        and term not in DIRECTIONAL_NEGATIVE_TERMS
+        and term not in RISK_CAVEAT_TERMS
+        and term not in WEAK_OVERLAP_TERMS
+    }
+
+
+def _domain(url: str) -> str:
+    return urlparse(url).netloc.lower().removeprefix("www.")
+
+
+DIRECTIONAL_NEGATIVE_TERMS = {
     "下滑",
     "下降",
     "减少",
-    "不及",
     "亏损",
-    "风险",
-    "not",
+    "低于预期",
+    "不及预期",
     "decline",
     "decrease",
-    "weak",
+    "weaker than expected",
+    "below expectation",
+}
+
+RISK_CAVEAT_TERMS = {
+    "风险",
+    "不确定性",
+    "压力",
     "risk",
+    "uncertainty",
+    "pressure",
+}
+
+EXPLICIT_REFUTATION_TERMS = {
+    "不属实",
+    "否认",
+    "未证实",
+    "未经证实",
+    "无证据",
+    "没有证据",
+    "not confirmed",
+    "unconfirmed",
+    "denied",
+    "no evidence",
 }
 
 POSITIVE_TERMS = {
@@ -159,11 +227,40 @@ POSITIVE_TERMS = {
     "confirmed",
 }
 
-EXPLICIT_REFUTATION_TERMS = {
-    "不属实",
-    "未证实",
-    "没有证据",
-    "not confirmed",
-    "no evidence",
-    "denied",
+SHARED_METRIC_TERMS = {
+    "收入",
+    "营收",
+    "订单",
+    "需求",
+    "利润",
+    "净利润",
+    "毛利率",
+    "现金流",
+    "业绩",
+    "产能",
+    "价格",
+    "成本",
+    "销量",
+    "revenue",
+    "order",
+    "demand",
+    "profit",
+    "margin",
+    "cash flow",
+}
+
+WEAK_OVERLAP_TERMS = {
+    "相关",
+    "方面",
+    "情况",
+    "影响",
+    "分析",
+    "认为",
+    "显示",
+    "可能",
+    "公司",
+    "业务",
+    "最新",
+    "recent",
+    "company",
 }

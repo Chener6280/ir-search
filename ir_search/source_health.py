@@ -29,7 +29,7 @@ def source_health() -> dict:
             root = manual_wechat_root()
             if not root.exists():
                 ok = False
-                notes.append(f"manual wechat directory not found: {root}")
+                notes.append("manual wechat directory not found; set MANUAL_WECHAT_ROOT")
         sources[name] = {
             "adapter_mode": mode,
             "ok": ok,

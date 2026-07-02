@@ -21,7 +21,7 @@ export WECHAT_OPENCLI_TIMEOUT=60
 Public-search candidate command:
 
 ```bash
-export WECHAT_OPENCLI_COMMAND="python3 /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/tools/wechat_search_sogou.py --json"
+export WECHAT_OPENCLI_COMMAND="python3 /ABSOLUTE/PATH/TO/ir-search/tools/wechat_search_sogou.py --json"
 ```
 
 This command searches public Sogou Weixin result pages and prints candidate articles in the expected JSON shape. It can be blocked by anti-spider verification and should not be treated as a fully reliable latest-article source.
@@ -54,7 +54,7 @@ Example command:
 
 ```bash
 export DAJIALA_KEY="..."
-export WECHAT_OPENCLI_COMMAND="python3 /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/tools/gzh_fetch.py --accounts /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/accounts.json --opencli --providers dajiala,wewe,rss --default-days 14"
+export WECHAT_OPENCLI_COMMAND="python3 /ABSOLUTE/PATH/TO/ir-search/tools/gzh_fetch.py --accounts /ABSOLUTE/PATH/TO/ir-search/accounts.json --opencli --providers dajiala,wewe,rss --default-days 14"
 ```
 
 Then run:
@@ -92,7 +92,7 @@ Check them against the 极致了 console docs; if they differ, update the consta
 For high-confidence investment research use, save important official-account articles locally and set:
 
 ```bash
-export MANUAL_WECHAT_ROOT="/Users/chen/macro-strategy/manual_wechat_articles"
+export MANUAL_WECHAT_ROOT="/ABSOLUTE/PATH/TO/manual_wechat_articles"
 ```
 
 The adapter reads `.md`, `.json`, and `.jsonl` files recursively.

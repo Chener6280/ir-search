@@ -17,7 +17,7 @@ Example:
 
 ```bash
 export DAJIALA_KEY="..."
-export WECHAT_OPENCLI_COMMAND="python3 /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/tools/gzh_fetch.py --accounts /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/accounts.json --opencli --providers dajiala,wewe,rss --default-days 30"
+export WECHAT_OPENCLI_COMMAND="python3 /ABSOLUTE/PATH/TO/ir-search/tools/gzh_fetch.py --accounts /ABSOLUTE/PATH/TO/ir-search/accounts.json --opencli --providers dajiala,wewe,rss --default-days 30"
 python3 -m ir_search "一凌策略研究 最新文章" --source wechat --count 2
 ```
 
@@ -118,7 +118,7 @@ source_errors        -> broken or unconfigured sources
 Recommended default command:
 
 ```bash
-export WECHAT_OPENCLI_COMMAND="python3 /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/tools/gzh_fetch.py --accounts /Users/chen/Documents/Codex/2026-06-08/files-mentioned-by-the-user-ir/accounts.json --opencli --providers dajiala,wewe,rss --default-days 30"
+export WECHAT_OPENCLI_COMMAND="python3 /ABSOLUTE/PATH/TO/ir-search/tools/gzh_fetch.py --accounts /ABSOLUTE/PATH/TO/ir-search/accounts.json --opencli --providers dajiala,wewe,rss --default-days 30"
 ```
 
 Recommended full-text diagnostic:

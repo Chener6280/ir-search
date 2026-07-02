@@ -1,0 +1,29 @@
+# Default deny indexing.
+/*
+
+# Index Cursor workspace configuration and research policy.
+!/.cursor/
+!/.cursor/**
+!/AGENTS.md
+!/README.md
+!/.env.example
+
+# Index reusable docs, prompts, notes, source summaries, selected outputs, and local validation scripts.
+!/docs/
+!/docs/**
+!/prompts/
+!/prompts/**
+!/notes/
+!/notes/**
+!/sources/
+!/sources/**
+!/outputs/
+!/outputs/**
+!/scripts/
+!/scripts/**
+
+# Keep bulky or raw generated artifacts out of index.
+/outputs/raw/
+/outputs/raw/**
+/outputs/tmp/
+/outputs/tmp/**

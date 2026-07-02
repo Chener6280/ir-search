@@ -10,6 +10,7 @@ from ir_search.evidence import extract_evidence, verify_claims
 from ir_search.evidence.models import ClaimVerification, EvidenceSpan
 from ir_search.kernel import search as default_search
 from ir_search.models import FallbackPolicy, Hit, Intent, Query, SearchResult, SourceTier, TimeWindow
+from ir_search.source_health import source_health as default_source_health
 
 from .planner import plan_research_queries
 from .schemas import ResearchRun
@@ -31,6 +32,7 @@ def deep_research(
     language: str = "zh",
     output_style: str = "finance_memo",
     search_fn: Callable[[Query], SearchResult] = default_search,
+    source_health_fn: Callable[[], dict] = default_source_health,
 ) -> ResearchRun:
     """Run bounded search, fetch, evidence extraction, and claim verification."""
 
@@ -40,6 +42,7 @@ def deep_research(
     max_rounds = max(1, min(max_rounds, 3))
     max_searches = max(1, min(max_searches, 8))
     max_documents = max(1, min(max_documents, 12))
+    health = source_health_fn()
     plan = plan_research_queries(
         question,
         intent=intent,
@@ -47,10 +50,11 @@ def deep_research(
         allow_media=allow_media,
         allow_wechat=allow_wechat,
         allow_broker=allow_broker,
+        source_health=health,
     )
 
     search_log: list[dict] = []
-    diagnostics: list[dict] = []
+    diagnostics: list[dict] = source_health_diagnostics(plan.required_sources, health)
     hits_by_url: dict[str, Hit] = {}
     for query_text in plan.queries[:max_searches]:
         q = Query(
@@ -85,7 +89,8 @@ def deep_research(
     evidence_spans.sort(key=lambda span: span.relevance_score, reverse=True)
     evidence_spans = evidence_spans[: max_documents * 3]
 
-    claims = draft_claim_candidates(question, evidence_spans)
+    claim_candidates = draft_claim_candidates(question, plan.intent or intent, evidence_spans)
+    claims = [candidate["claim"] for candidate in claim_candidates]
     tiers = [_tier_from_string(item) for item in required_source_tiers or []]
     claim_ledger = verify_claims(
         claims,
@@ -95,6 +100,7 @@ def deep_research(
     )
     source_matrix = build_source_matrix(claim_ledger)
     unverified_items = build_unverified_items(claim_ledger, diagnostics, documents)
+    unverified_items.extend(plan.warnings)
     answer = synthesize_answer(
         run_id=run_id,
         question=question,
@@ -123,6 +129,9 @@ def deep_research(
             "max_searches": max_searches,
             "max_documents": max_documents,
             "source_text_trust": "untrusted",
+            "source_health": health,
+            "claim_candidates": claim_candidates,
+            "plan_warnings": plan.warnings,
         },
     )
 
@@ -143,15 +152,56 @@ def fetch_document_for_hit(hit: Hit) -> Document:
     return fetched
 
 
-def draft_claim_candidates(question: str, evidence_spans: list[EvidenceSpan]) -> list[str]:
-    claims: list[str] = []
+def draft_claim_candidates(question: str, intent: str, evidence_spans: list[EvidenceSpan]) -> list[dict]:
+    candidates: list[dict] = [
+        {"claim": f"需要验证：{question}", "origin": "question", "intent": intent or "auto"}
+    ]
+    for claim in intent_claim_templates(question, intent):
+        candidates.append({"claim": claim, "origin": "template", "intent": intent or "auto"})
     for span in evidence_spans[:3]:
         sentence = _first_sentence(span.text)
-        if sentence and sentence not in claims:
-            claims.append(sentence)
-    if not claims:
-        claims.append(f"需要验证：{question}")
-    return claims[:5]
+        if sentence:
+            candidates.append({"claim": sentence, "origin": "evidence", "intent": intent or "auto"})
+
+    deduped: list[dict] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate["claim"] in seen:
+            continue
+        seen.add(candidate["claim"])
+        deduped.append(candidate)
+    return deduped[:6]
+
+
+def intent_claim_templates(question: str, intent: str) -> list[str]:
+    if intent == "earnings":
+        return [
+            f"最新业绩数据是否支持该判断：{question}",
+            "收入、订单、毛利率、产品结构是否提供支持证据",
+            "官方源是否可用并直接支持该判断",
+            "主要风险和替代解释是什么",
+        ]
+    if intent == "policy":
+        return [
+            "政策文本是否发生变化",
+            "变化影响哪些主体、执行时间和适用范围",
+            "与旧口径相比有什么差异",
+            "哪些内容仍需官方核验",
+        ]
+    if intent == "industry_chain":
+        return [
+            "需求侧是否有支持证据",
+            "价格或成本侧是否有支持证据",
+            "供给或产能侧是否有支持证据",
+            "媒体、券商或微信观点是否被官方或公司源确认",
+        ]
+    if intent == "wechat_crosscheck":
+        return [
+            "微信文章只作为候选来源",
+            "必须尝试官方、公司或媒体交叉验证",
+            "没有一级来源时最终状态不得是 fully supported",
+        ]
+    return []
 
 
 def build_source_matrix(claim_ledger: list[ClaimVerification]) -> list[dict]:
@@ -184,7 +234,42 @@ def build_unverified_items(claim_ledger: list[ClaimVerification], diagnostics: l
     snippet_docs = [document.title for document in documents if document.content_type == "snippet"]
     if snippet_docs:
         items.append("部分文档仅使用搜索摘要，尚未读取全文")
+    authority_unavailable = [
+        item.get("source")
+        for item in diagnostics
+        if item.get("source_health") and item.get("adapter_mode") in {"mock", "placeholder"}
+    ]
+    if authority_unavailable:
+        items.append("部分权威源当前为 mock/placeholder，未能取得真实官方全文。")
     return items
+
+
+def source_health_diagnostics(required_sources: list[str], health: dict) -> list[dict]:
+    rows: list[dict] = []
+    sources = health.get("sources", {})
+    for source in required_sources:
+        status = sources.get(source)
+        if not status:
+            rows.append(
+                {
+                    "source": source,
+                    "ok": False,
+                    "adapter_mode": "unknown",
+                    "error": "source_health missing source",
+                    "source_health": True,
+                }
+            )
+            continue
+        rows.append(
+            {
+                "source": source,
+                "ok": bool(status.get("ok")),
+                "adapter_mode": status.get("adapter_mode", "unknown"),
+                "error": "; ".join(status.get("notes") or []) or None,
+                "source_health": True,
+            }
+        )
+    return rows
 
 
 def _matrix_column(span: EvidenceSpan) -> str:

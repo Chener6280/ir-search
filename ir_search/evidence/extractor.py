@@ -33,15 +33,16 @@ def extract_evidence(
     if max_spans <= 0 or not document.text.strip() or not question.strip():
         return []
 
-    question_terms = terms_for_text(question)
+    question_terms = terms_for_query(question)
     if not question_terms:
         return []
 
     spans: list[EvidenceSpan] = []
     for chunk in chunk_document_text(document.text, max_span_chars=max_span_chars):
-        score = relevance_score(
+        chunk_terms = terms_for_text(chunk.text)
+        score, breakdown = relevance_score(
             question_terms,
-            terms_for_text(chunk.text),
+            chunk_terms,
             source_tier=document.source_tier,
             evidence_type=document.evidence_type,
             published_at=document.published_at,
@@ -73,6 +74,7 @@ def extract_evidence(
                     "adapter_mode": document.extra.get("adapter_mode"),
                     "content_type": document.content_type,
                     "document_warnings": list(document.warnings),
+                    "score_breakdown": breakdown,
                 },
             )
         )
@@ -118,13 +120,16 @@ def relevance_score(
     source_tier: SourceTier,
     evidence_type: EvidenceType,
     published_at: Optional[datetime],
-) -> float:
+) -> tuple[float, dict[str, float]]:
     if not question_terms or not chunk_terms:
-        return 0.0
+        return 0.0, _empty_breakdown()
     overlap = question_terms & chunk_terms
     if not overlap:
-        return 0.0
-    base = len(overlap) / max(3, len(question_terms))
+        return 0.0, _empty_breakdown()
+    proximity_score = min(0.45, len(overlap) / max(3, len(question_terms)))
+    entity_score = min(0.2, 0.08 * len(overlap & entity_like_terms(question_terms)))
+    metric_score = 0.12 if (question_terms & chunk_terms & METRIC_TERMS) else 0.0
+    time_score = 0.08 if (question_terms & chunk_terms & TIME_TERMS) else 0.0
     tier_bonus = min(0.16, source_tier.value * 0.025)
     evidence_bonus = {
         EvidenceType.FINANCIAL_REPORT: 0.1,
@@ -135,7 +140,16 @@ def relevance_score(
         EvidenceType.DATA_TABLE: 0.04,
     }.get(evidence_type, 0.0)
     freshness = freshness_bonus(published_at)
-    return min(1.0, base + tier_bonus + evidence_bonus + freshness)
+    score = min(1.0, proximity_score + entity_score + metric_score + time_score + tier_bonus + evidence_bonus + freshness)
+    breakdown = {
+        "entity_score": round(entity_score, 4),
+        "metric_score": round(metric_score, 4),
+        "time_score": round(time_score, 4),
+        "source_tier_score": round(tier_bonus, 4),
+        "proximity_score": round(proximity_score, 4),
+        "freshness_score": round(freshness, 4),
+    }
+    return score, breakdown
 
 
 def freshness_bonus(published_at: Optional[datetime]) -> float:
@@ -161,12 +175,43 @@ def terms_for_text(text: str) -> set[str]:
     for run in chinese_runs:
         for n in (2, 3, 4):
             if len(run) >= n:
-                terms.update(run[idx : idx + n] for idx in range(0, len(run) - n + 1))
+                terms.update(run[idx : idx + n] for idx in range(0, len(run) - n + 1) if run[idx : idx + n] not in STOP_WORDS)
         if len(run) <= 8:
             terms.add(run)
     stock_codes = re.findall(r"\b\d{6}\b", text)
     terms.update(stock_codes)
     return terms
+
+
+def terms_for_query(text: str) -> set[str]:
+    """Tokenize query text with a conservative Chinese 2-gram profile."""
+
+    lower = text.lower()
+    terms = {token for token in re.findall(r"[a-z0-9][a-z0-9._+-]{1,}", lower) if token not in STOP_WORDS}
+    for run in re.findall(r"[\u4e00-\u9fff]{2,}", text):
+        if len(run) <= 8 and run not in STOP_WORDS:
+            terms.add(run)
+        terms.update(run[idx : idx + 2] for idx in range(0, len(run) - 1) if run[idx : idx + 2] not in STOP_WORDS)
+    terms.update(re.findall(r"\b\d{4}\b|\b\d{6}\b", text))
+    terms.update(term for term in METRIC_TERMS if term in text or term in lower)
+    terms.update(term for term in PRODUCT_TERMS if term in text or term in lower)
+    terms.update(term for term in TIME_TERMS if term in text or term in lower)
+    return terms
+
+
+def entity_like_terms(terms: set[str]) -> set[str]:
+    return {term for term in terms if re.fullmatch(r"\d{4}|\d{6}|[a-z][a-z0-9._+-]{2,}", term) or 2 <= len(term) <= 8}
+
+
+def _empty_breakdown() -> dict[str, float]:
+    return {
+        "entity_score": 0.0,
+        "metric_score": 0.0,
+        "time_score": 0.0,
+        "source_tier_score": 0.0,
+        "proximity_score": 0.0,
+        "freshness_score": 0.0,
+    }
 
 
 def make_span_id(doc_id: str, question: str, start: int, end: int, text: str) -> str:
@@ -203,4 +248,57 @@ STOP_WORDS = {
     "分析",
     "关于",
     "一个",
+    "相关",
+    "方面",
+    "情况",
+    "影响",
+    "认为",
+    "显示",
+    "可能",
+}
+
+METRIC_TERMS = {
+    "收入",
+    "营收",
+    "订单",
+    "需求",
+    "利润",
+    "净利润",
+    "毛利率",
+    "现金流",
+    "业绩",
+    "产能",
+    "价格",
+    "成本",
+    "销量",
+    "revenue",
+    "order",
+    "demand",
+    "profit",
+    "margin",
+    "cash",
+}
+
+PRODUCT_TERMS = {
+    "光模块",
+    "800g",
+    "1.6t",
+    "cpo",
+    "gpu",
+    "ai",
+}
+
+TIME_TERMS = {
+    "一季报",
+    "半年报",
+    "年报",
+    "季报",
+    "季度",
+    "2024",
+    "2025",
+    "2026",
+    "q1",
+    "q2",
+    "q3",
+    "q4",
 }
