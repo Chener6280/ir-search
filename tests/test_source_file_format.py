@@ -20,6 +20,7 @@ KEY_LINE_THRESHOLDS = {
     "ir_search/research/synthesizer.py": 80,
     "ir_search/research/schemas.py": 30,
     "ir_search/evidence/extractor.py": 150,
+    "ir_search/evidence/verifier.py": 150,
     "tests/acceptance_cases.yaml": 100,
 }
 
@@ -34,6 +35,7 @@ def test_source_files_are_lf_multiline():
 
 
 def test_key_python_files_have_reviewable_line_counts():
+    assert (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8").count("\n") >= 6
     for rel in KEY_FILES:
         path = REPO_ROOT / rel
 

@@ -15,8 +15,10 @@ source_health
 
 - `search` returns candidate hits and diagnostics from the existing search kernel.
 - `fetch_document` opens HTML/PDF/WeChat-like sources and returns a `Document`.
+  - `include_tables` is reserved in this build. Responses disclose `reserved_parameters.include_tables.status = reserved_not_applied` when requested.
 - `extract_evidence` fetches a URL and returns question-relevant evidence spans.
 - `verify_claims` verifies claims against extracted evidence spans from URLs.
+  - `search_fn` is an internal Python test-injection hook and is not exposed as an MCP/user parameter.
 - `deep_research` runs search, fetch, evidence extraction, verification, and deterministic memo scaffolding. It is not a complete hosted Deep Research clone; the host LLM should still write final prose from the returned evidence artifacts.
 - `source_health` reports live/mock/placeholder/error state without exposing secret values.
 

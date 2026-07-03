@@ -63,6 +63,7 @@ SECRET_FIELD_RE = re.compile(
     r"(?i)\b(api[_-]?key|key|token|secret|cookie|authorization|bearer|access[_-]?token|refresh[_-]?token|session)\b"
     r"\s*[:=]\s*[\"']?([^\"',\s#]+)"
 )
+VALIDATOR_VERSION = "2026-07-03-r4"
 
 
 def validate_workspace(root: Path, *, strict: bool = False, mode: str = "generated") -> list[str]:
@@ -344,6 +345,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strict", action="store_true", help="Treat personal paths as errors instead of warnings")
     args = parser.parse_args(argv)
     errors, warnings = collect_validation_issues(args.workspace, strict=args.strict, mode=args.mode)
+    print(f"[INFO] validate_workspace version: {VALIDATOR_VERSION}")
     for warning in warnings:
         print(f"[WARN] {warning}")
     if errors:

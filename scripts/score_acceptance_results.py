@@ -136,7 +136,7 @@ def _placeholder_as_evidence(text: str) -> bool:
 
 
 def _unsupported_official_confirmation(text: str) -> bool:
-    confirmation = re.search(r"(?i)(officially confirmed|官方确认|官方证实)", text)
+    confirmation = re.search(r"(?i)(officially confirmed|official confirmation|官方确认|官方已确认|官方证实|官方已证实)", text)
     if not confirmation:
         return False
     official_doc = re.search(r"(?i)(official document|filing|announcement|annual report|exchange|regulator|公告|年报|季报|交易所|监管)", text)

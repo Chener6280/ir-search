@@ -61,28 +61,26 @@ def test_missing_run_id_cannot_pass_current_info():
     assert by_id["test_05_ai_optical_module_current_info"].required_assertions["run_id_present"] == "fail"
 
 
-def test_scorer_flags_media_financial_report_and_missing_official_gap():
-    path = REPO_ROOT / "tests" / "fixtures" / "_tmp_bad_media.md"
-    path.write_text(
-        """
-## test_bad_media
-- case_id: test_bad_media
-- category: current_info
-- reviewer_rating: 4
-- tool_calls_observed:
-  - ir_search.deep_research
-- run_id: dr_bad_media
-- used_previous_run: false
-| Claim | Status | Source | Source Tier | Evidence Type |
-|---|---|---|---|---|
-| claim | supported | stcn.com | MEDIA | financial_report |
-""",
-        encoding="utf-8",
-    )
-    try:
-        score = score_report(path)[0]
-    finally:
-        path.unlink()
+def test_scorer_flags_media_financial_report_fixture():
+    score = score_report(REPO_ROOT / "tests" / "fixtures" / "media_financial_report_output.md")[0]
 
     assert score.required_assertions["media_not_financial_report"] == "fail"
+
+
+def test_scorer_flags_missing_official_gap_fixture():
+    score = score_report(REPO_ROOT / "tests" / "fixtures" / "missing_official_gap_report_output.md")[0]
+
     assert score.required_assertions["official_gap_report_present"] == "fail"
+    assert score.required_assertions["official_confirmation_requires_official_document"] == "fail"
+
+
+def test_scorer_flags_missing_verify_claims_fixture():
+    score = score_report(REPO_ROOT / "tests" / "fixtures" / "missing_verify_claims_output.md")[0]
+
+    assert score.required_assertions["verify_claims_called"] == "fail"
+
+
+def test_scorer_flags_missing_freshness_bucket_fixture():
+    score = score_report(REPO_ROOT / "tests" / "fixtures" / "missing_freshness_bucket_output.md")[0]
+
+    assert score.required_assertions["freshness_bucket_present"] == "fail"

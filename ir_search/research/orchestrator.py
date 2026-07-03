@@ -122,7 +122,6 @@ def deep_research(
         required_source_tiers=[tier for tier in tiers if tier is not None] or None,
     )
     apply_freshness_requirements(question, claim_ledger)
-    source_matrix = build_source_matrix(claim_ledger)
     actual_evidence_by_source = build_actual_evidence_by_source(search_log, documents, evidence_spans, claim_ledger)
     official_source_attempts = build_official_source_attempts(
         plan.required_sources,
@@ -136,6 +135,8 @@ def deep_research(
         actual_evidence_by_source,
         claim_ledger,
     )
+    apply_official_gap_claim_downgrades(question, official_gap_report, claim_ledger)
+    source_matrix = build_source_matrix(claim_ledger)
     language_mix_policy = build_language_mix_policy(question, plan.queries)
     wechat_crosscheck = build_wechat_crosscheck(question, evidence_spans, claim_ledger)
     unverified_items = build_unverified_items(claim_ledger, diagnostics, documents)
@@ -564,10 +565,64 @@ def required_for_claims(question: str, claim_ledger: list[ClaimVerification]) ->
     return required
 
 
+def apply_official_gap_claim_downgrades(
+    question: str,
+    official_gap_report: dict,
+    claim_ledger: list[ClaimVerification],
+) -> None:
+    if official_gap_report.get("verdict") != "insufficient_primary_source_evidence":
+        return
+    if not _official_retrieval_has_gap(official_gap_report):
+        return
+    for entry in claim_ledger:
+        if not (claim_needs_official_source(entry.claim) or _question_makes_claim_official(question, entry.claim)):
+            continue
+        if entry.status not in {"supported", "mixed"}:
+            continue
+        entry.status = "insufficient_evidence"
+        entry.confidence = min(entry.confidence, 0.35)
+        caveat = "official claim requires fetched official document evidence; official_gap_report shows insufficient primary source evidence"
+        if caveat not in entry.caveats:
+            entry.caveats.append(caveat)
+
+
+def _official_retrieval_has_gap(official_gap_report: dict) -> bool:
+    actual = official_gap_report.get("actual_retrieval") or {}
+    if not actual:
+        return True
+    fetched_documents = 0
+    evidence_spans = 0
+    for row in actual.values():
+        if not isinstance(row, dict):
+            continue
+        fetched_documents += int(row.get("fetched_documents", 0) or 0)
+        evidence_spans += int(row.get("evidence_spans", 0) or 0)
+    return fetched_documents == 0 or evidence_spans == 0
+
+
+def _question_makes_claim_official(question: str, claim: str) -> bool:
+    if not claim_needs_official_source(question):
+        return False
+    return claim_needs_official_source(claim)
+
+
 def claim_needs_official_source(claim: str) -> bool:
+    lowered = claim.lower()
     return any(
         needle in claim
-        for needle in ["官方", "公告", "季报", "年报", "财报", "订单", "确认", "披露", "监管", "政策"]
+        for needle in ["官方", "公告", "季报", "年报", "财报", "业绩", "订单", "确认", "披露", "监管", "政策"]
+    ) or any(
+        needle in lowered
+        for needle in [
+            "official confirmation",
+            "official evidence",
+            "primary source",
+            "company filing",
+            "financial report",
+            "earnings report",
+            "exchange filing",
+            "regulator",
+        ]
     )
 
 

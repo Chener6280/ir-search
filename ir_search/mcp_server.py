@@ -92,12 +92,15 @@ def fetch_document_payload(
             include_tables=include_tables,
             allow_private_network=allow_private_network,
         )
-        return document.to_dict()
+        payload = document.to_dict()
+        payload.update(_fetch_document_reserved_parameters(include_tables=include_tables))
+        return payload
     except UrlBlockedError as exc:
         return {
             "url": url,
             "errors": [f"blocked_by_policy: {exc}"],
             "source_text_trust": "untrusted",
+            **_fetch_document_reserved_parameters(include_tables=include_tables),
         }
 
 
@@ -191,6 +194,20 @@ def deep_research_payload(
 
 def source_health_payload() -> dict:
     return source_health_impl()
+
+
+def _fetch_document_reserved_parameters(*, include_tables: bool) -> dict:
+    if not include_tables:
+        return {}
+    return {
+        "reserved_parameters": {
+            "include_tables": {
+                "value": include_tables,
+                "status": "reserved_not_applied",
+                "reason": "HTML/PDF table extraction is not implemented in this deterministic build.",
+            }
+        }
+    }
 
 
 def run() -> None:
