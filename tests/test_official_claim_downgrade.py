@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from ir_search.evidence.models import ClaimVerification, EvidenceSpan
-from ir_search.models import EvidenceType, SourceTier
-from ir_search.research.orchestrator import apply_official_gap_claim_downgrades
+from ir_search.models import EvidenceType, Hit, Query, SearchResult, SourceStatus, SourceTier
+from ir_search.research.orchestrator import apply_official_gap_claim_downgrades, deep_research
 
 
 def test_financial_report_claim_downgraded_without_official_document():
@@ -55,6 +55,55 @@ def test_official_confirmation_claim_requires_official_span():
     apply_official_gap_claim_downgrades("官方公告是否确认新增订单？", report, [claim])
 
     assert claim.status == "supported"
+
+
+def test_deep_research_downgrades_official_claims_without_official_documents():
+    def search_fn(q: Query) -> SearchResult:
+        if q.sources:
+            return SearchResult(
+                query=q,
+                hits=[],
+                diagnostics=[SourceStatus(source, True, 0, None, 1, adapter_mode="live") for source in q.sources],
+            )
+        hit = Hit(
+            title="媒体报道",
+            url="https://example.com/media",
+            snippet="媒体层面存在 AI 光模块需求相关公开讨论。",
+            source="industry_media",
+            tier=SourceTier.MEDIA,
+            evidence_type=EvidenceType.NEWS,
+            extra={
+                "content": "媒体层面存在 AI 光模块需求相关公开讨论，行业热度被报道。",
+                "extraction_method": "fixture",
+            },
+        )
+        return SearchResult(
+            query=q,
+            hits=[hit],
+            diagnostics=[SourceStatus("industry_media", True, 1, None, 1, adapter_mode="live")],
+        )
+
+    run = deep_research(
+        "中际旭创 最新季报是否验证海外 AI 光模块需求？",
+        intent="earnings",
+        max_searches=2,
+        max_documents=2,
+        search_fn=search_fn,
+        source_health_fn=lambda: {"sources": {"cninfo": {"ok": True, "adapter_mode": "live"}}},
+    )
+
+    official_claims = [
+        entry
+        for entry in run.claim_ledger
+        if any(term in entry.claim for term in ["季报", "业绩", "官方", "公告", "订单"])
+    ]
+    media_claims = [entry for entry in run.claim_ledger if "媒体层面存在" in entry.claim]
+
+    assert run.extra["official_gap_report"]["verdict"] == "insufficient_primary_source_evidence"
+    assert official_claims
+    assert all(entry.status == "insufficient_evidence" for entry in official_claims)
+    assert media_claims and media_claims[0].status == "mixed"
+    assert any(row["final_status"] == "insufficient_evidence" for row in run.source_matrix if "季报" in row["claim"])
 
 
 def _insufficient_gap_report() -> dict:
