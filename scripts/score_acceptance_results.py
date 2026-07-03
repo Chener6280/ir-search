@@ -47,30 +47,51 @@ def _case_chunks(text: str) -> list[tuple[str, str]]:
 def _score_chunk(case_id: str, chunk: str) -> CaseScore:
     cursor_self_rating = _field(chunk, "cursor_self_rating") or "missing"
     reviewer_rating = _field(chunk, "reviewer_rating") or "missing"
+    category = (_field(chunk, "category") or "").lower()
     tool_calls = sorted(set(re.findall(r"\bir_search\.[A-Za-z_]+", chunk)))
     run_match = RUN_ID_RE.search(chunk)
     run_id = run_match.group(1) if run_match else "missing"
+    used_previous_run = bool(re.search(r"used_previous_run\s*[:=]\s*true", chunk, re.I))
+    current_info = category == "current_info" or "current-info" in chunk.lower()
     assertions = {
+        "independent_run_required": _pass_fail(
+            not current_info
+            or (
+                run_id != "missing"
+                and not used_previous_run
+                and "ir_search.deep_research" in tool_calls
+                and not _mentions_reused_run(chunk)
+            )
+        ),
+        "used_previous_run_forbidden": _pass_fail(not used_previous_run and not _mentions_reused_run(chunk)),
         "no_raw_json": _pass_fail(not _looks_like_raw_json(chunk)),
         "no_secret_leak": _pass_fail(not SECRET_RE.search(chunk)),
         "reviewer_rating_present": _pass_fail(reviewer_rating not in {"", "missing", "not_run"}),
         "run_id_present": _pass_fail(run_id != "missing"),
         "source_health_not_actual_evidence": _pass_fail(not _source_health_as_evidence(chunk)),
+        "official_gap_report_present": _pass_fail(_has_official_gap_report(chunk)),
         "placeholder_disclosed": _pass_fail("placeholder" in chunk.lower() or "mock" in chunk.lower()),
         "placeholder_not_evidence": _pass_fail(not _placeholder_as_evidence(chunk)),
         "claim_status_present": _pass_fail(any(status in chunk for status in ["supported", "mixed", "insufficient_evidence", "contradicted"])),
         "official_confirmation_requires_official_document": _pass_fail(not _unsupported_official_confirmation(chunk)),
         "freshness_caveat_present": _pass_fail(bool(re.search(r"freshness|recent_30d|recent_90d|historical|missing_date|时效|日期|新鲜度", chunk, re.I))),
+        "freshness_bucket_present": _pass_fail(_has_freshness_bucket(chunk)),
+        "missing_date_not_current_evidence": _pass_fail(not _missing_date_supports_current_claim(chunk)),
+        "media_not_financial_report": _pass_fail(not _media_financial_report(chunk)),
+        "dedupe_required": _pass_fail(not _has_duplicate_evidence_rows(chunk)),
+        "claim_id_not_subject": _pass_fail(not _claim_id_as_table_subject(chunk)),
         "verify_claims_called": _pass_fail("ir_search.verify_claims" in chunk),
+        "language_mix_policy_present": _pass_fail("language_mix_policy" in chunk),
+        "wechat_candidate_only": _pass_fail(_wechat_candidate_only(chunk)),
     }
-    evidence_basis = sorted(set(re.findall(r"\b(source_health|deep_research_run|claim_ledger|manual_static_check|verify_claims)\b", chunk)))
+    evidence_basis = sorted(set(re.findall(r"\b(source_health|deep_research_run|claim_ledger|manual_static_check|verify_claims|official_gap_report)\b", chunk)))
     return CaseScore(
         case_id=case_id,
         cursor_self_rating=cursor_self_rating,
         reviewer_rating=reviewer_rating,
         tool_calls_observed=tool_calls,
         run_id=run_id,
-        used_previous_run=bool(re.search(r"used_previous_run\s*[:=]\s*true", chunk, re.I)),
+        used_previous_run=used_previous_run,
         required_assertions=assertions,
         evidence_basis=evidence_basis or ["manual_static_check"],
     )
@@ -87,6 +108,10 @@ def _pass_fail(value: bool) -> str:
 
 def _looks_like_raw_json(text: str) -> bool:
     return bool(re.search(r"(?s)\{\s*\"(?:run_id|mcpServers|claim_ledger|evidence_spans)\"\s*:", text))
+
+
+def _mentions_reused_run(text: str) -> bool:
+    return bool(re.search(r"(?i)(基于\s*Test\s*\d+|previous run|reuse[sd]? run|复用|沿用).{0,80}(run|run_id|运行)", text))
 
 
 def _source_health_as_evidence(text: str) -> bool:
@@ -113,6 +138,67 @@ def _unsupported_official_confirmation(text: str) -> bool:
         return False
     official_doc = re.search(r"(?i)(official document|filing|announcement|annual report|exchange|regulator|公告|年报|季报|交易所|监管)", text)
     return official_doc is None
+
+
+def _has_official_gap_report(text: str) -> bool:
+    lowered = text.lower()
+    if "official_gap_report" not in lowered:
+        return False
+    return any(field in lowered for field in ["required_for_claims", "actual_retrieval", "manual_checklist", "official_sources_required"])
+
+
+def _has_freshness_bucket(text: str) -> bool:
+    return bool(re.search(r"\b(recent_30d|recent_90d|historical|missing_date)\b", text))
+
+
+def _missing_date_supports_current_claim(text: str) -> bool:
+    for line in text.splitlines():
+        lowered = line.lower()
+        if "missing_date" in lowered and "supported" in lowered and not any(guard in lowered for guard in ["mixed", "insufficient", "background", "not current"]):
+            return True
+    return False
+
+
+def _media_financial_report(text: str) -> bool:
+    compact = " ".join(text.split())
+    if re.search(r"(?i)(source tier|source_tier)\s*[:=]?\s*MEDIA.{0,120}financial_report", compact):
+        return True
+    if re.search(r"(?i)financial_report.{0,120}(source tier|source_tier)\s*[:=]?\s*MEDIA", compact):
+        return True
+    return bool(re.search(r"(?i)(stcn\.com|cnstock\.com).{0,160}financial_report", compact))
+
+
+def _has_duplicate_evidence_rows(text: str) -> bool:
+    rows = []
+    in_table = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            if set(stripped.replace("|", "").strip()) <= {"-", ":"}:
+                continue
+            if "claim" in stripped.lower() and "source" in stripped.lower():
+                in_table = True
+                continue
+            if in_table:
+                normalized = re.sub(r"\s+", " ", stripped.lower())
+                rows.append(normalized)
+        elif in_table and stripped:
+            in_table = False
+    return len(rows) != len(set(rows))
+
+
+def _claim_id_as_table_subject(text: str) -> bool:
+    for line in text.splitlines():
+        if re.match(r"^\|\s*c\d+[_-][A-Za-z0-9_-]+", line):
+            return True
+    return False
+
+
+def _wechat_candidate_only(text: str) -> bool:
+    lowered = text.lower()
+    if "wechat_crosscheck" in lowered and any(value in lowered for value in ["candidate_only", "mixed", "supported_by_official", "insufficient_evidence"]):
+        return True
+    return "微信" in text and "候选" in text and not re.search(r"微信.{0,40}(primary|官方确认|直接证据)", text, re.I)
 
 
 def render_scores(scores: list[CaseScore]) -> str:

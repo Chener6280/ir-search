@@ -39,4 +39,22 @@ def test_official_only_second_pass_triggers_when_first_pass_has_only_media():
 
     assert any(sources for sources in observed_sources)
     assert run.extra["official_second_pass"]["triggered"] is True
+    assert run.extra["official_second_pass"]["reason"] == "primary_sources_missing"
+    assert run.extra["official_second_pass"]["diagnostics"]
     assert any(item["official_only"] for item in run.search_log)
+
+
+def test_second_pass_records_placeholder_sources():
+    run = deep_research(
+        "公司最新季报是否验证收入增长",
+        intent="earnings",
+        max_searches=1,
+        search_fn=lambda q: SearchResult(query=q, hits=[], diagnostics=[]),
+        source_health_fn=lambda: {"sources": {"cninfo": {"ok": False, "adapter_mode": "placeholder"}}},
+    )
+
+    placeholders = run.extra["official_second_pass"].get("placeholder_sources") or []
+
+    assert run.extra["official_second_pass"]["triggered"] is False
+    assert any(item["source"] == "cninfo" and item["reason"] == "adapter_not_live" for item in placeholders)
+    assert "official_second_pass" in run.answer

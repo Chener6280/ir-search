@@ -46,6 +46,17 @@ def test_official_gap_report_when_no_official_evidence():
 
     assert report["verdict"] == "insufficient_primary_source_evidence"
     assert "cninfo announcements" in report["manual_checklist"]
+    for field in [
+        "required_for_claims",
+        "official_sources_required",
+        "source_capability",
+        "actual_retrieval",
+        "official_sources_with_evidence",
+        "official_supported_claims",
+        "verdict",
+        "manual_checklist",
+    ]:
+        assert field in report
 
 
 def test_placeholder_sources_listed_in_official_gap_report():
@@ -65,6 +76,14 @@ def test_official_confirmed_requires_fetched_official_document():
     report = build_official_gap_report("公司最新季报", ["cninfo"], {"cninfo": {"adapter_mode": "live", "ok": True}}, actual, [claim])
 
     assert report["verdict"] == "primary_source_evidence_present"
+
+
+def test_official_gap_report_required_for_claims():
+    claim = ClaimVerification("c1", "官方公告确认新增订单", "mixed", 0.5, supporting_spans=[])
+
+    report = build_official_gap_report("公司最新订单", ["cninfo"], {"cninfo": {"adapter_mode": "live", "ok": True}}, {}, [claim])
+
+    assert "官方公告确认新增订单" in report["required_for_claims"]
 
 
 def _document() -> Document:

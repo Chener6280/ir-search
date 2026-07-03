@@ -99,6 +99,8 @@ def render_dry_run(cases: list[dict[str, Any]]) -> str:
         lines.extend(f"  - {tool}" for tool in case.get("required_tool_sequence", []))
         lines.append("- required_assertions:")
         lines.extend(f"  - {assertion}: not_run" for assertion in case.get("assertions", []))
+        lines.append("- must_not:")
+        lines.extend(f"  - {item}" for item in case.get("must_not", []))
         lines.append("")
     return "\n".join(lines)
 

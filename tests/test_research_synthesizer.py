@@ -63,6 +63,7 @@ def test_synthesizer_discloses_official_gap_report():
         [ClaimVerification("c1", "公司收入增长", "mixed", 0.5)],
         official_gap_report={
             "verdict": "insufficient_primary_source_evidence",
+            "required_for_claims": ["公司收入增长需要官方公告确认"],
             "official_sources_required": ["cninfo"],
             "official_sources_with_evidence": [],
             "manual_checklist": ["cninfo announcements"],
@@ -71,9 +72,54 @@ def test_synthesizer_discloses_official_gap_report():
 
     assert "official_gap_report" in answer
     assert "insufficient_primary_source_evidence" in answer
+    assert "required_for_claims" in answer
 
 
-def _answer(claims, unverified_items=None, official_gap_report=None):
+def test_source_matrix_includes_claim_text():
+    answer = synthesize_answer(
+        run_id="run1",
+        question="question",
+        search_log=[],
+        evidence_spans=[],
+        claim_ledger=[ClaimVerification("c1_abc", "公司收入增长", "mixed", 0.5)],
+        source_matrix=[
+            {
+                "claim_id": "c1_abc",
+                "claim": "公司收入增长",
+                "final_status": "mixed",
+                "official_filing": "missing",
+                "media": "support",
+                "wechat": "missing",
+            }
+        ],
+        diagnostics=[],
+        unverified_items=[],
+    )
+
+    assert "公司收入增长: audit_id=c1_abc" in answer
+
+
+def test_synthesizer_discloses_second_pass_language_and_wechat_sections():
+    answer = _answer(
+        [ClaimVerification("c1", "微信涨价传闻", "mixed", 0.4)],
+        official_second_pass={"triggered": True, "reason": "primary_sources_missing", "query": "官方公告", "placeholder_sources": []},
+        language_mix_policy={"query_language": "en", "disclosure": "Chinese sources were used for China-listed supply-chain coverage."},
+        wechat_crosscheck={"applicable": True, "verdict": "candidate_only", "wechat_evidence": [{}], "media_crosscheck": [], "official_crosscheck": []},
+    )
+
+    assert "official_second_pass" in answer
+    assert "language_mix_policy" in answer
+    assert "wechat_crosscheck" in answer
+
+
+def _answer(
+    claims,
+    unverified_items=None,
+    official_gap_report=None,
+    official_second_pass=None,
+    language_mix_policy=None,
+    wechat_crosscheck=None,
+):
     return synthesize_answer(
         run_id="run1",
         question="question",
@@ -84,6 +130,9 @@ def _answer(claims, unverified_items=None, official_gap_report=None):
         diagnostics=[],
         unverified_items=unverified_items or [],
         official_gap_report=official_gap_report,
+        official_second_pass=official_second_pass,
+        language_mix_policy=language_mix_policy,
+        wechat_crosscheck=wechat_crosscheck,
     )
 
 

@@ -28,7 +28,7 @@ class ResearchRun:
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "run_id": self.run_id,
             "question": self.question,
             "started_at": self.started_at.isoformat(),
@@ -44,3 +44,16 @@ class ResearchRun:
             "source_text_trust": self.source_text_trust,
             "extra": self.extra,
         }
+        for key in [
+            "source_capabilities",
+            "actual_evidence_by_source",
+            "official_source_attempts",
+            "official_gap_report",
+            "official_second_pass",
+            "language_mix_policy",
+            "wechat_crosscheck",
+            "reserved_parameters",
+        ]:
+            if key in self.extra:
+                data[key] = self.extra[key]
+        return data

@@ -1,4 +1,15 @@
-from ir_search.mcp_server import MCP_INSTRUCTIONS, make_fastmcp, server_instructions, tool_descriptions
+from ir_search.mcp_server import MCP_INSTRUCTIONS, list_tool_names, make_fastmcp, server_instructions, tool_descriptions
+
+
+def test_mcp_tool_list_exposes_deep_research_tools():
+    assert list_tool_names() == [
+        "search",
+        "fetch_document",
+        "extract_evidence",
+        "verify_claims",
+        "deep_research",
+        "source_health",
+    ]
 
 
 def test_mcp_server_exposes_instructions():

@@ -18,6 +18,9 @@ def synthesize_answer(
     diagnostics: list[dict],
     unverified_items: list[str],
     official_gap_report: dict | None = None,
+    official_second_pass: dict | None = None,
+    language_mix_policy: dict | None = None,
+    wechat_crosscheck: dict | None = None,
 ) -> str:
     """Render a compact finance memo from deterministic research artifacts."""
 
@@ -80,11 +83,17 @@ def synthesize_answer(
 
     lines.extend(["", "source_matrix"])
     for row in source_matrix:
-        lines.append(f"- {row['claim_id']}: final={row['final_status']}, official_filing={row['official_filing']}, media={row['media']}, wechat={row['wechat']}")
+        lines.append(
+            f"- {row['claim']}: audit_id={row['claim_id']}, final={row['final_status']}, "
+            f"official_filing={row['official_filing']}, media={row['media']}, wechat={row['wechat']}"
+        )
 
     if official_gap_report:
         lines.extend(["", "official_gap_report"])
         lines.append(f"- verdict: {official_gap_report.get('verdict', 'unknown')}")
+        required_for_claims = official_gap_report.get("required_for_claims") or []
+        if required_for_claims:
+            lines.append(f"- required_for_claims: {'; '.join(required_for_claims)}")
         required = ", ".join(official_gap_report.get("official_sources_required") or []) or "none"
         with_evidence = ", ".join(official_gap_report.get("official_sources_with_evidence") or []) or "none"
         lines.append(f"- official_sources_required: {required}")
@@ -92,6 +101,31 @@ def synthesize_answer(
         checklist = official_gap_report.get("manual_checklist") or []
         if checklist:
             lines.append(f"- manual_checklist: {', '.join(checklist)}")
+
+    if official_second_pass:
+        lines.extend(["", "official_second_pass"])
+        lines.append(f"- triggered: {str(official_second_pass.get('triggered', False)).lower()}")
+        lines.append(f"- reason: {official_second_pass.get('reason', 'unknown')}")
+        if official_second_pass.get("query"):
+            lines.append(f"- query: {official_second_pass['query']}")
+        placeholders = official_second_pass.get("placeholder_sources") or []
+        if placeholders:
+            lines.append(
+                "- placeholder_sources: "
+                + ", ".join(f"{item.get('source')}({item.get('capability')})" for item in placeholders)
+            )
+
+    if language_mix_policy:
+        lines.extend(["", "language_mix_policy"])
+        lines.append(f"- query_language: {language_mix_policy.get('query_language', 'unknown')}")
+        lines.append(f"- disclosure: {language_mix_policy.get('disclosure', '')}")
+
+    if wechat_crosscheck and wechat_crosscheck.get("applicable"):
+        lines.extend(["", "wechat_crosscheck"])
+        lines.append(f"- verdict: {wechat_crosscheck.get('verdict', 'insufficient_evidence')}")
+        lines.append(f"- wechat_evidence: {len(wechat_crosscheck.get('wechat_evidence') or [])}")
+        lines.append(f"- media_crosscheck: {len(wechat_crosscheck.get('media_crosscheck') or [])}")
+        lines.append(f"- official_crosscheck: {len(wechat_crosscheck.get('official_crosscheck') or [])}")
 
     lines.extend(["", "未验证事项"])
     if unverified_items:

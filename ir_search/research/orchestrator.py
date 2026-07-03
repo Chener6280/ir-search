@@ -89,6 +89,7 @@ def deep_research(
         if len(hits_by_url) >= max_documents:
             break
 
+    source_capabilities = build_source_capabilities(plan.required_sources, health)
     official_second_pass = maybe_run_official_second_pass(
         question=question,
         freshness=freshness,
@@ -97,9 +98,11 @@ def deep_research(
         search_log=search_log,
         hits_by_url=hits_by_url,
         required_sources=plan.required_sources,
+        source_capabilities=source_capabilities,
         intent=plan.intent,
         search_fn=search_fn,
     )
+    diagnostics.extend(official_second_pass.get("diagnostics", []))
 
     selected_hits = list(hits_by_url.values())[:max_documents]
     documents = [fetch_document_for_hit(hit) for hit in selected_hits]
@@ -120,7 +123,6 @@ def deep_research(
     )
     apply_freshness_requirements(question, claim_ledger)
     source_matrix = build_source_matrix(claim_ledger)
-    source_capabilities = build_source_capabilities(plan.required_sources, health)
     actual_evidence_by_source = build_actual_evidence_by_source(search_log, documents, evidence_spans, claim_ledger)
     official_source_attempts = build_official_source_attempts(
         plan.required_sources,
@@ -134,6 +136,8 @@ def deep_research(
         actual_evidence_by_source,
         claim_ledger,
     )
+    language_mix_policy = build_language_mix_policy(question, plan.queries)
+    wechat_crosscheck = build_wechat_crosscheck(question, evidence_spans, claim_ledger)
     unverified_items = build_unverified_items(claim_ledger, diagnostics, documents)
     unverified_items.extend(plan.warnings)
     if official_gap_report.get("verdict") == "insufficient_primary_source_evidence":
@@ -148,6 +152,9 @@ def deep_research(
         diagnostics=diagnostics,
         unverified_items=unverified_items,
         official_gap_report=official_gap_report,
+        official_second_pass=official_second_pass,
+        language_mix_policy=language_mix_policy,
+        wechat_crosscheck=wechat_crosscheck,
     )
     return ResearchRun(
         run_id=run_id,
@@ -173,6 +180,8 @@ def deep_research(
             "official_source_attempts": official_source_attempts,
             "official_gap_report": official_gap_report,
             "official_second_pass": official_second_pass,
+            "language_mix_policy": language_mix_policy,
+            "wechat_crosscheck": wechat_crosscheck,
             "reserved_parameters": reserved_parameters,
             "claim_candidates": claim_candidates,
             "plan_warnings": plan.warnings,
@@ -214,15 +223,29 @@ def maybe_run_official_second_pass(
     search_log: list[dict],
     hits_by_url: dict[str, Hit],
     required_sources: list[str],
+    source_capabilities: dict[str, dict],
     intent: Optional[str],
     search_fn: Callable[[Query], SearchResult],
 ) -> dict:
+    placeholder_details = placeholder_source_details(required_sources, source_capabilities)
     if not required_sources:
-        return {"triggered": False, "reason": "no_required_official_sources"}
+        return {"triggered": False, "reason": "no_required_official_sources", "source_statuses": [], "diagnostics": []}
     if len(search_log) >= max_searches:
-        return {"triggered": False, "reason": "search_budget_exhausted"}
+        return {
+            "triggered": False,
+            "reason": "search_budget_exhausted",
+            "source_statuses": [],
+            "diagnostics": [],
+            "placeholder_sources": placeholder_details,
+        }
     if any(hit.tier >= SourceTier.COMPANY for hit in hits_by_url.values()):
-        return {"triggered": False, "reason": "official_hit_already_present"}
+        return {
+            "triggered": False,
+            "reason": "official_hit_already_present",
+            "source_statuses": [],
+            "diagnostics": [],
+            "placeholder_sources": placeholder_details,
+        }
 
     query_text = f"{question} 官方公告 交易所 监管 披露"
     q = Query(
@@ -236,6 +259,8 @@ def maybe_run_official_second_pass(
         fallback_on_empty=False,
     )
     result = search_fn(q)
+    result_payload = result.to_dict()
+    source_statuses = result_payload["diagnostics"]
     search_log.append(
         {
             "query": query_text,
@@ -250,9 +275,13 @@ def maybe_run_official_second_pass(
         hits_by_url.setdefault(key, hit)
     return {
         "triggered": True,
+        "reason": "primary_sources_missing",
         "query": query_text,
         "required_sources": required_sources,
         "n_hits": len(result.hits),
+        "source_statuses": source_statuses,
+        "diagnostics": source_statuses,
+        "placeholder_sources": placeholder_details,
     }
 
 
@@ -377,6 +406,8 @@ def build_actual_evidence_by_source(
     supporting_claims_by_source: dict[str, set[str]] = {}
     for entry in claim_ledger:
         for span in entry.supporting_spans:
+            if is_mock_or_placeholder(span.extra.get("adapter_mode")):
+                continue
             supporting_claims_by_source.setdefault(span.source, set()).add(entry.claim)
 
     matrix: dict[str, dict] = {}
@@ -389,8 +420,13 @@ def build_actual_evidence_by_source(
             and not document.errors
             and document.content_type != "snippet"
             and document.extraction_method != "search_hit_snippet_fallback"
+            and not is_mock_or_placeholder(document.extra.get("adapter_mode"))
         ]
-        source_spans = [span for span in evidence_spans if span.source == source]
+        source_spans = [
+            span
+            for span in evidence_spans
+            if span.source == source and not is_mock_or_placeholder(span.extra.get("adapter_mode"))
+        ]
         matrix[source] = {
             "searched": source in searched_sources,
             "documents_seen": len(source_documents),
@@ -399,6 +435,10 @@ def build_actual_evidence_by_source(
             "supporting_claims": sorted(supporting_claims_by_source.get(source, set())),
         }
     return matrix
+
+
+def is_mock_or_placeholder(adapter_mode: object) -> bool:
+    return str(adapter_mode or "").lower() in {"mock", "placeholder"}
 
 
 def build_official_source_attempts(
@@ -436,6 +476,22 @@ def build_official_source_attempts(
     return attempts
 
 
+def placeholder_source_details(required_sources: list[str], source_capabilities: dict[str, dict]) -> list[dict]:
+    details: list[dict] = []
+    for source in required_sources:
+        capability = source_capabilities.get(source, {})
+        if capability.get("adapter_mode") in {"mock", "placeholder", "unknown"} or not capability.get("ok", False):
+            details.append(
+                {
+                    "source": source,
+                    "capability": capability.get("adapter_mode", "unknown"),
+                    "attempted": False,
+                    "reason": "adapter_not_live" if capability.get("adapter_mode") in {"mock", "placeholder"} else "source_unavailable",
+                }
+            )
+    return details
+
+
 def build_official_gap_report(
     question: str,
     required_sources: list[str],
@@ -459,6 +515,7 @@ def build_official_gap_report(
     else:
         verdict = "insufficient_primary_source_evidence"
     return {
+        "required_for_claims": required_for_claims(question, claim_ledger),
         "verdict": verdict,
         "official_sources_required": official_sources_required,
         "source_capability": {source: source_capabilities.get(source, {}) for source in official_sources_required},
@@ -466,6 +523,114 @@ def build_official_gap_report(
         "official_sources_with_evidence": official_sources_with_evidence,
         "official_supported_claims": official_supported_claims,
         "manual_checklist": manual_checklist_for_official_gap(question, official_sources_required),
+    }
+
+
+def required_for_claims(question: str, claim_ledger: list[ClaimVerification]) -> list[str]:
+    required: list[str] = []
+    for entry in claim_ledger:
+        has_primary_support = any(span.source_tier >= SourceTier.COMPANY for span in entry.supporting_spans)
+        if has_primary_support:
+            continue
+        if is_current_information_question(question) or claim_needs_official_source(entry.claim):
+            required.append(entry.claim)
+    return required
+
+
+def claim_needs_official_source(claim: str) -> bool:
+    return any(
+        needle in claim
+        for needle in ["官方", "公告", "季报", "年报", "财报", "订单", "确认", "披露", "监管", "政策"]
+    )
+
+
+def build_language_mix_policy(question: str, queries: list[str]) -> dict:
+    query_language = detect_language(question)
+    expanded_queries = [{"query": query, "language": detect_language(query), "reason": "planned deterministic query"} for query in queries]
+    disclosure = "No cross-language expansion was needed."
+    if query_language == "en" and looks_china_supply_chain_question(question):
+        zh_query = f"{question} 中国 A股 产业链 公司公告"
+        expanded_queries.append(
+            {
+                "query": zh_query,
+                "language": "zh",
+                "reason": "China-listed supply-chain coverage",
+            }
+        )
+        disclosure = "Chinese sources were used for China-listed supply-chain coverage; they are not overseas official evidence."
+    return {
+        "query_language": query_language,
+        "expanded_queries": expanded_queries,
+        "disclosure": disclosure,
+    }
+
+
+def detect_language(text: str) -> str:
+    has_zh = any("\u4e00" <= char <= "\u9fff" for char in text)
+    has_ascii_word = any(char.isascii() and char.isalpha() for char in text)
+    if has_zh and has_ascii_word:
+        return "mixed"
+    if has_zh:
+        return "zh"
+    if has_ascii_word:
+        return "en"
+    return "unknown"
+
+
+def looks_china_supply_chain_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(term in lowered for term in ["ai", "optical", "module", "china", "supply chain", "overseas"]) or any(
+        term in question for term in ["光模块", "产业链", "海外", "中国", "A股"]
+    )
+
+
+def build_wechat_crosscheck(
+    question: str,
+    evidence_spans: list[EvidenceSpan],
+    claim_ledger: list[ClaimVerification],
+) -> dict:
+    if not looks_wechat_crosscheck_question(question):
+        return {
+            "applicable": False,
+            "wechat_evidence": [],
+            "media_crosscheck": [],
+            "official_crosscheck": [],
+            "verdict": "not_applicable",
+        }
+    wechat_evidence = [span_summary(span) for span in evidence_spans if _matrix_column(span) == "wechat"]
+    media_crosscheck = [span_summary(span) for span in evidence_spans if _matrix_column(span) == "media"]
+    official_crosscheck = [span_summary(span) for span in evidence_spans if span.source_tier >= SourceTier.COMPANY]
+    if official_crosscheck and any(entry.status == "supported" for entry in claim_ledger):
+        verdict = "supported_by_official"
+    elif media_crosscheck or official_crosscheck:
+        verdict = "mixed"
+    elif wechat_evidence:
+        verdict = "candidate_only"
+    else:
+        verdict = "insufficient_evidence"
+    return {
+        "applicable": True,
+        "wechat_evidence": wechat_evidence,
+        "media_crosscheck": media_crosscheck,
+        "official_crosscheck": official_crosscheck,
+        "verdict": verdict,
+    }
+
+
+def looks_wechat_crosscheck_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(term in lowered for term in ["wechat", "rumor"]) or any(term in question for term in ["微信", "公众号", "涨价传闻", "自媒体", "传闻"])
+
+
+def span_summary(span: EvidenceSpan) -> dict:
+    return {
+        "span_id": span.span_id,
+        "source": span.source,
+        "source_tier": span.source_tier.name,
+        "evidence_type": span.evidence_type.value,
+        "title": span.title,
+        "url": span.url,
+        "freshness_bucket": span.extra.get("freshness_bucket", "missing_date"),
     }
 
 
