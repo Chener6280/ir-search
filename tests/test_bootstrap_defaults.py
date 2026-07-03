@@ -52,6 +52,30 @@ def test_bootstrap_renders_env_file_without_copying_secrets(tmp_path):
     assert "secret-value" not in mcp_text
 
 
+def test_bootstrap_can_link_env_local_without_copying_to_mcp_json(tmp_path):
+    target = tmp_path / "research"
+    python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)
+    env_local_source = tmp_path / "local.env"
+    env_local_source.write_text("BOCHA_API_KEY=bocha_test_value\n", encoding="utf-8")
+
+    assert bootstrap_main([
+        "--target",
+        str(target),
+        "--ir-search-python",
+        str(python_path),
+        "--ir-search-path",
+        str(ir_search_path),
+        "--env-local-path",
+        str(env_local_source),
+    ]) == 0
+    mcp_text = (target / ".cursor" / "mcp.json").read_text(encoding="utf-8")
+
+    assert (target / ".env.local.example").exists()
+    assert (target / ".env.local").is_symlink()
+    assert (target / ".env.local").resolve() == env_local_source.resolve()
+    assert "bocha_test_value" not in mcp_text
+
+
 def _fake_ir_search_runtime(tmp_path: Path) -> tuple[Path, Path]:
     python_path = tmp_path / "fake-python"
     python_path.write_text(

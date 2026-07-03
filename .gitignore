@@ -1,5 +1,6 @@
 ir_search.env
 .env
+.env.local
 *.env
 accounts.json
 accounts.json.*.bak

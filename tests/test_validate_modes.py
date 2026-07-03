@@ -17,7 +17,7 @@ def test_template_mode_does_not_require_rendered_mcp():
 
     errors, warnings = validator.collect_validation_issues(TEMPLATE_ROOT, mode="template")
 
-    assert validator.VALIDATOR_VERSION == "2026-07-03-r8"
+    assert validator.VALIDATOR_VERSION == "2026-07-03-r9"
     assert not any("Missing .cursor/mcp.json" in error for error in errors)
     assert any("Missing .cursor/mcp.json" in warning for warning in warnings)
 
@@ -70,7 +70,7 @@ def test_validator_cli_prints_version(capsys):
     output = capsys.readouterr().out
 
     assert result == 0
-    assert "[INFO] validate_workspace version: 2026-07-03-r8" in output
+    assert "[INFO] validate_workspace version: 2026-07-03-r9" in output
 
 
 def _load_validator():

@@ -10,8 +10,10 @@ from pathlib import Path
 REQUIRED_FILES = [
     "AGENTS.md",
     "README.md",
+    ".gitignore",
     ".cursorignore",
     ".cursorindexingignore",
+    ".env.local.example",
     ".cursor/mcp.json.template",
     ".cursor/rules/00-research-defaults.mdc",
     ".cursor/rules/10-finance-research-style.mdc",
@@ -54,7 +56,7 @@ REQUIRED_RULE_PHRASES = [
 ]
 
 STATUS_VALUES = ["supported", "mixed", "insufficient_evidence", "contradicted"]
-SKIP_SCAN_PARTS = {".git", ".venv", "__pycache__", ".pytest_cache", ".ir_search_cache"}
+SKIP_SCAN_PARTS = {".git", ".venv", "__pycache__", ".pytest_cache", ".ir_search_cache", ".env.local"}
 ENV_REF_RE = re.compile(r"\$\{env:[A-Za-z_][A-Za-z0-9_]*\}")
 PERSONAL_PATH_PATTERNS = [
     re.compile(r"/Users/(?!example\b|Shared\b)[A-Za-z0-9._-]+"),
@@ -65,11 +67,35 @@ SECRET_FIELD_RE = re.compile(
     r"(?i)\b(api[_-]?key|key|token|secret|cookie|authorization|bearer|access[_-]?token|refresh[_-]?token|session)\b"
     r"\s*[:=]\s*[\"']?([^\"',\s#]+)"
 )
-VALIDATOR_VERSION = "2026-07-03-r8"
+VALIDATOR_VERSION = "2026-07-03-r9"
+
+SOURCE_REQUIRED_ENV = {
+    "bocha": "BOCHA_API_KEY",
+    "exa": "EXA_API_KEY",
+    "tavily": "TAVILY_API_KEY",
+    "anysearch": "ANYSEARCH_API_KEY",
+    "dajiala": "DAJIALA_KEY",
+    "wechat_opencli": "WECHAT_OPENCLI_COMMAND",
+    "zsxq": "ZSXQ_GROUP_IDS",
+}
+LIVE_PROVIDER_KEYS = ["BOCHA_API_KEY", "EXA_API_KEY", "TAVILY_API_KEY", "ANYSEARCH_API_KEY"]
 
 
-def validate_workspace(root: Path, *, strict: bool = False, mode: str = "generated", skip_mcp_runtime_check: bool = False) -> list[str]:
-    errors, _warnings = collect_validation_issues(root, strict=strict, mode=mode, skip_mcp_runtime_check=skip_mcp_runtime_check)
+def validate_workspace(
+    root: Path,
+    *,
+    strict: bool = False,
+    mode: str = "generated",
+    skip_mcp_runtime_check: bool = False,
+    require_live_sources: list[str] | None = None,
+) -> list[str]:
+    errors, _warnings = collect_validation_issues(
+        root,
+        strict=strict,
+        mode=mode,
+        skip_mcp_runtime_check=skip_mcp_runtime_check,
+        require_live_sources=require_live_sources,
+    )
     return errors
 
 
@@ -79,6 +105,7 @@ def collect_validation_issues(
     strict: bool = False,
     mode: str = "generated",
     skip_mcp_runtime_check: bool = False,
+    require_live_sources: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -93,6 +120,7 @@ def collect_validation_issues(
             errors.append(f"Missing file: {rel}")
 
     _validate_mcp(root, errors, warnings, mode=mode, skip_mcp_runtime_check=skip_mcp_runtime_check)
+    _validate_env_local(root, errors, warnings, mode=mode, require_live_sources=require_live_sources or [])
     _validate_rules(root, errors)
     _validate_ignore_files(root, errors)
     _validate_line_sensitive_files(root, errors)
@@ -275,6 +303,10 @@ def _validate_ignore_files(root: Path, errors: list[str]) -> None:
             continue
         if lines[0] != "/*":
             errors.append(f"{rel} must use default deny mode")
+        if "!/.env.local.example" not in lines:
+            errors.append(f"{rel} must allow .env.local.example")
+        if "/.env.local" not in lines:
+            errors.append(f"{rel} must deny .env.local")
         if rel == ".cursorindexingignore":
             required_rules = [
                 "!/outputs/reports/",
@@ -387,16 +419,73 @@ def _contains_secret(text: str) -> bool:
     return False
 
 
+def _validate_env_local(root: Path, errors: list[str], warnings: list[str], *, mode: str, require_live_sources: list[str]) -> None:
+    if mode == "template":
+        return
+    env_local = root / ".env.local"
+    if not env_local.exists():
+        warnings.append("Missing .env.local; copy .env.local.example to .env.local for local API keys.")
+
+    env = _workspace_env(root)
+    if env.get("IR_SEARCH_LIVE") == "1" and not any(env.get(key) for key in LIVE_PROVIDER_KEYS):
+        warnings.append("IR_SEARCH_LIVE=1 but BOCHA_API_KEY / EXA_API_KEY / TAVILY_API_KEY / ANYSEARCH_API_KEY are all missing.")
+    for source in require_live_sources:
+        required = SOURCE_REQUIRED_ENV.get(source)
+        if required is None:
+            errors.append(f"Unknown --require-live-source: {source}")
+        elif not env.get(required):
+            errors.append(f"--require-live-source {source} requires {required} in .env.local, IR_SEARCH_ENV_FILE, or .cursor/mcp.json env.")
+
+
+def _workspace_env(root: Path) -> dict[str, str]:
+    env: dict[str, str] = {}
+    mcp_path = root / ".cursor" / "mcp.json"
+    if mcp_path.exists():
+        try:
+            data = json.loads(mcp_path.read_text(encoding="utf-8"))
+            server = data.get("mcpServers", {}).get("ir_search", {}) if isinstance(data, dict) else {}
+            server_env = server.get("env", {}) if isinstance(server, dict) else {}
+            env.update({str(key): str(value) for key, value in server_env.items() if value is not None})
+        except json.JSONDecodeError:
+            pass
+    env_file = env.get("IR_SEARCH_ENV_FILE", "")
+    if env_file and Path(env_file).exists():
+        env.update(_read_env_file(Path(env_file)))
+    env_local = root / ".env.local"
+    if env_local.exists():
+        env.update(_read_env_file(env_local))
+    return env
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[len("export ") :].strip()
+        key, value = stripped.split("=", 1)
+        values[key.strip()] = value.strip().strip("\"'")
+    return values
+
+
 def _is_placeholder_value(value: str) -> bool:
     cleaned = value.strip().strip("\"',")
     lowered = cleaned.lower()
     if not cleaned:
+        return True
+    if _looks_like_code_expression(cleaned):
         return True
     if cleaned.startswith("${env:"):
         return True
     if cleaned.startswith("/ABSOLUTE/PATH/TO/"):
         return True
     return lowered in {"your-key-here", "replace-me", "placeholder", "example", "fake-test-token", "dummy", "null", "none", "false", "true", "\"\""}
+
+
+def _looks_like_code_expression(value: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\([^\"']*\)", value))
 
 
 def _read_optional(path: Path) -> str:
@@ -411,12 +500,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=["template", "generated"], default="generated")
     parser.add_argument("--strict", action="store_true", help="Treat personal paths as errors instead of warnings")
     parser.add_argument("--skip-mcp-runtime-check", action="store_true", help="Skip generated-workspace MCP runtime preflight")
+    parser.add_argument("--require-live-source", action="append", default=[], help="Require env needed by a named live source, e.g. bocha")
     args = parser.parse_args(argv)
     errors, warnings = collect_validation_issues(
         args.workspace,
         strict=args.strict,
         mode=args.mode,
         skip_mcp_runtime_check=args.skip_mcp_runtime_check,
+        require_live_sources=args.require_live_source,
     )
     print(f"[INFO] validate_workspace version: {VALIDATOR_VERSION}")
     if args.mode == "template":

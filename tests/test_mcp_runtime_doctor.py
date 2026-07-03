@@ -50,6 +50,20 @@ def test_doctor_json_output_is_valid(tmp_path, capsys):
     assert set(payload["tool_names"]) == EXPECTED_TOOLS
 
 
+def test_doctor_env_local_reports_key_presence_without_values(tmp_path):
+    python_path, ir_search_path = _fake_runtime(tmp_path, mode="ok")
+    env_local = tmp_path / ".env.local"
+    env_local.write_text("IR_SEARCH_LIVE=1\nBOCHA_API_KEY=bocha_test_value\n", encoding="utf-8")
+
+    diagnostics = run_diagnostics(ir_search_python=python_path, ir_search_path=ir_search_path, env_local_path=env_local)
+
+    assert diagnostics["ok"] is True
+    assert diagnostics["env_local_loaded"] is True
+    assert diagnostics["env"]["IR_SEARCH_LIVE"] == "1"
+    assert diagnostics["env"]["has_BOCHA_API_KEY"] is True
+    assert "bocha_test_value" not in json.dumps(diagnostics)
+
+
 def _fake_runtime(tmp_path: Path, *, mode: str) -> tuple[Path, Path]:
     python_path = tmp_path / f"fake-python-{mode}"
     python_path.write_text(
@@ -66,6 +80,10 @@ def _fake_runtime(tmp_path: Path, *, mode: str) -> tuple[Path, Path]:
         "fi\n"
         "if [[ \"$code\" == *\"list_tool_names\"* ]]; then\n"
         "  echo '[\"search\", \"fetch_document\", \"extract_evidence\", \"verify_claims\", \"deep_research\", \"source_health\"]'\n"
+        "fi\n"
+        "if [[ \"$code\" == *\"source_health\"* ]]; then\n"
+        "  if [[ -n \"${BOCHA_API_KEY:-}\" ]]; then has_bocha=true; else has_bocha=false; fi\n"
+        "  printf '{\"env\":{\"IR_SEARCH_LIVE\":\"%s\",\"has_BOCHA_API_KEY\":%s},\"sources\":{\"bocha\":{\"ok\":%s,\"adapter_mode\":\"live\",\"availability_reason\":\"available\",\"diagnostics\":{\"reasons\":[\"available\"]}}}}\\n' \"${IR_SEARCH_LIVE:-0}\" \"$has_bocha\" \"$has_bocha\"\n"
         "fi\n"
         "exit 0\n",
         encoding="utf-8",

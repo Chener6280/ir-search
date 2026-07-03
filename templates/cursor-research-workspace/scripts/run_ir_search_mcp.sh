@@ -1,6 +1,10 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
+SCRIPT_DIR="${0:A:h}"
+WORKSPACE_ROOT="${SCRIPT_DIR:h}"
+WORKSPACE_ENV_LOCAL="${WORKSPACE_ROOT}/.env.local"
+
 if [[ -n "${IR_SEARCH_ENV_FILE:-}" ]]; then
   if [[ ! -f "$IR_SEARCH_ENV_FILE" ]]; then
     echo "[ERROR] IR_SEARCH_ENV_FILE does not exist: $IR_SEARCH_ENV_FILE" >&2
@@ -9,6 +13,14 @@ if [[ -n "${IR_SEARCH_ENV_FILE:-}" ]]; then
   set -a
   source "$IR_SEARCH_ENV_FILE"
   set +a
+fi
+
+if [[ -f "$WORKSPACE_ENV_LOCAL" ]]; then
+  set -a
+  source "$WORKSPACE_ENV_LOCAL"
+  set +a
+else
+  echo "[WARN] .env.local not found at ${WORKSPACE_ENV_LOCAL}; continuing with MCP env only." >&2
 fi
 
 if [[ -n "${IR_SEARCH_PATH:-}" ]]; then

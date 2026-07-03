@@ -62,7 +62,7 @@ def test_bootstrap_overwrite_refreshes_generated_validator(tmp_path):
     ) == 0
 
     validator = _load_generated_validator(target)
-    assert validator.VALIDATOR_VERSION == "2026-07-03-r8"
+    assert validator.VALIDATOR_VERSION == "2026-07-03-r9"
 
 
 def _load_generated_validator(target: Path):

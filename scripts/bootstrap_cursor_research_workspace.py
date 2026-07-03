@@ -18,6 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ir-search-python", required=True, type=Path, help="Absolute path to the ir-search environment Python")
     parser.add_argument("--ir-search-path", type=Path, help="Absolute path to the ir-search repository/package root")
     parser.add_argument("--env-file", type=Path, help="Optional env file sourced by the MCP wrapper before startup")
+    parser.add_argument("--env-local-path", type=Path, help="Optional local env file to symlink as target .env.local")
     parser.add_argument("--ir-search-live", default="0")
     parser.add_argument("--manual-wechat-root", type=Path)
     parser.add_argument("--cache-dir", type=Path)
@@ -39,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
         "{{MANUAL_WECHAT_ROOT}}": str(manual_wechat_root),
         "{{IR_SEARCH_CACHE_DIR}}": str(cache_dir),
     }
-    if str(args.ir_search_live) == "1" and not _has_live_provider_key(args.env_file):
+    if str(args.ir_search_live) == "1" and not _has_live_provider_key(args.env_file, args.env_local_path):
         print(
             "[WARN] IR_SEARCH_LIVE=1 but no BOCHA_API_KEY / EXA_API_KEY / "
             "TAVILY_API_KEY / ANYSEARCH_API_KEY was detected in the current shell. "
@@ -54,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[DRY-RUN] copy {src.relative_to(TEMPLATE_ROOT)} -> {dst}")
         print("[DRY-RUN] render .cursor/mcp.json.example")
         print("[DRY-RUN] create .cursor/mcp.json if missing")
+        if args.env_local_path:
+            print("[DRY-RUN] link .env.local from --env-local-path")
         if args.skip_mcp_runtime_check:
             print("[DRY-RUN] skip MCP runtime preflight")
         else:
@@ -70,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
         shutil.copy2(src, dst)
 
     render_mcp_files(target, replacements, overwrite=args.overwrite)
+    if args.env_local_path:
+        link_env_local(target, _absolute_path(args.env_local_path), overwrite=args.overwrite)
     if args.skip_mcp_runtime_check:
         print("[WARN] MCP runtime check skipped. Cursor may not show the ir_search MCP server until you run scripts/doctor_ir_search_mcp.py.")
     else:
@@ -77,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
             ir_search_python=_absolute_path(args.ir_search_python),
             ir_search_path=ir_search_path,
             live=str(args.ir_search_live),
+            env_local_path=target / ".env.local",
         )
         if preflight_result != 0:
             print("[ERROR] Workspace files were generated, but the ir_search MCP runtime is invalid. Fix the Python runtime and rerun bootstrap.")
@@ -110,6 +116,17 @@ def render_mcp_files(target: Path, replacements: dict[str, str], *, overwrite: b
         mcp_path.write_text(rendered, encoding="utf-8")
 
 
+def link_env_local(target: Path, source: Path, *, overwrite: bool) -> None:
+    if not source.exists():
+        raise SystemExit(f"[ERROR] --env-local-path does not exist: {source}")
+    destination = target / ".env.local"
+    if destination.exists() or destination.is_symlink():
+        if not overwrite:
+            return
+        destination.unlink()
+    destination.symlink_to(source)
+
+
 def _resolve_ir_search_path(arg_path: Path | None) -> Path:
     if arg_path is not None:
         return _absolute_path(arg_path)
@@ -125,17 +142,20 @@ def _absolute_path(path: Path) -> Path:
     return (Path.cwd() / path).absolute()
 
 
-def _has_live_provider_key(env_file: Path | None = None) -> bool:
+def _has_live_provider_key(*paths: Path | None) -> bool:
     provider_keys = ["BOCHA_API_KEY", "EXA_API_KEY", "TAVILY_API_KEY", "ANYSEARCH_API_KEY"]
     if any(os.environ.get(name) for name in provider_keys):
         return True
-    if env_file is None:
-        return False
-    path = _absolute_path(env_file)
-    if not path.exists():
-        return False
-    text = path.read_text(encoding="utf-8")
-    return any(_env_file_defines_key(text, name) for name in provider_keys)
+    for env_file in paths:
+        if env_file is None:
+            continue
+        path = _absolute_path(env_file)
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if any(_env_file_defines_key(text, name) for name in provider_keys):
+            return True
+    return False
 
 
 def _env_file_defines_key(text: str, name: str) -> bool:
@@ -156,12 +176,13 @@ def print_onboarding(target: Path) -> None:
     print("Next steps:")
     print(f"1. Open this folder alone in Cursor: {target}")
     print("2. If Cursor MCP is not green, run: python scripts/doctor_ir_search_mcp.py --ir-search-python <python> --ir-search-path <ir-search>")
-    print("3. Run prompt: prompts/R-SOURCE-HEALTH.md")
-    print("4. If all live sources are unavailable, check env expansion and API keys.")
-    print("5. To enable live mode, rerun with --ir-search-live 1 and optionally --env-file /path/to/ir_search.env.")
+    print("3. For local keys, run: cp .env.local.example .env.local, fill values locally, then Reload Window / start a new Agent chat.")
+    print("4. Run prompt: prompts/R-SOURCE-HEALTH.md")
+    print("5. If all live sources are unavailable, check .env.local, env expansion, and API keys.")
+    print("6. To enable live mode, set IR_SEARCH_LIVE=1 in .env.local or rerun with --ir-search-live 1.")
 
 
-def run_mcp_runtime_preflight(*, ir_search_python: Path, ir_search_path: Path, live: str) -> int:
+def run_mcp_runtime_preflight(*, ir_search_python: Path, ir_search_path: Path, live: str, env_local_path: Path | None = None) -> int:
     doctor_path = REPO_ROOT / "scripts" / "doctor_ir_search_mcp.py"
     spec = importlib.util.spec_from_file_location("doctor_ir_search_mcp", doctor_path)
     if spec is None or spec.loader is None:
@@ -169,7 +190,7 @@ def run_mcp_runtime_preflight(*, ir_search_python: Path, ir_search_path: Path, l
         return 1
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    diagnostics = module.run_diagnostics(ir_search_python=ir_search_python, ir_search_path=ir_search_path, live=live)
+    diagnostics = module.run_diagnostics(ir_search_python=ir_search_python, ir_search_path=ir_search_path, live=live, env_local_path=env_local_path)
     module.print_human_report(diagnostics)
     return 0 if diagnostics["ok"] else 1
 

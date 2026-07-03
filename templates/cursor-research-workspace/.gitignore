@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+!.env.local.example
+.env.local
+.ir_search_cache/
+outputs/raw/
+outputs/tmp/

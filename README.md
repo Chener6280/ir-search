@@ -64,6 +64,8 @@ python scripts/doctor_ir_search_mcp.py \
 /ABSOLUTE/PATH/TO/python -m pip install -e "/ABSOLUTE/PATH/TO/ir-search[mcp]"
 ```
 
+Cursor GUI 可能不继承 shell 里的 API key。生成 research workspace 后，推荐复制 `.env.local.example` 为 `.env.local`，只在本地填写 key；MCP wrapper 会在启动时 source 它，`source_health` 只会显示 `has_KEY=true/false` 和不可用原因，不会输出真实 key。
+
 当前工具列表：
 
 ```text

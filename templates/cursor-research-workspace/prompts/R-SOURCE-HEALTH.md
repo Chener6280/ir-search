@@ -15,4 +15,5 @@ python scripts/doctor_ir_search_mcp.py --ir-search-python <python> --ir-search-p
 3. placeholder sources
 4. unavailable / error sources
 5. credentials status，只能显示 has_KEY true/false，不得显示实际 key
-6. 对当前研究问题的影响
+6. 每个 unavailable/mock source 的 availability_reason / diagnostics.reasons，例如 key_missing、live_disabled、adapter_mock、adapter_not_implemented、command_missing
+7. 对当前研究问题的影响

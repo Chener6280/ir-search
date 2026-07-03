@@ -59,6 +59,19 @@ If you already keep provider keys in the `ir_search` repo's `ir_search.env`, pas
 
 Use `--dry-run` to preview created files. Existing files are not overwritten unless `--overwrite` is provided.
 
+## Local Keys With .env.local
+
+The generated workspace includes `.env.local.example`. For Cursor GUI launches, prefer workspace-local `.env.local` because Cursor may not inherit your shell environment:
+
+```bash
+cd /ABSOLUTE/PATH/TO/cursor-research-workspace
+cp .env.local.example .env.local
+```
+
+Fill only local values in `.env.local`; never commit it and never paste key values into prompts, reports, or GitHub. The template `.gitignore`, `.cursorignore`, and `.cursorindexingignore` keep `.env.local` out of Git, Cursor context, and indexing while allowing `.env.local.example`.
+
+After editing `.env.local`, reload Cursor or start a new Agent conversation. `scripts/run_ir_search_mcp.sh` sources `.env.local` before starting the MCP server, then `R-SOURCE-HEALTH` should report only `has_KEY=true/false` plus source diagnostics such as `key_missing`, `live_disabled`, `adapter_mock`, `adapter_not_implemented`, or `command_missing`.
+
 ## MCP Configuration
 
 The bootstrap script renders:

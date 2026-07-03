@@ -16,6 +16,8 @@ def test_cursorignore_default_denies_and_allows_research_workspace_files():
     assert rules[0] == "/*"
     for rule in ["!/.cursor/", "!/docs/", "!/prompts/", "!/notes/", "!/sources/", "!/outputs/", "!/scripts/"]:
         assert rule in rules
+    assert "!/.env.local.example" in rules
+    assert "/.env.local" in rules
 
 
 def test_cursorindexingignore_indexes_outputs_and_scripts_but_excludes_raw_tmp():
@@ -37,6 +39,8 @@ def test_cursorindexingignore_indexes_outputs_and_scripts_but_excludes_raw_tmp()
         assert rule in rules
     for rule in ["/outputs/raw/", "/outputs/raw/**", "/outputs/tmp/", "/outputs/tmp/**"]:
         assert rule in rules
+    assert "!/.env.local.example" in rules
+    assert "/.env.local" in rules
 
 
 def test_output_directory_strategy_is_documented():

@@ -7,6 +7,8 @@
 !/AGENTS.md
 !/README.md
 !/.env.example
+!/.env.local.example
+/.env.local
 
 # Reusable docs, prompts, notes, and curated source material.
 !/docs/

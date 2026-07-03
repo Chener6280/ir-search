@@ -64,6 +64,33 @@ def test_template_mode_skips_mcp_runtime_check(capsys):
     assert "MCP runtime check skipped in template mode" in output
 
 
+def test_generated_mode_can_require_live_source_env(tmp_path):
+    target = tmp_path / "research"
+    python_path, ir_search_path = _fake_runtime(tmp_path, mode="ok")
+    assert bootstrap_main(["--target", str(target), "--ir-search-python", str(python_path), "--ir-search-path", str(ir_search_path)]) == 0
+    validator = _load_validator_from(target)
+    (target / ".env.local").write_text("IR_SEARCH_LIVE=1\n", encoding="utf-8")
+
+    errors, warnings = validator.collect_validation_issues(
+        target,
+        mode="generated",
+        require_live_sources=["bocha"],
+    )
+
+    assert any("requires BOCHA_API_KEY" in error for error in errors)
+    assert any("IR_SEARCH_LIVE=1" in warning for warning in warnings)
+
+    (target / ".env.local").write_text("IR_SEARCH_LIVE=1\nBOCHA_API_KEY=bocha_test_value\n", encoding="utf-8")
+    errors, warnings = validator.collect_validation_issues(
+        target,
+        mode="generated",
+        require_live_sources=["bocha"],
+    )
+
+    assert not any("requires BOCHA_API_KEY" in error for error in errors)
+    assert "bocha_test_value" not in "\n".join(errors + warnings)
+
+
 def _load_validator_from(root: Path):
     validator_path = root / "scripts" / "validate_workspace.py"
     spec = importlib.util.spec_from_file_location("validator_runtime_test", validator_path)

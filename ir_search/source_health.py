@@ -10,29 +10,58 @@ from .kernel import build_registry
 def source_health() -> dict:
     """Return adapter mode, credential presence, and placeholder/mock visibility."""
 
+    live_enabled = os.environ.get("IR_SEARCH_LIVE") == "1"
     registry = build_registry()
     sources: dict[str, dict] = {}
     for name, adapter in sorted(registry.items()):
         mode = getattr(adapter, "mode", "unknown")
         notes: list[str] = []
+        reasons: list[str] = []
         ok = mode == "live"
+        required_env = REQUIRED_ENV.get(name)
+        if not live_enabled and name in LIVE_GATED_SOURCES:
+            ok = False
+            reasons.append("live_disabled")
+            notes.append("IR_SEARCH_LIVE is not 1; live provider disabled")
         if mode == "mock":
             ok = False
+            reason = "live_disabled" if name in LIVE_GATED_SOURCES and not live_enabled else "adapter_mock"
+            if reason not in reasons:
+                reasons.append(reason)
             notes.append("mock adapter; useful for routing tests but not authoritative")
         elif mode == "placeholder":
             ok = False
+            reasons.append("adapter_not_implemented")
             notes.append(getattr(adapter, "message", "placeholder adapter is not implemented"))
-        elif name in REQUIRED_ENV and not os.environ.get(REQUIRED_ENV[name]):
+        elif required_env and not os.environ.get(required_env):
             ok = False
-            notes.append(f"{REQUIRED_ENV[name]} is not set")
+            reason = "command_missing" if name in COMMAND_REQUIRED_SOURCES else "key_missing"
+            reasons.append(reason)
+            notes.append(f"{required_env} is not set")
         if name == "manual_wechat":
             root = manual_wechat_root()
             if not root.exists():
                 ok = False
+                reasons.append("path_missing")
                 notes.append("manual wechat directory not found; set MANUAL_WECHAT_ROOT")
+        if not reasons and mode == "experimental":
+            reasons.append("experimental_adapter")
+        elif not reasons and mode == "fallback":
+            reasons.append("fallback_adapter")
+        if not reasons and not ok:
+            reasons.append("adapter_error")
+        if not reasons and ok:
+            reasons.append("available")
         sources[name] = {
             "adapter_mode": mode,
             "ok": ok,
+            "availability_reason": reasons[0],
+            "diagnostics": {
+                "reasons": reasons,
+                "required_env": required_env,
+                "has_required_env": bool(os.environ.get(required_env)) if required_env else None,
+                "live_enabled": live_enabled,
+            },
             "notes": notes,
         }
     return {
@@ -64,6 +93,24 @@ REQUIRED_ENV = {
     "dajiala": "DAJIALA_KEY",
     "wechat_opencli": "WECHAT_OPENCLI_COMMAND",
     "zsxq": "ZSXQ_GROUP_IDS",
+}
+
+COMMAND_REQUIRED_SOURCES = {"wechat_opencli"}
+
+LIVE_GATED_SOURCES = {
+    "anysearch",
+    "bocha",
+    "cninfo",
+    "dajiala",
+    "exa",
+    "hkex",
+    "sec",
+    "sse",
+    "szse",
+    "tavily",
+    "wechat_opencli",
+    "web_search",
+    "zsxq",
 }
 
 

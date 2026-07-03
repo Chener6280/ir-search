@@ -47,6 +47,16 @@ The selected Python must be Python 3.10+ and import `ir_search`, `mcp.server.fas
 
 Do not treat a terminal-only Python payload as a replacement for a working Cursor MCP connection.
 
+## Local Keys
+
+Keep local provider keys in `.env.local`, not in prompts, reports, or Git:
+
+```bash
+cp .env.local.example .env.local
+```
+
+Fill only the keys you have, set `IR_SEARCH_LIVE=1` when you want live providers, then reload Cursor and start a new Agent chat. The MCP wrapper sources `.env.local` before starting `ir_search.mcp_server`. Diagnostics must only show `has_KEY=true/false` and availability reasons such as `key_missing`, `live_disabled`, `adapter_mock`, or `command_missing`; they must not print key values.
+
 ## Outputs
 
 Use `outputs/reports/`, `outputs/memos/`, and `outputs/source_tables/` for research artifacts that Cursor may index later.

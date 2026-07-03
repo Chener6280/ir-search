@@ -18,6 +18,7 @@ def test_validator_allows_placeholders_but_flags_real_secret():
     assert validator._contains_secret("cookie=sessionid=abc123456789")
     assert validator._contains_secret("authorization=" + "Bearer" + " " + "abcdefghijk")
     assert validator._contains_secret("refresh_token=abc123456789")
+    assert not validator._contains_secret("key = key.strip()")
 
 
 def test_validator_personal_path_warning_and_strict_error(tmp_path):
