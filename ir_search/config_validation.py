@@ -5,7 +5,7 @@ from typing import Mapping, Optional
 
 from .config import load_yaml
 from .kernel import build_registry
-from .models import Intent, SourceTier
+from .models import CoverageStatus, Intent, ResultKind, SourceAuthority, SourceTier
 
 
 class ConfigError(Exception):
@@ -32,6 +32,7 @@ def validate_configs(registry: Optional[Mapping[str, object]] = None, configs: O
         "rerank_weights": load_yaml("rerank_weights.yaml"),
         "source_focus_sites": load_yaml("source_focus_sites.yaml"),
         "fallback_routes": load_yaml("fallback_routes.yaml"),
+        "source_capabilities": load_yaml("source_capabilities.yaml"),
         "sentiment_sites": load_yaml("sentiment_sites.yaml"),
         "intent_rules": load_yaml("intent_rules.yaml"),
     }
@@ -41,6 +42,7 @@ def validate_configs(registry: Optional[Mapping[str, object]] = None, configs: O
     _validate_rerank_weights(cfg.get("rerank_weights", {}), errors)
     _validate_source_focus_sites(cfg.get("source_focus_sites", {}), known_sources, errors)
     _validate_fallback_routes(cfg.get("fallback_routes", {}), known_sources, errors)
+    _validate_source_capabilities(cfg.get("source_capabilities", {}), known_sources, errors)
     _validate_sentiment_sites(cfg.get("sentiment_sites", {}), errors)
     _validate_intent_rules(cfg.get("intent_rules", {}), errors)
     return errors
@@ -126,6 +128,40 @@ def _validate_fallback_routes(config: dict, known_sources: set[str], errors: lis
             errors.append(f"fallback_routes.error_classes unknown class {class_name}")
         if not isinstance(needles, list) or not all(isinstance(item, str) and item for item in needles):
             errors.append(f"fallback_routes.error_classes.{class_name} must be non-empty list[str]")
+
+
+def _validate_source_capabilities(config: dict, known_sources: set[str], errors: list[str]) -> None:
+    rows = config.get("sources", {})
+    if not isinstance(rows, dict):
+        errors.append("source_capabilities.sources must be a mapping")
+        return
+    for source, row in rows.items():
+        if source not in known_sources:
+            errors.append(f"source_capabilities unknown source {source}")
+        if not isinstance(row, dict):
+            errors.append(f"source_capabilities.{source} must be a mapping")
+            continue
+        authority = row.get("authority")
+        if authority not in {item.value for item in SourceAuthority}:
+            errors.append(f"source_capabilities.{source}.authority unknown authority {authority}")
+        result_kinds = row.get("result_kinds", [])
+        if not isinstance(result_kinds, list) or not result_kinds:
+            errors.append(f"source_capabilities.{source}.result_kinds must be non-empty list[str]")
+        else:
+            for kind in result_kinds:
+                if kind not in {item.value for item in ResultKind}:
+                    errors.append(f"source_capabilities.{source}.result_kinds unknown kind {kind}")
+        authorities = row.get("can_fallback_to_authorities", [])
+        if not isinstance(authorities, list):
+            errors.append(f"source_capabilities.{source}.can_fallback_to_authorities must be list[str]")
+        else:
+            for target in authorities:
+                if target not in {item.value for item in SourceAuthority}:
+                    errors.append(f"source_capabilities.{source}.can_fallback_to_authorities unknown authority {target}")
+        if "max_evidence_status" in row and row.get("max_evidence_status") not in {item.value for item in CoverageStatus}:
+            errors.append(
+                f"source_capabilities.{source}.max_evidence_status unknown coverage status {row.get('max_evidence_status')}"
+            )
 
 
 def _validate_sentiment_sites(config: dict, errors: list[str]) -> None:

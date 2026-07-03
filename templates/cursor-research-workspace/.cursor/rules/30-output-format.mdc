@@ -1,0 +1,47 @@
+---
+description: Required output format for evidence-based research answers
+alwaysApply: true
+---
+
+# Evidence-based Output Format
+
+对需要当前信息或证据支撑的研究问题，使用以下结构。
+
+例外：当用户明确使用 `R-LITERATURE`、`R-SOURCE-HEALTH`，或要求 local-only / document-first / source-health-only 时，以任务 prompt 的结构优先；仍需保留证据边界、fallback 纪律和必要的 `claim_ledger.status` 标注。
+
+## 检索状态
+
+- 是否调用 ir_search:
+- 是否调用 source_health:
+- 使用的工具:
+- 检索轮数:
+- 读取文档数:
+- 官方源是否尝试:
+- diagnostics:
+- mock / placeholder / fallback:
+
+## 核心结论
+
+仅输出编号结论。每条结论必须绑定 `20-ir-search-evidence-policy.mdc` 中定义的 `claim_ledger.status`：
+
+- supported;
+- mixed;
+- insufficient_evidence;
+- contradicted.
+
+## 证据表
+
+| Claim | Status | Source | Source Type | Date | Evidence | Caveat |
+|---|---|---|---|---|---|---|
+
+## 分析
+
+解释机制、含义、替代解释和证据边界。推断、假设或观点只能作为 caveat，不得替代 claim status。
+
+## 未验证事项
+
+列出仍需进一步核验的事实、来源和核验路径。
+
+## 结论边界
+
+说明当前证据能够支持什么、不能支持什么。

@@ -1,0 +1,133 @@
+sources:
+  cninfo:
+    authority: official_filing
+    result_kinds: [filing_document, announcement, financial_table]
+    can_fallback_to_authorities: [official_filing, regulator, company]
+    promotable_from_discovery: false
+
+  sse:
+    authority: official_filing
+    result_kinds: [filing_document, announcement]
+    can_fallback_to_authorities: [official_filing, regulator, company]
+    promotable_from_discovery: false
+
+  szse:
+    authority: official_filing
+    result_kinds: [filing_document, announcement]
+    can_fallback_to_authorities: [official_filing, regulator, company]
+    promotable_from_discovery: false
+
+  hkex:
+    authority: official_filing
+    result_kinds: [filing_document, announcement]
+    can_fallback_to_authorities: [official_filing, regulator, company]
+    promotable_from_discovery: false
+
+  sec:
+    authority: official_filing
+    result_kinds: [filing_document, announcement]
+    can_fallback_to_authorities: [official_filing, regulator, company]
+    promotable_from_discovery: false
+
+  regulator_sites:
+    authority: regulator
+    result_kinds: [announcement, policy_doc]
+    can_fallback_to_authorities: [regulator, official_filing, company]
+    promotable_from_discovery: false
+
+  company_ir:
+    authority: company
+    result_kinds: [announcement, web_document, news]
+    can_fallback_to_authorities: [company, official_filing, regulator]
+    promotable_from_discovery: false
+
+  broker_research:
+    authority: broker_research
+    result_kinds: [web_document, opinion]
+    can_fallback_to_authorities: [broker_research, commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  bocha:
+    authority: commercial_search
+    result_kinds: [web_document, news, discovery_url]
+    can_fallback_to_authorities: [commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  exa:
+    authority: commercial_search
+    result_kinds: [web_document, news, discovery_url]
+    can_fallback_to_authorities: [commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  tavily:
+    authority: commercial_search
+    result_kinds: [web_document, news, discovery_url]
+    can_fallback_to_authorities: [commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  anysearch:
+    authority: commercial_search
+    result_kinds: [web_document, discovery_url]
+    can_fallback_to_authorities: [discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  searxng:
+    authority: discovery
+    result_kinds: [discovery_url]
+    can_fallback_to_authorities: [anonymous_search]
+    promotable_from_discovery: true
+    max_evidence_status: partial_discovery
+
+  web_search:
+    authority: anonymous_search
+    result_kinds: [web_document, discovery_url]
+    can_fallback_to_authorities: []
+    promotable_from_discovery: false
+
+  manual_wechat:
+    authority: media
+    result_kinds: [web_document, news, opinion]
+    can_fallback_to_authorities: []
+    promotable_from_discovery: false
+
+  wechat_opencli:
+    authority: media
+    result_kinds: [web_document, news, opinion]
+    can_fallback_to_authorities: [media]
+    promotable_from_discovery: false
+
+  dajiala:
+    authority: media
+    result_kinds: [web_document, news, opinion]
+    can_fallback_to_authorities: []
+    promotable_from_discovery: false
+
+  industry_media:
+    authority: media
+    result_kinds: [web_document, news]
+    can_fallback_to_authorities: [media, commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  zsxq:
+    authority: ugc
+    result_kinds: [social_post, opinion]
+    can_fallback_to_authorities: []
+    promotable_from_discovery: false
+
+  tushare:
+    authority: data_vendor
+    result_kinds: [market_quote, financial_table, timeseries]
+    can_fallback_to_authorities: [broker_platform, public_market_data]
+    promotable_from_discovery: false
+
+  longbridge:
+    authority: broker_platform
+    result_kinds: [market_quote, rating_snapshot, news]
+    can_fallback_to_authorities: [public_market_data]
+    promotable_from_discovery: false
+
+  market_public:
+    authority: public_market_data
+    result_kinds: [market_quote, public_snapshot]
+    can_fallback_to_authorities: []
+    promotable_from_discovery: false

@@ -32,6 +32,7 @@ source_tiers:
   news.cn: MEDIA
   ce.cn: MEDIA
   weixin.qq.com: MEDIA
+  zsxq.com: UGC
   wsj.com: MEDIA
   bloomberg.com: MEDIA
   ft.com: MEDIA

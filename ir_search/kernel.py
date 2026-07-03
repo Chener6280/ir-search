@@ -7,12 +7,18 @@ from .adapters.anysearch import AnySearchAdapter
 from .adapters.base import SearchAdapter
 from .adapters.bocha import BochaAdapter
 from .adapters.cninfo import CninfoAdapter
+from .adapters.dajiala import DajialaAdapter
 from .adapters.exa import ExaAdapter
+from .adapters.longbridge import LongbridgeAdapter
+from .adapters.market_public import MarketPublicAdapter
 from .adapters.manual_wechat import ManualWechatAdapter
 from .adapters.mock import MockSearchAdapter
 from .adapters.placeholder import PlaceholderAdapter
+from .adapters.searxng import SearXNGAdapter
 from .adapters.tavily import TavilyAdapter
+from .adapters.tushare import TushareAdapter
 from .adapters.wechat_opencli import WechatOpenCLIAdapter
+from .adapters.zsxq import ZsxqAdapter
 from .cache import CallLogger, FileCache
 from .models import Query, SearchResult
 from .network import apply_auto_proxy_settings
@@ -52,7 +58,13 @@ def build_registry(live: Optional[bool] = None) -> dict[str, SearchAdapter]:
     registry["manual_wechat"] = ManualWechatAdapter()
     registry["tavily"] = TavilyAdapter()
     registry["anysearch"] = AnySearchAdapter(name="anysearch", auth_mode="required")
+    registry["searxng"] = SearXNGAdapter()
     registry["web_search"] = AnySearchAdapter(name="web_search", auth_mode="anonymous")
+    registry["zsxq"] = ZsxqAdapter()
+    registry["longbridge"] = LongbridgeAdapter()
+    registry["tushare"] = TushareAdapter()
+    registry["dajiala"] = DajialaAdapter()
+    registry["market_public"] = MarketPublicAdapter()
     return registry
 
 

@@ -2,7 +2,7 @@ import pytest
 
 from ir_search.adapters.base import AdapterError
 from ir_search.models import Hit, Query
-from ir_search.pipeline import classify_fallback_error, retry_backoff_seconds, run_pipeline
+from ir_search.pipeline import classify_fallback_error, fallback_sources_for, retry_backoff_seconds, run_pipeline
 
 
 @pytest.fixture(autouse=True)
@@ -195,10 +195,16 @@ def test_fallback_hits_are_marked():
         },
     )
 
-    assert [status.source for status in result.diagnostics] == ["bocha", "anysearch", "web_search"]
+    assert [status.source for status in result.diagnostics] == ["bocha", "anysearch", "searxng", "web_search"]
     assert result.hits[0].source == "web_search"
-    assert result.hits[0].extra["fallback_from"] == "anysearch"
+    assert result.hits[0].extra["fallback_from"] == "searxng"
     assert result.hits[0].extra["is_fallback_result"] is True
+
+
+def test_web_fallback_routes_do_not_include_zsxq():
+    assert fallback_sources_for("bocha") == ["anysearch", "searxng", "web_search"]
+    assert fallback_sources_for("exa") == ["tavily", "anysearch", "searxng", "web_search"]
+    assert fallback_sources_for("web_search") == []
 
 
 def test_non_quota_unknown_source_does_not_fallback():

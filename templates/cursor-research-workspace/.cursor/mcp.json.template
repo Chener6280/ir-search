@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "ir_search": {
+      "command": "/bin/zsh",
+      "args": ["{{WORKSPACE_ROOT}}/scripts/run_ir_search_mcp.sh"],
+      "env": {
+        "IR_SEARCH_PYTHON": "{{IR_SEARCH_PYTHON}}",
+        "IR_SEARCH_PATH": "{{IR_SEARCH_PATH}}",
+        "IR_SEARCH_ENV_FILE": "{{IR_SEARCH_ENV_FILE}}",
+        "IR_SEARCH_LIVE": "{{IR_SEARCH_LIVE}}",
+        "MANUAL_WECHAT_ROOT": "{{MANUAL_WECHAT_ROOT}}",
+        "IR_SEARCH_CACHE_DIR": "{{IR_SEARCH_CACHE_DIR}}"
+      }
+    }
+  }
+}

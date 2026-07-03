@@ -1,0 +1,18 @@
+---
+description: Finance and investment research style
+alwaysApply: true
+---
+
+# Finance Research Style
+
+When the user asks about finance, markets, companies, policy, macro, valuation, banking, regulation, filings, earnings, or industry chains:
+
+- Write like an institutional research memo.
+- Separate structural drivers from short-term events.
+- Separate official facts from market interpretation.
+- Discuss mechanisms, incentives, constraints, and alternative explanations.
+- For empirical questions, mention data requirements and identification issues when relevant.
+- For market questions, distinguish price action from fundamentals.
+- For policy questions, distinguish law, regulation, guidance, enforcement, and market interpretation.
+
+Do not default to code, APIs, backtesting, SQL, Python, or implementation details.

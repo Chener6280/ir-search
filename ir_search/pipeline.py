@@ -6,10 +6,11 @@ from typing import Mapping, Optional, Union
 
 from .adapters.base import AdapterError, SearchAdapter
 from .cache import CallLogger, FileCache, cache_key
+from .capabilities import authority_for, fallback_candidates_for as capability_fallback_candidates_for, result_kinds_for
 from .config import load_yaml
 from .entity import match_entities, normalize_entities
 from .evidence import classify_hit
-from .models import FallbackPolicy, Hit, Intent, Lang, Query, SearchResult, SourceStatus
+from .models import CoverageStatus, FailureKind, FallbackPolicy, Hit, Intent, Lang, Query, SearchResult, SourceStatus
 from .rerank import rerank
 from .urlnorm import canonicalize_url, canonicalize_url_aliases
 
@@ -102,6 +103,16 @@ def select_sources(q: Query) -> list[str]:
             sources.append("manual_wechat")
         if "wechat_opencli" not in sources:
             sources.append("wechat_opencli")
+    if _mentions_zsxq(q.text) and "zsxq" not in sources:
+        sources = list(sources) + ["zsxq"]
+    if _mentions_longbridge(q.text) and "longbridge" not in sources:
+        sources = list(sources) + ["longbridge"]
+    if _mentions_tushare(q.text) and "tushare" not in sources:
+        sources = list(sources) + ["tushare"]
+    if _mentions_dajiala(q.text) and "dajiala" not in sources:
+        sources = list(sources) + ["dajiala"]
+    if _mentions_market_public(q.text) and "market_public" not in sources:
+        sources = list(sources) + ["market_public"]
     if q.allow_browser_fallback and q.intent == Intent.BROKER_RESEARCH and "wechat_opencli" not in sources:
         sources = list(sources) + ["wechat_opencli"]
     return sources
@@ -143,21 +154,31 @@ def fan_out(
         if should_trigger_fallback(q, status):
             fallback_parent_source = source
             fallback_parent_status = status
-            for fallback_source in fallback_sources_for(source):
-                if fallback_source in attempted:
+            for fallback_hop, candidate in enumerate(fallback_candidates_for(q, source), start=1):
+                if candidate.source in attempted:
                     continue
-                fallback_hits, fallback_status = _query_source(q, fallback_source, registry, cache)
-                attempted.add(fallback_source)
+                if not candidate.allowed:
+                    skipped_status = _blocked_fallback_status(candidate.source, candidate.reason, fallback_parent_source, fallback_hop)
+                    attempted.add(candidate.source)
+                    diagnostics.append(skipped_status)
+                    if logger:
+                        logger.write({"source": candidate.source, "query": q.text, "diagnostic": skipped_status.__dict__})
+                    continue
+
+                fallback_hits, fallback_status = _query_source(q, candidate.source, registry, cache)
+                attempted.add(candidate.source)
+                fallback_status.fallback_parent = fallback_parent_source
+                fallback_status.fallback_hop = fallback_hop
                 fallback_status.error = _with_fallback_reason(fallback_parent_source, fallback_parent_status, fallback_status)
                 mark_fallback_hits(fallback_hits, fallback_parent_source)
                 hits.extend(fallback_hits)
                 diagnostics.append(fallback_status)
                 if logger:
-                    logger.write({"source": fallback_source, "query": q.text, "diagnostic": fallback_status.__dict__})
+                    logger.write({"source": candidate.source, "query": q.text, "diagnostic": fallback_status.__dict__})
                 if fallback_status.ok and fallback_hits:
                     break
                 if should_trigger_fallback(q, fallback_status):
-                    fallback_parent_source = fallback_source
+                    fallback_parent_source = candidate.source
                     fallback_parent_status = fallback_status
     return hits, diagnostics
 
@@ -171,14 +192,30 @@ def _query_source(
     start = time.perf_counter()
     adapter = registry.get(source)
     if adapter is None:
-        return [], SourceStatus(source=source, ok=False, n_results=0, error="unknown source", elapsed_ms=0, adapter_mode="unknown")
+        return [], _source_status(
+            source=source,
+            ok=False,
+            n_results=0,
+            error="unknown source",
+            elapsed_ms=0,
+            adapter_mode="unknown",
+            failure_kind=FailureKind.UNKNOWN,
+        )
 
     key = cache_key(source, q)
     cached = cache.get(key) if cache else None
     if cached is not None:
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         adapter_mode = getattr(adapter, "mode", "unknown")
-        return cached, SourceStatus(source=source, ok=True, n_results=len(cached), error=None, elapsed_ms=elapsed_ms, cache_hit=True, adapter_mode=adapter_mode)
+        return cached, _source_status(
+            source=source,
+            ok=True,
+            n_results=len(cached),
+            error=None,
+            elapsed_ms=elapsed_ms,
+            cache_hit=True,
+            adapter_mode=adapter_mode,
+        )
 
     errors: list[str] = []
     max_attempts = 2
@@ -192,7 +229,15 @@ def _query_source(
             if cache:
                 cache.set(key, source_hits)
             error = f"retry_after={errors[0]}" if errors else None
-            return source_hits, SourceStatus(source=source, ok=True, n_results=len(source_hits), error=error, elapsed_ms=elapsed_ms, cache_hit=False, adapter_mode=adapter_mode)
+            return source_hits, _source_status(
+                source=source,
+                ok=True,
+                n_results=len(source_hits),
+                error=error,
+                elapsed_ms=elapsed_ms,
+                cache_hit=False,
+                adapter_mode=adapter_mode,
+            )
         except AdapterError as exc:
             errors.append(str(exc))
             if not exc.retryable or attempt == max_attempts:
@@ -201,7 +246,16 @@ def _query_source(
                 error = str(exc)
                 if exc.retryable and len(errors) > 1:
                     error = f"retryable failed after {len(errors)} attempts: {'; '.join(errors)}"
-                return [], SourceStatus(source=source, ok=False, n_results=0, error=error, elapsed_ms=elapsed_ms, cache_hit=False, adapter_mode=adapter_mode)
+                return [], _source_status(
+                    source=source,
+                    ok=False,
+                    n_results=0,
+                    error=error,
+                    elapsed_ms=elapsed_ms,
+                    cache_hit=False,
+                    adapter_mode=adapter_mode,
+                    failure_kind=failure_kind_for_error(error),
+                )
             delay = retry_backoff_seconds(str(exc))
             if delay > 0:
                 time.sleep(delay)
@@ -211,6 +265,10 @@ def _query_source(
 
 def fallback_sources_for(source: str) -> list[str]:
     return load_yaml("fallback_routes.yaml").get("fallbacks", {}).get(source, [])
+
+
+def fallback_candidates_for(q: Query, source: str):
+    return capability_fallback_candidates_for(q, source, fallback_sources_for(source))
 
 
 def should_trigger_fallback(q: Query, status: SourceStatus) -> bool:
@@ -244,11 +302,85 @@ def classify_fallback_error(error: str) -> str:
     return "unknown"
 
 
+def failure_kind_for_error(error: Optional[str]) -> FailureKind:
+    if not error:
+        return FailureKind.NONE
+    lower = error.lower()
+    if "blocked_by_policy" in lower:
+        return FailureKind.BLOCKED_BY_POLICY
+    if "is not set" in lower or "api key" in lower or "token" in lower and "not set" in lower:
+        return FailureKind.NO_CREDENTIAL
+    if "429" in lower or "rate" in lower:
+        return FailureKind.RATE_LIMIT
+    if "quota" in lower or "exhausted" in lower or "402" in lower:
+        return FailureKind.QUOTA
+    if "timeout" in lower or "timed out" in lower:
+        return FailureKind.TIMEOUT
+    if "schema" in lower or "invalid json" in lower:
+        return FailureKind.UPSTREAM_SCHEMA
+    if "not implemented" in lower or "placeholder" in lower:
+        return FailureKind.UNIMPLEMENTED
+    if classify_fallback_error(lower) == "network":
+        return FailureKind.NETWORK
+    return FailureKind.UNKNOWN
+
+
 def _with_fallback_reason(primary_source: str, primary_status: SourceStatus, fallback_status: SourceStatus) -> str:
     reason = f"fallback_after={primary_source}; primary_error={primary_status.error}"
     if fallback_status.error:
         return f"{fallback_status.error}; {reason}"
     return reason
+
+
+def _source_status(
+    source: str,
+    ok: bool,
+    n_results: int,
+    error: Optional[str],
+    elapsed_ms: int,
+    cache_hit: Optional[bool] = None,
+    adapter_mode: str = "unknown",
+    coverage_status: CoverageStatus = CoverageStatus.UNKNOWN,
+    failure_kind: Optional[FailureKind] = None,
+    fallback_parent: Optional[str] = None,
+    fallback_hop: int = 0,
+    skipped: bool = False,
+    skipped_reason: Optional[str] = None,
+) -> SourceStatus:
+    return SourceStatus(
+        source=source,
+        ok=ok,
+        n_results=n_results,
+        error=error,
+        elapsed_ms=elapsed_ms,
+        cache_hit=cache_hit,
+        adapter_mode=adapter_mode,
+        result_kinds=result_kinds_for(source),
+        authority=authority_for(source),
+        coverage_status=coverage_status,
+        failure_kind=failure_kind if failure_kind is not None else failure_kind_for_error(error),
+        fallback_parent=fallback_parent,
+        fallback_hop=fallback_hop,
+        skipped=skipped,
+        skipped_reason=skipped_reason,
+    )
+
+
+def _blocked_fallback_status(source: str, reason: str, fallback_parent: str, fallback_hop: int) -> SourceStatus:
+    return _source_status(
+        source=source,
+        ok=False,
+        n_results=0,
+        error=f"blocked_by_policy: {reason}",
+        elapsed_ms=0,
+        adapter_mode="skipped",
+        coverage_status=CoverageStatus.BLOCKED_BY_POLICY,
+        failure_kind=FailureKind.BLOCKED_BY_POLICY,
+        fallback_parent=fallback_parent,
+        fallback_hop=fallback_hop,
+        skipped=True,
+        skipped_reason=reason,
+    )
 
 
 def mark_fallback_hits(hits: list[Hit], fallback_from: str) -> None:
@@ -312,10 +444,77 @@ def _hit_dedup_keys(hit: Hit) -> tuple[str, list[str]]:
 
 def _normalize_source_name(source: str) -> str:
     source = source.strip()
-    aliases = {"wechat": "wechat_opencli", "公众号": "wechat_opencli", "微信手工": "manual_wechat"}
+    lower = source.lower()
+    if lower in {"tushare", "longbridge", "zsxq", "wechat", "dajiala", "market_public", "searxng", "searx"}:
+        return {"wechat": "wechat_opencli", "searx": "searxng"}.get(lower, lower)
+    aliases = {
+        "wechat": "wechat_opencli",
+        "公众号": "wechat_opencli",
+        "微信手工": "manual_wechat",
+        "自建搜索": "searxng",
+        "元搜索": "searxng",
+        "searx": "searxng",
+        "searxng": "searxng",
+        "知识星球": "zsxq",
+        "星球": "zsxq",
+        "长桥": "longbridge",
+        "长桥证券": "longbridge",
+        "tushare": "tushare",
+        "TuShare": "tushare",
+        "A股数据": "tushare",
+        "极致了": "dajiala",
+        "dajiala": "dajiala",
+        "公共行情": "market_public",
+        "公开行情": "market_public",
+        "腾讯行情": "market_public",
+    }
     return aliases.get(source, source)
 
 
 def _mentions_wechat(text: str) -> bool:
     lower = text.lower()
     return "公众号" in text or "wechat" in lower or "微信" in text
+
+
+def _mentions_zsxq(text: str) -> bool:
+    lower = text.lower()
+    return "知识星球" in text or "星球" in text or "zsxq" in lower
+
+
+def _mentions_longbridge(text: str) -> bool:
+    lower = text.lower()
+    return "长桥" in text or "longbridge" in lower
+
+
+def _mentions_tushare(text: str) -> bool:
+    lower = text.lower()
+    if "tushare" in lower or "a-stock-data" in lower:
+        return True
+    data_needles = [
+        "股东人数",
+        "股东户数",
+        "龙虎榜",
+        "限售",
+        "解禁",
+        "财务指标",
+        "业绩预告",
+        "业绩快报",
+        "日行情",
+        "换手率",
+        "资金流",
+        "主力净流入",
+        "市值",
+    ]
+    if any(needle in lower or needle in text for needle in data_needles):
+        return True
+    return any(token in lower.split() for token in ["pe", "pb", "ps", "roe", "roa", "eps"])
+
+
+def _mentions_dajiala(text: str) -> bool:
+    lower = text.lower()
+    return "极致了" in text or "dajiala" in lower
+
+
+def _mentions_market_public(text: str) -> bool:
+    lower = text.lower()
+    return "market_public" in lower or "公共行情" in text or "公开行情" in text or "腾讯行情" in text

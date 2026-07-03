@@ -1,0 +1,21 @@
+---
+description: Fallback behavior when MCP or ir_search is unavailable
+alwaysApply: true
+---
+
+# Fallback Policy
+
+This file is the canonical source of truth for fallback wording.
+
+If ir_search MCP tools are unavailable, fail, return empty results, or return only mock/placeholder/fallback evidence:
+
+- Do not answer current facts as if verified.
+- Do not invent sources.
+- Do not fabricate recent events, filings, market data, financial results, or policy changes.
+- Say clearly that external verification is unavailable or incomplete.
+- Provide a conceptual framework if useful.
+- Provide a checklist of sources to verify manually.
+
+For current-information questions, use this fallback wording:
+
+"我无法从当前可用工具中取得足够可核验证据。以下只能作为分析框架，不应视为最新事实判断。"
