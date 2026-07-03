@@ -45,8 +45,16 @@ def test_ignore_files_have_active_multiline_rules():
 def test_gitattributes_is_line_delimited():
     text = _text(REPO_ROOT / ".gitattributes")
 
-    assert text.count("\n") >= 8
-    for rule in ["* text=auto eol=lf", "*.py text eol=lf", "*.mdc text eol=lf", "*.yaml text eol=lf"]:
+    assert text.count("\n") >= 12
+    for rule in [
+        "* text=auto eol=lf",
+        "*.py text eol=lf",
+        "*.mdc text eol=lf",
+        "*.yaml text eol=lf",
+        "*.gitignore text eol=lf",
+        ".cursorignore text eol=lf",
+        ".cursorindexingignore text eol=lf",
+    ]:
         assert rule in text.splitlines()
 
 

@@ -35,7 +35,10 @@ def test_source_files_are_lf_multiline():
 
 
 def test_key_python_files_have_reviewable_line_counts():
-    assert (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8").count("\n") >= 6
+    gitattributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+    assert gitattributes.count("\n") >= 12
+    assert ".cursorindexingignore text eol=lf" in gitattributes.splitlines()
     for rel in KEY_FILES:
         path = REPO_ROOT / rel
 
