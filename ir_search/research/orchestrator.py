@@ -228,8 +228,26 @@ def maybe_run_official_second_pass(
     search_fn: Callable[[Query], SearchResult],
 ) -> dict:
     placeholder_details = placeholder_source_details(required_sources, source_capabilities)
+    not_attempted_sources = [
+        {
+            "source": source,
+            "capability": source_capabilities.get(source, {}).get("adapter_mode", "unknown"),
+            "attempted": False,
+            "reason": "pending_official_second_pass",
+        }
+        for source in required_sources
+    ]
     if not required_sources:
-        return {"triggered": False, "reason": "no_required_official_sources", "source_statuses": [], "diagnostics": []}
+        return {
+            "triggered": False,
+            "reason": "no_required_official_sources",
+            "query": "",
+            "required_sources": [],
+            "source_statuses": [],
+            "diagnostics": [],
+            "n_hits": 0,
+            "not_attempted_sources": [],
+        }
     if len(search_log) >= max_searches:
         return {
             "triggered": False,
@@ -237,6 +255,9 @@ def maybe_run_official_second_pass(
             "source_statuses": [],
             "diagnostics": [],
             "placeholder_sources": placeholder_details,
+            "not_attempted_sources": not_attempted_sources,
+            "required_sources": required_sources,
+            "n_hits": 0,
         }
     if any(hit.tier >= SourceTier.COMPANY for hit in hits_by_url.values()):
         return {
@@ -245,6 +266,9 @@ def maybe_run_official_second_pass(
             "source_statuses": [],
             "diagnostics": [],
             "placeholder_sources": placeholder_details,
+            "not_attempted_sources": not_attempted_sources,
+            "required_sources": required_sources,
+            "n_hits": 0,
         }
 
     query_text = f"{question} 官方公告 交易所 监管 披露"
@@ -282,6 +306,7 @@ def maybe_run_official_second_pass(
         "source_statuses": source_statuses,
         "diagnostics": source_statuses,
         "placeholder_sources": placeholder_details,
+        "not_attempted_sources": [],
     }
 
 
@@ -534,6 +559,8 @@ def required_for_claims(question: str, claim_ledger: list[ClaimVerification]) ->
             continue
         if is_current_information_question(question) or claim_needs_official_source(entry.claim):
             required.append(entry.claim)
+    if not required and claim_needs_official_source(question):
+        required.append(question)
     return required
 
 

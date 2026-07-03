@@ -7,10 +7,21 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 KEY_FILES = [
     "ir_search/research/orchestrator.py",
     "ir_search/research/synthesizer.py",
+    "ir_search/research/schemas.py",
     "ir_search/documents/fetcher.py",
     "ir_search/evidence/extractor.py",
+    "ir_search/evidence/verifier.py",
     "ir_search/mcp_server.py",
 ]
+
+KEY_LINE_THRESHOLDS = {
+    "ir_search/mcp_server.py": 100,
+    "ir_search/research/orchestrator.py": 250,
+    "ir_search/research/synthesizer.py": 80,
+    "ir_search/research/schemas.py": 30,
+    "ir_search/evidence/extractor.py": 150,
+    "tests/acceptance_cases.yaml": 100,
+}
 
 
 def test_source_files_are_lf_multiline():
@@ -27,6 +38,10 @@ def test_key_python_files_have_reviewable_line_counts():
         path = REPO_ROOT / rel
 
         assert path.read_text(encoding="utf-8").count("\n") > 20, rel
+    for rel, minimum in KEY_LINE_THRESHOLDS.items():
+        path = REPO_ROOT / rel
+
+        assert path.read_text(encoding="utf-8").count("\n") >= minimum, rel
 
 
 def test_pyproject_and_readme_are_parseable_and_multiline():

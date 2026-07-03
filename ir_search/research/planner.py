@@ -97,6 +97,8 @@ def required_sources_for(question: str, intent: Optional[str]) -> list[str]:
         return ["regulator_sites"]
     if intent == "wechat_crosscheck":
         return ["manual_wechat", "wechat_opencli", "cninfo", "company_ir"]
+    if _looks_official_evidence_request(question):
+        return ["cninfo", "company_ir", "sse", "szse", "hkex", "sec", "regulator_sites"]
     return []
 
 
@@ -120,3 +122,14 @@ def _looks_company_or_filing(question: str) -> bool:
 
 def _looks_policy(question: str) -> bool:
     return any(needle in question for needle in ["政策", "监管", "通知", "办法", "规则"])
+
+
+def _looks_official_evidence_request(question: str) -> bool:
+    lower = question.lower()
+    return any(
+        needle in question
+        for needle in ["官方", "一手", "确认", "证实", "披露", "交易所"]
+    ) or any(
+        needle in lower
+        for needle in ["company filing", "official evidence", "primary source", "confirmed by official"]
+    )

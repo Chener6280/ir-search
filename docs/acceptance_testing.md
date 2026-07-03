@@ -2,6 +2,9 @@
 
 This repository includes a deterministic dry-run harness for Cursor research acceptance tests.
 
+This copy mirrors the canonical workspace acceptance harness in `cursor-research-workspace-template`.
+Use this repository copy for engine-side dry-runs and regression checks; update the template repository first when changing Cursor workspace acceptance behavior.
+
 The harness does not call live MCP tools by itself. It records expected case structure, required tool sequences, and scoring checks so a human or Cursor-run black-box report can be reviewed consistently.
 
 ## Run the Dry Run

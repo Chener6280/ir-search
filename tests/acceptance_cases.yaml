@@ -35,7 +35,9 @@ cases:
       - no_raw_json
       - no_secret_leak
       - claim_status_present
+      - actual_evidence_by_source_present
       - official_gap_report_present
+      - official_gap_report_required_for_claims_present
       - placeholder_not_evidence
       - official_confirmation_requires_official_document
       - freshness_bucket_present
@@ -58,6 +60,7 @@ cases:
     assertions:
       - independent_run_required
       - official_gap_report_present
+      - official_gap_report_required_for_claims_present
       - placeholder_disclosed
     must_not:
       - claim_official_confirmation_without_document
@@ -167,6 +170,7 @@ cases:
     assertions:
       - independent_run_required
       - official_gap_report_present
+      - official_gap_report_required_for_claims_present
     must_not:
       - natural_language_gap_only
 
@@ -200,6 +204,7 @@ cases:
       - independent_run_required
       - wechat_candidate_only
       - official_gap_report_present
+      - actual_evidence_by_source_present
     must_not:
       - wechat_as_primary_evidence
 
@@ -313,6 +318,7 @@ cases:
       - independent_run_required
       - claim_status_present
       - official_gap_report_present
+      - actual_evidence_by_source_present
       - no_raw_json
     must_not:
       - omit_run_id

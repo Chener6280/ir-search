@@ -86,6 +86,18 @@ def test_official_gap_report_required_for_claims():
     assert "官方公告确认新增订单" in report["required_for_claims"]
 
 
+def test_official_gap_report_required_for_claims_for_official_question():
+    report = build_official_gap_report(
+        "该需求是否被官方一手证据确认",
+        ["cninfo"],
+        {"cninfo": {"adapter_mode": "live", "ok": True}},
+        {},
+        [],
+    )
+
+    assert report["required_for_claims"] == ["该需求是否被官方一手证据确认"]
+
+
 def _document() -> Document:
     return Document(
         doc_id=make_doc_id("https://www.cninfo.com.cn/report.pdf", "hash"),

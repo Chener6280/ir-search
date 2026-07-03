@@ -70,6 +70,17 @@ def test_validate_workspace_detects_missing_file(tmp_path):
     assert any("Missing file" in error for error in errors)
 
 
+def test_validate_workspace_modes_handle_missing_rendered_mcp():
+    validator = _load_validator()
+
+    template_errors, template_warnings = validator.collect_validation_issues(TEMPLATE_ROOT, mode="template")
+    generated_errors = validator.validate_workspace(TEMPLATE_ROOT, mode="generated")
+
+    assert not any("Missing .cursor/mcp.json" in error for error in template_errors)
+    assert any("Missing .cursor/mcp.json" in warning for warning in template_warnings)
+    assert any("Missing .cursor/mcp.json" in error for error in generated_errors)
+
+
 def test_validate_workspace_detects_secret_and_personal_path(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)

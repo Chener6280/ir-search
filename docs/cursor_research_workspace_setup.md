@@ -60,7 +60,8 @@ After bootstrap:
 
 ```bash
 python /ABSOLUTE/PATH/TO/cursor-research-workspace/scripts/validate_workspace.py \
-  /ABSOLUTE/PATH/TO/cursor-research-workspace
+  /ABSOLUTE/PATH/TO/cursor-research-workspace \
+  --mode generated
 ```
 
 Expected:

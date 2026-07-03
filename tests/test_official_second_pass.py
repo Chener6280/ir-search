@@ -58,3 +58,35 @@ def test_second_pass_records_placeholder_sources():
     assert run.extra["official_second_pass"]["triggered"] is False
     assert any(item["source"] == "cninfo" and item["reason"] == "adapter_not_live" for item in placeholders)
     assert "official_second_pass" in run.answer
+
+
+def test_second_pass_required_when_question_mentions_official_evidence():
+    run = deep_research(
+        "媒体信号是否能被官方一手证据确认",
+        intent="auto",
+        max_searches=2,
+        search_fn=lambda q: SearchResult(query=q, hits=[], diagnostics=[SourceStatus("cninfo", False, 0, "mock", 1)]),
+        source_health_fn=lambda: {"sources": {"cninfo": {"ok": False, "adapter_mode": "placeholder"}}},
+    )
+
+    second_pass = run.extra["official_second_pass"]
+
+    assert second_pass["reason"] != "no_required_official_sources"
+    assert "cninfo" in second_pass["required_sources"]
+    assert run.extra["official_gap_report"]["official_sources_required"]
+
+
+def test_second_pass_records_not_attempted_sources_when_budget_exhausted():
+    run = deep_research(
+        "媒体信号是否能被官方一手证据确认",
+        intent="auto",
+        max_searches=1,
+        search_fn=lambda q: SearchResult(query=q, hits=[], diagnostics=[]),
+        source_health_fn=lambda: {"sources": {"cninfo": {"ok": False, "adapter_mode": "placeholder"}}},
+    )
+
+    second_pass = run.extra["official_second_pass"]
+
+    assert second_pass["triggered"] is False
+    assert second_pass["reason"] == "search_budget_exhausted"
+    assert second_pass["not_attempted_sources"]

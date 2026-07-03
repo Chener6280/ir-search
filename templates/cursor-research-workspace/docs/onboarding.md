@@ -5,7 +5,7 @@ This folder is the generated research workspace. Open this folder alone in Curso
 ## Validate The Workspace
 
 ```bash
-python3 scripts/validate_workspace.py .
+python3 scripts/validate_workspace.py . --mode generated
 ```
 
 Expected result:

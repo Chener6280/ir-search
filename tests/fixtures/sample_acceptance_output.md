@@ -44,6 +44,13 @@ official_gap_report:
 - actual_retrieval: cninfo searched, fetched_documents=1, evidence_spans=1
 - manual_checklist: company IR, exchange filings
 
+actual_evidence_by_source:
+- cninfo: searched=true, fetched_documents=1, evidence_spans=1
+
+reserved_parameters:
+- language: reserved_not_applied
+- output_style: reserved_not_applied
+
 证据表：
 | Claim | Status | Source | Source Tier | Evidence Type | Freshness | Caveat |
 |---|---|---|---|---|---|---|

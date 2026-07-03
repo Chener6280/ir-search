@@ -69,7 +69,9 @@ def _score_chunk(case_id: str, chunk: str) -> CaseScore:
         "reviewer_rating_present": _pass_fail(reviewer_rating not in {"", "missing", "not_run"}),
         "run_id_present": _pass_fail(run_id != "missing"),
         "source_health_not_actual_evidence": _pass_fail(not _source_health_as_evidence(chunk)),
+        "actual_evidence_by_source_present": _pass_fail("actual_evidence_by_source" in chunk),
         "official_gap_report_present": _pass_fail(_has_official_gap_report(chunk)),
+        "official_gap_report_required_for_claims_present": _pass_fail(_has_official_gap_required_claims(chunk)),
         "placeholder_disclosed": _pass_fail("placeholder" in chunk.lower() or "mock" in chunk.lower()),
         "placeholder_not_evidence": _pass_fail(not _placeholder_as_evidence(chunk)),
         "claim_status_present": _pass_fail(any(status in chunk for status in ["supported", "mixed", "insufficient_evidence", "contradicted"])),
@@ -83,6 +85,7 @@ def _score_chunk(case_id: str, chunk: str) -> CaseScore:
         "verify_claims_called": _pass_fail("ir_search.verify_claims" in chunk),
         "language_mix_policy_present": _pass_fail("language_mix_policy" in chunk),
         "wechat_candidate_only": _pass_fail(_wechat_candidate_only(chunk)),
+        "reserved_parameters_present": _pass_fail("reserved_parameters" in chunk and "reserved_not_applied" in chunk),
     }
     evidence_basis = sorted(set(re.findall(r"\b(source_health|deep_research_run|claim_ledger|manual_static_check|verify_claims|official_gap_report)\b", chunk)))
     return CaseScore(
@@ -145,6 +148,13 @@ def _has_official_gap_report(text: str) -> bool:
     if "official_gap_report" not in lowered:
         return False
     return any(field in lowered for field in ["required_for_claims", "actual_retrieval", "manual_checklist", "official_sources_required"])
+
+
+def _has_official_gap_required_claims(text: str) -> bool:
+    lowered = text.lower()
+    if "official_gap_report" not in lowered or "required_for_claims" not in lowered:
+        return False
+    return not re.search(r"(?m)required_for_claims\s*[:=]\s*(none|\[\]|missing)?\s*$", lowered)
 
 
 def _has_freshness_bucket(text: str) -> bool:

@@ -65,23 +65,25 @@ SECRET_FIELD_RE = re.compile(
 )
 
 
-def validate_workspace(root: Path, *, strict: bool = False) -> list[str]:
-    errors, _warnings = collect_validation_issues(root, strict=strict)
+def validate_workspace(root: Path, *, strict: bool = False, mode: str = "generated") -> list[str]:
+    errors, _warnings = collect_validation_issues(root, strict=strict, mode=mode)
     return errors
 
 
-def collect_validation_issues(root: Path, *, strict: bool = False) -> tuple[list[str], list[str]]:
+def collect_validation_issues(root: Path, *, strict: bool = False, mode: str = "generated") -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     root = root.expanduser().resolve()
     if not root.exists():
         return [f"Workspace does not exist: {root}"], warnings
+    if mode not in {"template", "generated"}:
+        return [f"Invalid validation mode: {mode}"], warnings
 
     for rel in REQUIRED_FILES:
         if not (root / rel).exists():
             errors.append(f"Missing file: {rel}")
 
-    _validate_mcp(root, errors, warnings)
+    _validate_mcp(root, errors, warnings, mode=mode)
     _validate_rules(root, errors)
     _validate_ignore_files(root, errors)
     _validate_line_sensitive_files(root, errors)
@@ -90,9 +92,12 @@ def collect_validation_issues(root: Path, *, strict: bool = False) -> tuple[list
     return errors, warnings
 
 
-def _validate_mcp(root: Path, errors: list[str], warnings: list[str]) -> None:
+def _validate_mcp(root: Path, errors: list[str], warnings: list[str], *, mode: str) -> None:
     if not (root / ".cursor/mcp.json").exists():
-        warnings.append("Missing .cursor/mcp.json; bootstrap renders this file for generated workspaces.")
+        if mode == "generated":
+            errors.append("Missing .cursor/mcp.json in generated workspace")
+        else:
+            warnings.append("Missing .cursor/mcp.json; bootstrap renders this file for generated workspaces.")
     for rel in [".cursor/mcp.json.template", ".cursor/mcp.json"]:
         path = root / rel
         if not path.exists():
@@ -335,9 +340,10 @@ def _read_optional(path: Path) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate a Cursor research workspace")
     parser.add_argument("workspace", type=Path)
+    parser.add_argument("--mode", choices=["template", "generated"], default="generated")
     parser.add_argument("--strict", action="store_true", help="Treat personal paths as errors instead of warnings")
     args = parser.parse_args(argv)
-    errors, warnings = collect_validation_issues(args.workspace, strict=args.strict)
+    errors, warnings = collect_validation_issues(args.workspace, strict=args.strict, mode=args.mode)
     for warning in warnings:
         print(f"[WARN] {warning}")
     if errors:

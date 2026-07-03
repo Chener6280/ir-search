@@ -1,0 +1,13 @@
+{
+  "question": "最近行业新闻显示 AI 光模块需求增长是否成立",
+  "hit": {
+    "title": "无日期行业新闻",
+    "url": "https://example.com/no-date-news",
+    "snippet": "AI 光模块需求增长，订单改善，但该新闻未提供发布日期。",
+    "source": "bocha",
+    "source_tier": "MEDIA",
+    "evidence_type": "news",
+    "published_at": null
+  },
+  "expected_freshness_bucket": "missing_date"
+}
