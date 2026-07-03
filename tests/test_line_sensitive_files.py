@@ -42,6 +42,32 @@ def test_ignore_files_have_active_multiline_rules():
     assert _text(TEMPLATE_ROOT / ".cursor" / "mcp.json.template").count("\n") >= 8
 
 
+def test_cursorindexingignore_active_rules_are_complete():
+    text = _text(TEMPLATE_ROOT / ".cursorindexingignore")
+    active = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+    assert active[0] == "/*"
+    for rule in [
+        "!/outputs/reports/",
+        "!/outputs/reports/**",
+        "!/outputs/memos/",
+        "!/outputs/memos/**",
+        "!/outputs/source_tables/",
+        "!/outputs/source_tables/**",
+        "!/scripts/",
+        "!/scripts/**",
+        "/outputs/raw/",
+        "/outputs/raw/**",
+        "/outputs/tmp/",
+        "/outputs/tmp/**",
+    ]:
+        assert rule in active
+
+
 def test_gitattributes_is_line_delimited():
     text = _text(REPO_ROOT / ".gitattributes")
 

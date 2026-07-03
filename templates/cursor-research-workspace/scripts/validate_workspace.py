@@ -63,7 +63,7 @@ SECRET_FIELD_RE = re.compile(
     r"(?i)\b(api[_-]?key|key|token|secret|cookie|authorization|bearer|access[_-]?token|refresh[_-]?token|session)\b"
     r"\s*[:=]\s*[\"']?([^\"',\s#]+)"
 )
-VALIDATOR_VERSION = "2026-07-03-r5"
+VALIDATOR_VERSION = "2026-07-03-r6"
 
 
 def validate_workspace(root: Path, *, strict: bool = False, mode: str = "generated") -> list[str]:
@@ -208,7 +208,7 @@ def _validate_ignore_files(root: Path, errors: list[str]) -> None:
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")
-        lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        lines = _active_lines(text)
         if len(text) > 120 and text.count("\n") < 4:
             errors.append(f"{rel} appears single-line; active rules may be swallowed by comments")
         if not lines:
@@ -234,6 +234,14 @@ def _validate_ignore_files(root: Path, errors: list[str]) -> None:
             for rule in required_rules:
                 if rule not in lines:
                     errors.append(f"{rel} missing indexing rule: {rule}")
+
+
+def _active_lines(text: str) -> list[str]:
+    return [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
 
 
 def _validate_line_sensitive_files(root: Path, errors: list[str]) -> None:
