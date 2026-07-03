@@ -33,6 +33,28 @@ Optional arguments:
 
 `--ir-search-live` defaults to `0` for first-run safety. Rerun with `--ir-search-live 1` after provider keys are configured.
 
+Bootstrap runs an MCP runtime preflight by default. The selected `--ir-search-python` must be the same Python 3.10+ interpreter Cursor will use, and it must import all of:
+
+- `ir_search`
+- `mcp.server.fastmcp.FastMCP`
+- `ir_search.mcp_server`
+
+If the preflight fails with a missing MCP dependency, install the MCP extra into that interpreter. The `mcp>=1` package requires Python >=3.10, so do not use macOS's older system Python for Cursor MCP:
+
+```bash
+/ABSOLUTE/PATH/TO/python -m pip install -e "/ABSOLUTE/PATH/TO/ir-search[mcp]"
+```
+
+You can diagnose an already generated workspace with:
+
+```bash
+python /ABSOLUTE/PATH/TO/cursor-research-workspace/scripts/doctor_ir_search_mcp.py \
+  --ir-search-python /ABSOLUTE/PATH/TO/python \
+  --ir-search-path /ABSOLUTE/PATH/TO/ir-search
+```
+
+Use `--skip-mcp-runtime-check` only when packaging the template or creating intentionally offline fixtures. For real Cursor use, a Python payload, terminal import, or manual script run is not a substitute for Cursor listing the `ir_search` MCP tools.
+
 If you already keep provider keys in the `ir_search` repo's `ir_search.env`, pass it with `--env-file`. The generated MCP config points Cursor at `scripts/run_ir_search_mcp.sh`; the wrapper sources the env file at startup, so real keys are not written into `.cursor/mcp.json`.
 
 Use `--dry-run` to preview created files. Existing files are not overwritten unless `--overwrite` is provided.
@@ -46,7 +68,7 @@ The bootstrap script renders:
 .cursor/mcp.json
 ```
 
-The generated MCP config uses a local wrapper script:
+The generated MCP config declares the `ir_search` server as stdio and uses a local wrapper script:
 
 ```text
 .cursor/mcp.json -> scripts/run_ir_search_mcp.sh -> python -m ir_search.mcp_server
@@ -104,7 +126,7 @@ The generated workspace keeps Cursor indexing narrow:
 
 ## Fallback When MCP Is Unavailable
 
-If `ir_search` MCP is unavailable, do not answer current facts as if verified. State that external verification is required, provide only a conceptual framework, and list manual sources to check.
+If `ir_search` MCP is unavailable, do not answer current facts as if verified. Do not replace the missing MCP connection with a Python payload. State that external verification is required, provide only a conceptual framework, list manual sources to check, and ask the user to run `scripts/doctor_ir_search_mcp.py`.
 
 ## Evidence Status Mapping
 

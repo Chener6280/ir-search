@@ -27,3 +27,6 @@ pythonpath = ["."]
 markers = [
   "live: optional tests that require live provider configuration or network access",
 ]
+
+[tool.setuptools.packages.find]
+include = ["ir_search*"]

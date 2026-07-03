@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "ir_search": {
+      "type": "stdio",
       "command": "/bin/zsh",
       "args": ["{{WORKSPACE_ROOT}}/scripts/run_ir_search_mcp.sh"],
       "env": {

@@ -50,6 +50,20 @@ MCP 入口暴露搜索、文档读取、证据抽取、claim verification、deep
 python -m ir_search.mcp_server
 ```
 
+Cursor 里使用 MCP 时，`IR_SEARCH_PYTHON` 必须是 Python 3.10+，并且要能同时 import `ir_search`、`mcp.server.fastmcp.FastMCP` 和 `ir_search.mcp_server`。可用 doctor 先检查：
+
+```bash
+python scripts/doctor_ir_search_mcp.py \
+  --ir-search-python /ABSOLUTE/PATH/TO/python \
+  --ir-search-path /ABSOLUTE/PATH/TO/ir-search
+```
+
+如果缺少 FastMCP，请把 MCP extra 安装到 Cursor 将使用的解释器中：
+
+```bash
+/ABSOLUTE/PATH/TO/python -m pip install -e "/ABSOLUTE/PATH/TO/ir-search[mcp]"
+```
+
 当前工具列表：
 
 ```text

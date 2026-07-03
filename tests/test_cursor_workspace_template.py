@@ -25,6 +25,7 @@ def test_workspace_template_files_exist():
         "notes/smoke_test_checklist.md",
         "docs/onboarding.md",
         "scripts/bootstrap_workspace.sh",
+        "scripts/doctor_ir_search_mcp.py",
         "scripts/run_ir_search_mcp.sh",
         "scripts/validate_workspace.py",
         "scripts/smoke_test_checklist.md",
@@ -65,7 +66,7 @@ def test_validate_workspace_detects_missing_file(tmp_path):
     target = tmp_path / "bad"
     target.mkdir()
 
-    errors = validator.validate_workspace(target)
+    errors = validator.validate_workspace(target, mode="generated")
 
     assert any("Missing file" in error for error in errors)
 
@@ -88,8 +89,8 @@ def test_validate_workspace_detects_secret_and_personal_path(tmp_path):
     (target / "notes" / "manual_verification_log.md").write_text("token=real-secret\n/Users/alice/private\n", encoding="utf-8")
 
     validator = _load_validator()
-    errors, warnings = validator.collect_validation_issues(target)
-    strict_errors = validator.validate_workspace(target, strict=True)
+    errors, warnings = validator.collect_validation_issues(target, mode="generated")
+    strict_errors = validator.validate_workspace(target, strict=True, mode="generated")
 
     assert any("Possible secret" in error for error in errors)
     assert any("Personal path" in warning for warning in warnings)
@@ -122,7 +123,14 @@ def _load_validator():
 
 def _fake_ir_search_runtime(tmp_path: Path) -> tuple[Path, Path]:
     python_path = tmp_path / "fake-python"
-    python_path.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    python_path.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"${1:-}\" == \"-c\" && \"${2:-}\" == *\"list_tool_names\"* ]]; then\n"
+        "  echo '[\"search\", \"fetch_document\", \"extract_evidence\", \"verify_claims\", \"deep_research\", \"source_health\"]'\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
     python_path.chmod(0o755)
     ir_search_path = tmp_path / "fake-ir-search"
     package = ir_search_path / "ir_search"

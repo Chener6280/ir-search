@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -27,6 +28,7 @@ REQUIRED_FILES = [
     "prompts/R-SOURCE-HEALTH.md",
     "prompts/R-DEEP-RESEARCH-SMOKE.md",
     "notes/smoke_test_checklist.md",
+    "scripts/doctor_ir_search_mcp.py",
     "scripts/bootstrap_workspace.sh",
     "scripts/run_ir_search_mcp.sh",
     "sources/papers/sample_monetary_policy_transmission.md",
@@ -63,15 +65,21 @@ SECRET_FIELD_RE = re.compile(
     r"(?i)\b(api[_-]?key|key|token|secret|cookie|authorization|bearer|access[_-]?token|refresh[_-]?token|session)\b"
     r"\s*[:=]\s*[\"']?([^\"',\s#]+)"
 )
-VALIDATOR_VERSION = "2026-07-03-r7"
+VALIDATOR_VERSION = "2026-07-03-r8"
 
 
-def validate_workspace(root: Path, *, strict: bool = False, mode: str = "generated") -> list[str]:
-    errors, _warnings = collect_validation_issues(root, strict=strict, mode=mode)
+def validate_workspace(root: Path, *, strict: bool = False, mode: str = "generated", skip_mcp_runtime_check: bool = False) -> list[str]:
+    errors, _warnings = collect_validation_issues(root, strict=strict, mode=mode, skip_mcp_runtime_check=skip_mcp_runtime_check)
     return errors
 
 
-def collect_validation_issues(root: Path, *, strict: bool = False, mode: str = "generated") -> tuple[list[str], list[str]]:
+def collect_validation_issues(
+    root: Path,
+    *,
+    strict: bool = False,
+    mode: str = "generated",
+    skip_mcp_runtime_check: bool = False,
+) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     root = root.expanduser().resolve()
@@ -84,7 +92,7 @@ def collect_validation_issues(root: Path, *, strict: bool = False, mode: str = "
         if not (root / rel).exists():
             errors.append(f"Missing file: {rel}")
 
-    _validate_mcp(root, errors, warnings, mode=mode)
+    _validate_mcp(root, errors, warnings, mode=mode, skip_mcp_runtime_check=skip_mcp_runtime_check)
     _validate_rules(root, errors)
     _validate_ignore_files(root, errors)
     _validate_line_sensitive_files(root, errors)
@@ -93,7 +101,7 @@ def collect_validation_issues(root: Path, *, strict: bool = False, mode: str = "
     return errors, warnings
 
 
-def _validate_mcp(root: Path, errors: list[str], warnings: list[str], *, mode: str) -> None:
+def _validate_mcp(root: Path, errors: list[str], warnings: list[str], *, mode: str, skip_mcp_runtime_check: bool) -> None:
     if not (root / ".cursor/mcp.json").exists():
         if mode == "generated":
             errors.append("Missing .cursor/mcp.json in generated workspace")
@@ -119,13 +127,24 @@ def _validate_mcp(root: Path, errors: list[str], warnings: list[str], *, mode: s
                     errors.append(f"Unreplaced placeholder in .cursor/mcp.json: {placeholder}")
             if "mcpServers" not in data:
                 errors.append("Missing mcpServers in .cursor/mcp.json")
-            _validate_ir_search_mcp_config(root, data, errors)
+            _validate_ir_search_mcp_config(root, data, errors, warnings)
+            if mode == "generated":
+                if skip_mcp_runtime_check:
+                    warnings.append("MCP runtime check skipped; Cursor may not show the ir_search MCP server.")
+                else:
+                    _validate_mcp_runtime(root, data, errors)
         if ENV_REF_RE.search(text):
             warnings.append(f"{rel} uses ${'{'}env:KEY{'}'} references; confirm Cursor env expansion or launch Cursor from an exported shell.")
 
 
-def _validate_ir_search_mcp_config(root: Path, data: dict, errors: list[str]) -> None:
+def _validate_ir_search_mcp_config(root: Path, data: dict, errors: list[str], warnings: list[str]) -> None:
     server = data.get("mcpServers", {}).get("ir_search", {}) if isinstance(data, dict) else {}
+    server_type = server.get("type")
+    if server_type is None:
+        warnings.append("ir_search MCP server type is missing; bootstrap now renders type=stdio for Cursor compatibility.")
+    elif server_type != "stdio":
+        errors.append(f"ir_search MCP server type must be stdio, got: {server_type}")
+
     command = server.get("command", "")
     if not command:
         errors.append("Missing ir_search MCP command")
@@ -160,6 +179,46 @@ def _validate_ir_search_mcp_config(root: Path, data: dict, errors: list[str]) ->
         errors.append("IR_SEARCH_ENV_FILE still uses /ABSOLUTE/PATH/TO placeholder")
     elif env_file and not Path(env_file).exists():
         errors.append(f"IR_SEARCH_ENV_FILE does not exist: {env_file}")
+
+
+def _validate_mcp_runtime(root: Path, data: dict, errors: list[str]) -> None:
+    server = data.get("mcpServers", {}).get("ir_search", {}) if isinstance(data, dict) else {}
+    env = server.get("env", {}) if isinstance(server, dict) else {}
+    python_path = env.get("IR_SEARCH_PYTHON", "")
+    ir_search_path = env.get("IR_SEARCH_PATH", "")
+    if not python_path or not ir_search_path:
+        errors.append("MCP runtime check cannot run without IR_SEARCH_PYTHON and IR_SEARCH_PATH")
+        return
+    if python_path.startswith("/ABSOLUTE/PATH/TO/") or ir_search_path.startswith("/ABSOLUTE/PATH/TO/"):
+        return
+
+    doctor_path = root / "scripts" / "doctor_ir_search_mcp.py"
+    if not doctor_path.exists():
+        errors.append("Missing MCP runtime doctor: scripts/doctor_ir_search_mcp.py")
+        return
+    spec = importlib.util.spec_from_file_location("generated_workspace_mcp_doctor", doctor_path)
+    if spec is None or spec.loader is None:
+        errors.append(f"Could not load MCP runtime doctor: {doctor_path}")
+        return
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    diagnostics = module.run_diagnostics(
+        ir_search_python=Path(python_path),
+        ir_search_path=Path(ir_search_path),
+        live=str(env.get("IR_SEARCH_LIVE", "0")),
+    )
+    if diagnostics["ok"]:
+        return
+    fix = diagnostics.get("fix", {})
+    default_install = f'{python_path} -m pip install -e "{ir_search_path}[mcp]"'
+    errors.append(
+        "MCP runtime check failed:\n"
+        + "\n".join(str(error) for error in diagnostics.get("errors", []))
+        + "\n\nInstall:\n"
+        + f"  {fix.get('install', default_install)}\n\n"
+        + "Or re-run bootstrap with:\n"
+        + "  --ir-search-python <path-to-venv-python-with-ir-search-mcp>"
+    )
 
 
 def _validate_rules(root: Path, errors: list[str]) -> None:
@@ -351,9 +410,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("workspace", type=Path)
     parser.add_argument("--mode", choices=["template", "generated"], default="generated")
     parser.add_argument("--strict", action="store_true", help="Treat personal paths as errors instead of warnings")
+    parser.add_argument("--skip-mcp-runtime-check", action="store_true", help="Skip generated-workspace MCP runtime preflight")
     args = parser.parse_args(argv)
-    errors, warnings = collect_validation_issues(args.workspace, strict=args.strict, mode=args.mode)
+    errors, warnings = collect_validation_issues(
+        args.workspace,
+        strict=args.strict,
+        mode=args.mode,
+        skip_mcp_runtime_check=args.skip_mcp_runtime_check,
+    )
     print(f"[INFO] validate_workspace version: {VALIDATOR_VERSION}")
+    if args.mode == "template":
+        print("[INFO] MCP runtime check skipped in template mode.")
     for warning in warnings:
         print(f"[WARN] {warning}")
     if errors:

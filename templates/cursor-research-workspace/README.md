@@ -27,7 +27,25 @@ It is designed to make Cursor behave more like a web-based GPT/Claude research a
 5. Run `prompts/R-DEEP-RESEARCH-SMOKE.md` before production use.
 6. Use `prompts/R-FINANCE-WEB.md` for current finance or market work.
 7. Use `prompts/R-LITERATURE.md` for local-only / document-first reading.
-8. If MCP fails, downgrade to conceptual analysis and a manual verification checklist.
+8. If MCP fails, run `scripts/doctor_ir_search_mcp.py`; downgrade to conceptual analysis and a manual verification checklist until Cursor lists the `ir_search` MCP tools.
+
+## MCP Runtime Preflight
+
+This workspace includes `scripts/doctor_ir_search_mcp.py`. Run it when Cursor does not show the `ir_search` MCP server or when `R-SOURCE-HEALTH` cannot call `ir_search.source_health`:
+
+```bash
+python scripts/doctor_ir_search_mcp.py \
+  --ir-search-python /ABSOLUTE/PATH/TO/python \
+  --ir-search-path /ABSOLUTE/PATH/TO/ir-search
+```
+
+The selected Python must be Python 3.10+ and import `ir_search`, `mcp.server.fastmcp.FastMCP`, and `ir_search.mcp_server`. If it cannot import FastMCP, install the MCP extra into that same interpreter:
+
+```bash
+/ABSOLUTE/PATH/TO/python -m pip install -e "/ABSOLUTE/PATH/TO/ir-search[mcp]"
+```
+
+Do not treat a terminal-only Python payload as a replacement for a working Cursor MCP connection.
 
 ## Outputs
 

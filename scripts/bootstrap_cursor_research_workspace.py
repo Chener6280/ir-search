@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--skip-mcp-runtime-check", action="store_true", help="Skip the ir_search MCP runtime preflight")
     args = parser.parse_args(argv)
 
     target = args.target.expanduser().resolve()
@@ -53,6 +54,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[DRY-RUN] copy {src.relative_to(TEMPLATE_ROOT)} -> {dst}")
         print("[DRY-RUN] render .cursor/mcp.json.example")
         print("[DRY-RUN] create .cursor/mcp.json if missing")
+        if args.skip_mcp_runtime_check:
+            print("[DRY-RUN] skip MCP runtime preflight")
+        else:
+            print("[DRY-RUN] run MCP runtime preflight")
         return 0
 
     target.mkdir(parents=True, exist_ok=True)
@@ -65,7 +70,18 @@ def main(argv: list[str] | None = None) -> int:
         shutil.copy2(src, dst)
 
     render_mcp_files(target, replacements, overwrite=args.overwrite)
-    result = validate_generated_workspace(target)
+    if args.skip_mcp_runtime_check:
+        print("[WARN] MCP runtime check skipped. Cursor may not show the ir_search MCP server until you run scripts/doctor_ir_search_mcp.py.")
+    else:
+        preflight_result = run_mcp_runtime_preflight(
+            ir_search_python=_absolute_path(args.ir_search_python),
+            ir_search_path=ir_search_path,
+            live=str(args.ir_search_live),
+        )
+        if preflight_result != 0:
+            print("[ERROR] Workspace files were generated, but the ir_search MCP runtime is invalid. Fix the Python runtime and rerun bootstrap.")
+            return preflight_result
+    result = validate_generated_workspace(target, skip_mcp_runtime_check=args.skip_mcp_runtime_check)
     if result == 0:
         print_onboarding(target)
     return result
@@ -139,12 +155,26 @@ def print_onboarding(target: Path) -> None:
     print("[OK] Workspace created.")
     print("Next steps:")
     print(f"1. Open this folder alone in Cursor: {target}")
-    print("2. Run prompt: prompts/R-SOURCE-HEALTH.md")
-    print("3. If all live sources are unavailable, check env expansion and API keys.")
-    print("4. To enable live mode, rerun with --ir-search-live 1 and optionally --env-file /path/to/ir_search.env.")
+    print("2. If Cursor MCP is not green, run: python scripts/doctor_ir_search_mcp.py --ir-search-python <python> --ir-search-path <ir-search>")
+    print("3. Run prompt: prompts/R-SOURCE-HEALTH.md")
+    print("4. If all live sources are unavailable, check env expansion and API keys.")
+    print("5. To enable live mode, rerun with --ir-search-live 1 and optionally --env-file /path/to/ir_search.env.")
 
 
-def validate_generated_workspace(target: Path) -> int:
+def run_mcp_runtime_preflight(*, ir_search_python: Path, ir_search_path: Path, live: str) -> int:
+    doctor_path = REPO_ROOT / "scripts" / "doctor_ir_search_mcp.py"
+    spec = importlib.util.spec_from_file_location("doctor_ir_search_mcp", doctor_path)
+    if spec is None or spec.loader is None:
+        print(f"[ERROR] Could not load MCP runtime doctor: {doctor_path}")
+        return 1
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    diagnostics = module.run_diagnostics(ir_search_python=ir_search_python, ir_search_path=ir_search_path, live=live)
+    module.print_human_report(diagnostics)
+    return 0 if diagnostics["ok"] else 1
+
+
+def validate_generated_workspace(target: Path, *, skip_mcp_runtime_check: bool = False) -> int:
     validator_path = target / "scripts" / "validate_workspace.py"
     spec = importlib.util.spec_from_file_location("cursor_workspace_validator", validator_path)
     if spec is None or spec.loader is None:
@@ -152,7 +182,10 @@ def validate_generated_workspace(target: Path) -> int:
         return 1
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return int(module.main([str(target), "--mode", "generated"]))
+    argv = [str(target), "--mode", "generated"]
+    if skip_mcp_runtime_check:
+        argv.append("--skip-mcp-runtime-check")
+    return int(module.main(argv))
 
 
 if __name__ == "__main__":
