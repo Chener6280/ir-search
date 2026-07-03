@@ -55,7 +55,13 @@ def dajiala_accounts_path() -> Path:
     configured = os.environ.get("DAJIALA_ACCOUNTS_PATH") or os.environ.get("WECHAT_ACCOUNTS_PATH")
     if configured:
         return Path(configured).expanduser()
-    return Path.cwd() / "accounts.json"
+    cwd_candidate = Path.cwd() / "accounts.json"
+    if cwd_candidate.exists():
+        return cwd_candidate
+    ir_search_path = os.environ.get("IR_SEARCH_PATH")
+    if ir_search_path:
+        return Path(ir_search_path).expanduser() / "accounts.json"
+    return cwd_candidate
 
 
 def window_dates(q: Query) -> tuple[date, date]:

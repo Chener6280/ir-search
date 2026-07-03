@@ -33,7 +33,7 @@ def test_recent_question_requires_recent_evidence_for_supported_claims():
 
     apply_freshness_requirements("最近海外 AI 光模块需求如何", [claim])
 
-    assert claim.status == "mixed"
+    assert claim.status == "insufficient_evidence"
     assert any("historical/missing_date" in caveat for caveat in claim.caveats)
 
 

@@ -64,6 +64,39 @@ def test_doctor_env_local_reports_key_presence_without_values(tmp_path):
     assert "bocha_test_value" not in json.dumps(diagnostics)
 
 
+def test_doctor_merges_workspace_mcp_env_before_env_local(tmp_path):
+    python_path, ir_search_path = _fake_runtime(tmp_path, mode="missing_mcp")
+    workspace = tmp_path / "workspace"
+    cursor = workspace / ".cursor"
+    cursor.mkdir(parents=True)
+    (cursor / "mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "ir_search": {
+                        "env": {
+                            "IR_SEARCH_LIVE": "0",
+                            "MANUAL_WECHAT_ROOT": "/private/tmp/manual-wechat",
+                            "BOCHA_API_KEY": "bocha_mcp_value",
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    env_local = workspace / ".env.local"
+    env_local.write_text("IR_SEARCH_LIVE=1\n", encoding="utf-8")
+
+    diagnostics = run_diagnostics(ir_search_python=python_path, ir_search_path=ir_search_path, env_local_path=env_local)
+
+    assert diagnostics["ok"] is False
+    assert diagnostics["env"]["IR_SEARCH_LIVE"] == "1"
+    assert diagnostics["env"]["has_BOCHA_API_KEY"] is True
+    assert diagnostics["env"]["has_MANUAL_WECHAT_ROOT"] is True
+    assert "bocha_mcp_value" not in json.dumps(diagnostics)
+
+
 def _fake_runtime(tmp_path: Path, *, mode: str) -> tuple[Path, Path]:
     python_path = tmp_path / f"fake-python-{mode}"
     python_path.write_text(

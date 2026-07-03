@@ -53,18 +53,19 @@ def synthesize_answer(
         [
             "",
             "证据表",
-            "| Claim | Status | Source | Source Tier | Evidence Type | Date | Freshness | Evidence | Caveat |",
-            "|---|---|---|---|---|---|---|---|---|",
+            "| Claim | Status | Source | Source Class | Source Tier | Evidence Type | Text Basis | Date | Freshness | Evidence | Caveat |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
         ]
     )
     for entry in claim_ledger:
         spans = dedupe_evidence_spans(entry.supporting_spans or entry.contradicting_spans, entry)
         if not spans:
-            lines.append(f"| {_cell(entry.claim)} | {entry.status} | missing |  |  |  |  |  | {_cell('; '.join(entry.caveats))} |")
+            lines.append(f"| {_cell(entry.claim)} | {entry.status} | missing |  |  |  |  |  |  |  | {_cell('; '.join(entry.caveats))} |")
             continue
         for span in spans[:3]:
             date = span.published_at.date().isoformat() if span.published_at else ""
             freshness = span.extra.get("freshness_bucket", "missing_date")
+            text_basis = "snippet_only" if span.extra.get("content_type") == "snippet" else "full_document_or_local_text"
             caveats = list(entry.caveats)
             if span.source_tier == SourceTier.MEDIA and span.evidence_type == EvidenceType.FINANCIAL_REPORT:
                 caveats.append("warning: media source cannot be treated as financial_report")
@@ -73,8 +74,10 @@ def synthesize_answer(
                 f"{_cell(entry.claim)} | "
                 f"{entry.status} | "
                 f"{_cell(span.source + ': ' + span.title[:60])} | "
+                f"{source_class_for_span(span)} | "
                 f"{span.source_tier.name} | "
                 f"{span.evidence_type.value} | "
+                f"{text_basis} | "
                 f"{date} | "
                 f"{freshness} | "
                 f"{_cell(span.text[:120])} | "
@@ -148,6 +151,24 @@ def dedupe_evidence_spans(spans: list[EvidenceSpan], entry: ClaimVerification) -
         fallback_seen.add(fallback_key)
         deduped.append(span)
     return deduped
+
+
+def source_class_for_span(span: EvidenceSpan) -> str:
+    if span.extra.get("content_type") == "snippet":
+        return "snippet_only"
+    if span.source_tier in {SourceTier.EXCHANGE_FILING, SourceTier.REGULATOR}:
+        return "official_primary"
+    if span.source_tier == SourceTier.COMPANY:
+        if span.evidence_type == EvidenceType.EARNINGS_CALL:
+            return "earnings_transcript"
+        return "company_ir"
+    if span.source_tier == SourceTier.BROKER:
+        return "market_research"
+    if span.source in {"manual_wechat", "wechat_opencli", "dajiala"} or "mp.weixin.qq.com" in span.url:
+        return "wechat_or_social"
+    if span.source_tier == SourceTier.MEDIA:
+        return "media"
+    return "other"
 
 
 def _canonical(url: str) -> str:

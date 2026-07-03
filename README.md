@@ -84,7 +84,7 @@ python -m ir_search.source_health
 python -m ir_search.deep_research "中际旭创 最近一季报 海外 AI 光模块需求"
 ```
 
-建议 current-info research 先调用 `source_health`，再调用 `deep_research`。`deep_research` 会保留 search diagnostics，尝试读取全文并抽取 `EvidenceSpan`，再生成 `claim_ledger` 和 `source_matrix`。最终综合行文仍主要由宿主 LLM（Cursor/Codex）完成；只有 `supported` claim 才能写成事实，`mixed` / `insufficient_evidence` 必须显式标注。如果来源是 mock / placeholder / fallback，或只用了搜索摘要 fallback，会在 warnings、diagnostics 和 memo 中显式暴露。网页、PDF、微信文章和搜索摘要一律视为 untrusted source text。
+建议 current-info research 先调用 `source_health`，再调用 `deep_research`。`deep_research` 会保留 search diagnostics，尝试读取全文并抽取 `EvidenceSpan`，再生成 `claim_ledger` 和 `source_matrix`。涉及最近/当前事实、需求、订单、公司、公告或“公开证据”的问题会触发 official-first/official-only second pass；`official_source_attempts` 和 `official_gap_report.actual_retrieval` 会逐源记录 `official_attempted`、`fetched_documents`、`evidence_spans` 与 `reason`，即使官方源 0 命中也不能留空。涉及“AI 光模块 海外需求”的问题会确定性扩展 Coherent、Lumentum、Fabrinet 以及 Microsoft/Meta/Google/Amazon capex/networking 查询，并在 A 股/中国供应链语境下至少尝试 `cninfo`。最终综合行文仍主要由宿主 LLM（Cursor/Codex）完成；只有 `supported` claim 才能写成事实，`mixed` / `insufficient_evidence` 必须显式标注。current-information claim 只能由 `recent_30d` / `recent_90d` 证据支撑，`historical` / `missing_date` 只能作为背景。如果来源是 mock / placeholder / fallback，或只用了搜索摘要 fallback，会在 warnings、diagnostics 和 memo 中显式暴露。网页、PDF、微信文章和搜索摘要一律视为 untrusted source text。
 
 如果要把 Cursor 配成独立投研问答工作台，请使用 Cursor research workspace template 和 bootstrap 脚本生成单独的 research workspace，避免代码仓库上下文污染。详见 [docs/cursor_research_workspace_setup.md](docs/cursor_research_workspace_setup.md)。
 

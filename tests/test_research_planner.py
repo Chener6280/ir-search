@@ -37,3 +37,16 @@ def test_source_health_placeholder_added_to_plan_warnings():
     plan = plan_research_queries("中际旭创 最新季报", intent="earnings", source_health=health)
 
     assert any("sse is placeholder" in warning for warning in plan.warnings)
+
+
+def test_current_overseas_ai_optical_demand_requires_official_queries():
+    plan = plan_research_queries("最近90天 AI 光模块 海外需求 是否有公开证据", intent="auto", max_searches=8)
+
+    assert plan.intent == "overseas_mapping"
+    assert "cninfo" in plan.required_sources
+    assert "company_ir" in plan.required_sources
+    assert "sec" in plan.required_sources
+    assert any("Coherent AI optical demand earnings call" == query for query in plan.official_queries)
+    assert any("Lumentum datacom AI demand backlog" == query for query in plan.official_queries)
+    assert any("Fabrinet optical communications AI datacenter revenue" == query for query in plan.official_queries)
+    assert any("Microsoft Meta Google Amazon capex networking AI optical" == query for query in plan.official_queries)

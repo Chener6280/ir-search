@@ -11,7 +11,17 @@
 5. Extract question-relevant `EvidenceSpan` records.
 6. Draft deterministic claim candidates from the question and intent templates, then add evidence-derived subclaims.
 7. Verify claims against extracted evidence.
-8. Build `source_matrix`, diagnostics, unverified items, and a deterministic memo scaffold for the host LLM.
+8. Run official-only second-pass searches when current-information, company, filing, demand, or public-evidence questions lack primary source evidence.
+9. Build `source_matrix`, `official_source_attempts`, `official_gap_report`, diagnostics, unverified items, and a deterministic memo scaffold for the host LLM.
+
+## Official-First Current Information
+
+- Current-information questions include latest/recent/current/近30天/近90天/2026 wording.
+- Current company, demand, order, supply-chain, filing, or public-evidence questions require official-source attempts, not only commercial search hits.
+- If the question involves AI optical module overseas demand, the planner deterministically adds official-check queries for Coherent, Lumentum, Fabrinet, and Microsoft/Meta/Google/Amazon capex/networking.
+- If the same question has China-listed or A-share supply-chain context, `cninfo` is included in required official sources when available.
+- `official_source_attempts` and `official_gap_report.actual_retrieval` must include a structured row for every required official source, including 0-hit rows with `official_attempted`, `fetched_documents`, `evidence_spans`, and `reason`.
+- `historical` and `missing_date` evidence buckets are background only for current-information claims; only `recent_30d` and `recent_90d` can support those claims.
 
 ## Budgets
 

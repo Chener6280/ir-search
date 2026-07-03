@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 
+from .adapters.dajiala import dajiala_accounts_path
 from .adapters.manual_wechat import manual_wechat_root
+from .adapters.searxng import searxng_enabled
 from .kernel import build_registry
 
 
@@ -25,9 +27,8 @@ def source_health() -> dict:
             notes.append("IR_SEARCH_LIVE is not 1; live provider disabled")
         if mode == "mock":
             ok = False
-            reason = "live_disabled" if name in LIVE_GATED_SOURCES and not live_enabled else "adapter_mock"
-            if reason not in reasons:
-                reasons.append(reason)
+            if "adapter_mock" not in reasons:
+                reasons.append("adapter_mock")
             notes.append("mock adapter; useful for routing tests but not authoritative")
         elif mode == "placeholder":
             ok = False
@@ -44,10 +45,23 @@ def source_health() -> dict:
                 ok = False
                 reasons.append("path_missing")
                 notes.append("manual wechat directory not found; set MANUAL_WECHAT_ROOT")
-        if not reasons and mode == "experimental":
-            reasons.append("experimental_adapter")
-        elif not reasons and mode == "fallback":
-            reasons.append("fallback_adapter")
+        if name == "dajiala" and "key_missing" not in reasons:
+            if not dajiala_accounts_path().exists():
+                ok = False
+                reasons.append("path_missing")
+                notes.append("dajiala accounts file not found; set DAJIALA_ACCOUNTS_PATH or WECHAT_ACCOUNTS_PATH")
+        if mode == "experimental":
+            if not reasons:
+                ok = True
+                reasons.append("available_experimental")
+            if "experimental_adapter" not in reasons:
+                reasons.append("experimental_adapter")
+        elif mode == "fallback":
+            if name == "searxng" and searxng_enabled():
+                ok = True
+                reasons.append("available_fallback")
+            elif not reasons:
+                reasons.append("fallback_adapter")
         if not reasons and not ok:
             reasons.append("adapter_error")
         if not reasons and ok:
@@ -61,6 +75,8 @@ def source_health() -> dict:
                 "required_env": required_env,
                 "has_required_env": bool(os.environ.get(required_env)) if required_env else None,
                 "live_enabled": live_enabled,
+                "experimental": mode == "experimental",
+                "fallback": mode == "fallback",
             },
             "notes": notes,
         }
@@ -73,9 +89,15 @@ def source_health() -> dict:
             "has_TAVILY_API_KEY": bool(os.environ.get("TAVILY_API_KEY")),
             "has_ANYSEARCH_API_KEY": bool(os.environ.get("ANYSEARCH_API_KEY")),
             "has_DAJIALA_KEY": bool(os.environ.get("DAJIALA_KEY")),
+            "has_DAJIALA_ACCOUNTS_PATH": bool(os.environ.get("DAJIALA_ACCOUNTS_PATH") or os.environ.get("WECHAT_ACCOUNTS_PATH")),
+            "has_DAJIALA_ACCOUNTS_FILE": dajiala_accounts_path().exists(),
             "has_ZSXQ_GROUP_IDS": bool(os.environ.get("ZSXQ_GROUP_IDS")),
+            "has_ZSXQ_CLI_COMMAND": bool(os.environ.get("ZSXQ_CLI_COMMAND")),
             "has_WECHAT_OPENCLI_COMMAND": bool(os.environ.get("WECHAT_OPENCLI_COMMAND")),
+            "has_WEWE_RSS_BASE": bool(os.environ.get("WEWE_RSS_BASE")),
             "has_MANUAL_WECHAT_ROOT": bool(os.environ.get("MANUAL_WECHAT_ROOT") or os.environ.get("IR_SEARCH_MANUAL_WECHAT_ROOT")),
+            "has_TUSHARE_TOKEN": bool(os.environ.get("TUSHARE_TOKEN") or os.environ.get("TUSHARE_PRO_TOKEN")),
+            "has_LONGBRIDGE_CLI_COMMAND": bool(os.environ.get("LONGBRIDGE_CLI_COMMAND")),
         },
         "source_text_trust": "untrusted",
     }

@@ -4,7 +4,7 @@ from datetime import date
 import pytest
 
 from ir_search.adapters.base import AdapterError
-from ir_search.adapters.dajiala import DajialaAdapter
+from ir_search.adapters.dajiala import DajialaAdapter, dajiala_accounts_path
 from ir_search.kernel import build_registry
 from ir_search.models import Query, TimeWindow
 from ir_search.pipeline import prepare_query, select_sources
@@ -75,6 +75,21 @@ def test_dajiala_requires_accounts_file(tmp_path, monkeypatch):
 
     with pytest.raises(AdapterError, match="DAJIALA_ACCOUNTS_PATH"):
         DajialaAdapter().query(Query(text="一凌策略研究 最新文章"))
+
+
+def test_dajiala_accounts_path_falls_back_to_ir_search_path(tmp_path, monkeypatch):
+    repo = tmp_path / "ir-search"
+    repo.mkdir()
+    accounts = repo / "accounts.json"
+    accounts.write_text("{}", encoding="utf-8")
+    workspace = tmp_path / "ir-search-cursor-workspace"
+    workspace.mkdir()
+    monkeypatch.chdir(workspace)
+    monkeypatch.delenv("DAJIALA_ACCOUNTS_PATH", raising=False)
+    monkeypatch.delenv("WECHAT_ACCOUNTS_PATH", raising=False)
+    monkeypatch.setenv("IR_SEARCH_PATH", str(repo))
+
+    assert dajiala_accounts_path() == accounts
 
 
 def test_dajiala_source_is_registered():

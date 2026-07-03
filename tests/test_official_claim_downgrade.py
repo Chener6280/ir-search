@@ -57,7 +57,7 @@ def test_official_confirmation_claim_requires_official_span():
     assert claim.status == "supported"
 
 
-def test_deep_research_downgrades_official_claims_without_official_documents():
+def test_deep_research_downgrades_current_claims_without_recent_or_official_documents():
     def search_fn(q: Query) -> SearchResult:
         if q.sources:
             return SearchResult(
@@ -102,7 +102,8 @@ def test_deep_research_downgrades_official_claims_without_official_documents():
     assert run.extra["official_gap_report"]["verdict"] == "insufficient_primary_source_evidence"
     assert official_claims
     assert all(entry.status == "insufficient_evidence" for entry in official_claims)
-    assert media_claims and media_claims[0].status == "mixed"
+    assert media_claims and media_claims[0].status == "insufficient_evidence"
+    assert any("background only" in caveat for caveat in media_claims[0].caveats)
     assert any(row["final_status"] == "insufficient_evidence" for row in run.source_matrix if "季报" in row["claim"])
 
 

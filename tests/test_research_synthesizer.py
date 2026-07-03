@@ -58,6 +58,14 @@ def test_synthesizer_includes_freshness_bucket():
     assert "recent_30d" in answer
 
 
+def test_synthesizer_distinguishes_source_class_and_text_basis():
+    answer = _answer([ClaimVerification("c1", "公司收入增长", "supported", 0.8, supporting_spans=[_span()])])
+
+    assert "Source Class" in answer
+    assert "company_ir" in answer
+    assert "full_document_or_local_text" in answer
+
+
 def test_synthesizer_discloses_official_gap_report():
     answer = _answer(
         [ClaimVerification("c1", "公司收入增长", "mixed", 0.5)],

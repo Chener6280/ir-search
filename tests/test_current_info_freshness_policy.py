@@ -37,5 +37,5 @@ def test_current_info_historical_or_missing_date_cannot_stay_supported():
 
     apply_freshness_requirements("最近公司需求如何", [claim])
 
-    assert claim.status == "mixed"
+    assert claim.status == "insufficient_evidence"
     assert any("background only" in caveat for caveat in claim.caveats)

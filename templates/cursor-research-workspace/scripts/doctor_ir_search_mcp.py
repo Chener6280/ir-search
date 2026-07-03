@@ -30,10 +30,14 @@ def run_diagnostics(
     python_path = ir_search_python.expanduser()
     repo_path = ir_search_path.expanduser()
     env_local = _resolve_env_local(env_local_path)
+    workspace_root = _resolve_workspace_root(env_local)
+    mcp_env_values = _load_mcp_env_values(workspace_root)
     env_local_values = _load_env_file_values(env_local) if env_local and env_local.exists() else {}
+    runtime_env_values = dict(mcp_env_values)
+    runtime_env_values.update(env_local_values)
     initial_env = dict(os.environ)
-    initial_env.update(env_local_values)
-    initial_env["IR_SEARCH_LIVE"] = env_local_values.get("IR_SEARCH_LIVE", live)
+    initial_env.update(runtime_env_values)
+    initial_env["IR_SEARCH_LIVE"] = runtime_env_values.get("IR_SEARCH_LIVE", live)
     result: dict[str, Any] = {
         "ok": False,
         "selected_python": str(python_path),
@@ -73,7 +77,7 @@ def run_diagnostics(
         ("import_mcp_server", "import ir_search.mcp_server; print('mcp_server ok')"),
     ]
     for check_name, code in probes:
-        completed = _run_probe(python_path, repo_path, code, live=live, timeout_sec=timeout_sec, env_overrides=env_local_values)
+        completed = _run_probe(python_path, repo_path, code, live=live, timeout_sec=timeout_sec, env_overrides=runtime_env_values)
         if completed.returncode == 0:
             result["checks"][check_name] = True
         else:
@@ -86,7 +90,7 @@ def run_diagnostics(
         "import json; from ir_search.mcp_server import list_tool_names; print(json.dumps(list_tool_names()))",
         live=live,
         timeout_sec=timeout_sec,
-        env_overrides=env_local_values,
+        env_overrides=runtime_env_values,
     )
     if tool_probe.returncode != 0:
         result["errors"].append(_probe_error_message("tool_list", tool_probe, python_path, repo_path))
@@ -103,7 +107,7 @@ def run_diagnostics(
 
     result["checks"]["tool_list"] = True
     result["ok"] = True
-    _attach_source_health_diagnostics(result, python_path, repo_path, live=live, timeout_sec=timeout_sec, env_overrides=env_local_values)
+    _attach_source_health_diagnostics(result, python_path, repo_path, live=live, timeout_sec=timeout_sec, env_overrides=runtime_env_values)
     return result
 
 
@@ -280,9 +284,14 @@ def _env_presence(env: dict[str, str]) -> dict[str, bool | str]:
         "has_TAVILY_API_KEY": bool(env.get("TAVILY_API_KEY")),
         "has_ANYSEARCH_API_KEY": bool(env.get("ANYSEARCH_API_KEY")),
         "has_DAJIALA_KEY": bool(env.get("DAJIALA_KEY")),
+        "has_DAJIALA_ACCOUNTS_PATH": bool(env.get("DAJIALA_ACCOUNTS_PATH") or env.get("WECHAT_ACCOUNTS_PATH")),
         "has_ZSXQ_GROUP_IDS": bool(env.get("ZSXQ_GROUP_IDS")),
+        "has_ZSXQ_CLI_COMMAND": bool(env.get("ZSXQ_CLI_COMMAND")),
         "has_WECHAT_OPENCLI_COMMAND": bool(env.get("WECHAT_OPENCLI_COMMAND")),
+        "has_WEWE_RSS_BASE": bool(env.get("WEWE_RSS_BASE")),
         "has_MANUAL_WECHAT_ROOT": bool(env.get("MANUAL_WECHAT_ROOT") or env.get("IR_SEARCH_MANUAL_WECHAT_ROOT")),
+        "has_TUSHARE_TOKEN": bool(env.get("TUSHARE_TOKEN") or env.get("TUSHARE_PRO_TOKEN")),
+        "has_LONGBRIDGE_CLI_COMMAND": bool(env.get("LONGBRIDGE_CLI_COMMAND")),
     }
 
 
@@ -296,6 +305,33 @@ def _resolve_env_local(env_local_path: Path | None) -> Path | None:
     if script_candidate.exists():
         return script_candidate
     return cwd_candidate
+
+
+def _resolve_workspace_root(env_local: Path | None) -> Path | None:
+    if env_local is not None and env_local.name == ".env.local":
+        return env_local.expanduser().parent
+    cwd = Path.cwd()
+    if (cwd / ".cursor" / "mcp.json").exists():
+        return cwd
+    script_workspace = Path(__file__).resolve().parents[1]
+    if (script_workspace / ".cursor" / "mcp.json").exists():
+        return script_workspace
+    return None
+
+
+def _load_mcp_env_values(workspace_root: Path | None) -> dict[str, str]:
+    if workspace_root is None:
+        return {}
+    path = workspace_root / ".cursor" / "mcp.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    server = data.get("mcpServers", {}).get("ir_search", {}) if isinstance(data, dict) else {}
+    env = server.get("env", {}) if isinstance(server, dict) else {}
+    return {str(key): str(value) for key, value in env.items() if value is not None}
 
 
 def _load_env_file_values(path: Path) -> dict[str, str]:

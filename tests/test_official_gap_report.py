@@ -17,7 +17,9 @@ def test_source_health_live_is_not_evidence():
 
     assert capabilities["cninfo"]["adapter_mode"] == "live"
     assert report["verdict"] == "insufficient_primary_source_evidence"
-    assert report["actual_retrieval"]["cninfo"] == {}
+    assert report["actual_retrieval"]["cninfo"]["official_attempted"] is False
+    assert report["actual_retrieval"]["cninfo"]["fetched_documents"] == 0
+    assert report["actual_retrieval"]["cninfo"]["reason"] == "not_attempted"
 
 
 def test_actual_evidence_by_source_counts_fetched_documents():
@@ -51,12 +53,26 @@ def test_official_gap_report_when_no_official_evidence():
         "official_sources_required",
         "source_capability",
         "actual_retrieval",
+        "official_attempted",
         "official_sources_with_evidence",
         "official_supported_claims",
         "verdict",
         "manual_checklist",
     ]:
         assert field in report
+
+
+def test_official_attempts_show_not_found_after_live_search():
+    capabilities = {"cninfo": {"adapter_mode": "live", "ok": True}}
+    actual = {"cninfo": {"searched": True, "fetched_documents": 0, "evidence_spans": 0, "supporting_claims": []}}
+
+    attempts = build_official_source_attempts(["cninfo"], capabilities, actual)
+    report = build_official_gap_report("最近是否有公开证据", ["cninfo"], capabilities, actual, [])
+
+    assert attempts[0]["official_attempted"] is True
+    assert attempts[0]["reason"] == "not_found"
+    assert report["actual_retrieval"]["cninfo"]["official_attempted"] is True
+    assert report["actual_retrieval"]["cninfo"]["reason"] == "not_found"
 
 
 def test_placeholder_sources_listed_in_official_gap_report():
