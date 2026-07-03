@@ -63,7 +63,7 @@ SECRET_FIELD_RE = re.compile(
     r"(?i)\b(api[_-]?key|key|token|secret|cookie|authorization|bearer|access[_-]?token|refresh[_-]?token|session)\b"
     r"\s*[:=]\s*[\"']?([^\"',\s#]+)"
 )
-VALIDATOR_VERSION = "2026-07-03-r6"
+VALIDATOR_VERSION = "2026-07-03-r7"
 
 
 def validate_workspace(root: Path, *, strict: bool = False, mode: str = "generated") -> list[str]:
@@ -239,7 +239,7 @@ def _validate_ignore_files(root: Path, errors: list[str]) -> None:
 def _active_lines(text: str) -> list[str]:
     return [
         line.strip()
-        for line in text.splitlines()
+        for line in text.split("\n")
         if line.strip() and not line.lstrip().startswith("#")
     ]
 

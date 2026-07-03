@@ -152,7 +152,7 @@ def validate_generated_workspace(target: Path) -> int:
         return 1
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return int(module.main([str(target)]))
+    return int(module.main([str(target), "--mode", "generated"]))
 
 
 if __name__ == "__main__":

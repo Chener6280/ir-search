@@ -31,22 +31,24 @@ def test_source_files_are_lf_multiline():
 
         assert b"\r" not in data, path
         if path.name in {"README.md", "pyproject.toml"} or path.suffix in {".py", ".md", ".toml", ".yaml", ".yml"}:
-            assert data.count(b"\n") > 0, path
+            assert _lf_line_count(path) > 1, path
 
 
 def test_key_python_files_have_reviewable_line_counts():
-    gitattributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+    gitattributes_path = REPO_ROOT / ".gitattributes"
+    gitattributes = gitattributes_path.read_text(encoding="utf-8")
 
-    assert gitattributes.count("\n") >= 12
-    assert ".cursorindexingignore text eol=lf" in gitattributes.splitlines()
+    assert b"\r" not in gitattributes_path.read_bytes()
+    assert _lf_line_count(gitattributes_path) >= 13
+    assert ".cursorindexingignore text eol=lf" in gitattributes.split("\n")
     for rel in KEY_FILES:
         path = REPO_ROOT / rel
 
-        assert path.read_text(encoding="utf-8").count("\n") > 20, rel
+        assert _lf_line_count(path) > 20, rel
     for rel, minimum in KEY_LINE_THRESHOLDS.items():
         path = REPO_ROOT / rel
 
-        assert path.read_text(encoding="utf-8").count("\n") >= minimum, rel
+        assert _lf_line_count(path) >= minimum, rel
 
 
 def test_pyproject_and_readme_are_parseable_and_multiline():
@@ -61,7 +63,14 @@ def test_pyproject_and_readme_are_parseable_and_multiline():
     else:
         assert "[build-system]" in pyproject_text
 
-    assert (REPO_ROOT / "README.md").read_text(encoding="utf-8").count("\n") > 20
+    assert _lf_line_count(REPO_ROOT / "README.md") > 20
+
+
+def _lf_line_count(path: Path) -> int:
+    data = path.read_bytes()
+    if not data:
+        return 0
+    return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
 
 
 def _source_files() -> list[Path]:

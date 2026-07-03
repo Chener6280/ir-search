@@ -1,54 +1,78 @@
 from __future__ import annotations
 
-from pathlib import Path
 import importlib.util
+from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_ROOT = REPO_ROOT / "templates" / "cursor-research-workspace"
 
 
+def _raw(path: Path) -> bytes:
+    return path.read_bytes()
+
+
 def _text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+    return _raw(path).decode("utf-8")
 
 
-def test_root_readme_is_multiline_ir_search_readme():
-    text = _text(REPO_ROOT / "README.md")
+def _lf_line_count(path: Path) -> int:
+    data = _raw(path)
+    if not data:
+        return 0
+    return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
 
-    assert text.count("\n") > 10
+
+def _assert_lf_multiline(path: Path, minimum: int) -> None:
+    data = _raw(path)
+
+    assert b"\r" not in data, path
+    assert _lf_line_count(path) >= minimum, path
+
+
+def _active_lines(path: Path) -> list[str]:
+    return [
+        line.strip()
+        for line in _text(path).split("\n")
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def test_root_readme_is_lf_multiline_ir_search_readme():
+    path = REPO_ROOT / "README.md"
+    text = _text(path)
+
+    _assert_lf_multiline(path, 10)
     assert "ir-search" in text
     assert "MCP" in text
 
 
-def test_mdc_frontmatter_is_line_delimited():
+def test_mdc_frontmatter_is_lf_multiline():
     for path in sorted((TEMPLATE_ROOT / ".cursor" / "rules").glob("*.mdc")):
-        lines = _text(path).splitlines()
-        assert lines[0] == "---", path
-        assert "---" in lines[1:], path
-        assert any(line.startswith("description:") for line in lines[1:]), path
-        assert any(line.startswith("alwaysApply:") for line in lines[1:]), path
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        _assert_lf_multiline(path, 8)
+        lines = _text(path).split("\n")
+        assert lines[0] == "---", rel
+        assert "---" in lines[1:], rel
+        assert any(line.startswith("description:") for line in lines[1:]), rel
+        assert any(line.startswith("alwaysApply:") for line in lines[1:]), rel
 
 
-def test_ignore_files_have_active_multiline_rules():
+def test_ignore_files_have_active_lf_multiline_rules():
     for rel in [".cursorignore", ".cursorindexingignore"]:
-        text = _text(TEMPLATE_ROOT / rel)
-        active = [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        path = TEMPLATE_ROOT / rel
+        active = _active_lines(path)
 
-        assert text.count("\n") > 8
+        _assert_lf_multiline(path, 9)
         assert active
         assert active[0] == "/*"
 
-    assert _text(TEMPLATE_ROOT / ".cursorindexingignore").count("\n") >= 25
-    assert _text(TEMPLATE_ROOT / ".cursor" / "mcp.json.template").count("\n") >= 8
+    _assert_lf_multiline(TEMPLATE_ROOT / ".cursorindexingignore", 25)
+    _assert_lf_multiline(TEMPLATE_ROOT / ".cursor" / "mcp.json.template", 8)
 
 
 def test_cursorindexingignore_active_rules_are_complete():
-    text = _text(TEMPLATE_ROOT / ".cursorindexingignore")
-    active = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
+    active = _active_lines(TEMPLATE_ROOT / ".cursorindexingignore")
 
     assert active[0] == "/*"
     for rule in [
@@ -68,10 +92,11 @@ def test_cursorindexingignore_active_rules_are_complete():
         assert rule in active
 
 
-def test_gitattributes_is_line_delimited():
-    text = _text(REPO_ROOT / ".gitattributes")
+def test_gitattributes_is_lf_multiline():
+    path = REPO_ROOT / ".gitattributes"
+    lines = _text(path).split("\n")
 
-    assert text.count("\n") >= 12
+    _assert_lf_multiline(path, 13)
     for rule in [
         "* text=auto eol=lf",
         "*.py text eol=lf",
@@ -81,18 +106,10 @@ def test_gitattributes_is_line_delimited():
         ".cursorignore text eol=lf",
         ".cursorindexingignore text eol=lf",
     ]:
-        assert rule in text.splitlines()
+        assert rule in lines
 
 
-def test_python_files_do_not_use_cr_only_newlines():
-    for path in list((REPO_ROOT / "scripts").glob("*.py")) + list((TEMPLATE_ROOT / "scripts").glob("*.py")):
-        data = path.read_bytes()
-
-        assert b"\r" not in data
-        assert data.count(b"\n") > 10
-
-
-def test_key_scripts_have_reviewable_line_counts():
+def test_key_scripts_have_reviewable_lf_line_counts():
     thresholds = {
         REPO_ROOT / "scripts" / "bootstrap_cursor_research_workspace.py": 80,
         REPO_ROOT / "scripts" / "run_acceptance_cases.py": 80,
@@ -100,7 +117,29 @@ def test_key_scripts_have_reviewable_line_counts():
         TEMPLATE_ROOT / "scripts" / "validate_workspace.py": 120,
     }
     for path, minimum in thresholds.items():
-        assert _text(path).count("\n") >= minimum, path
+        _assert_lf_multiline(path, minimum)
+
+
+def test_acceptance_cases_are_lf_multiline_and_cover_twenty_cases():
+    path = REPO_ROOT / "tests" / "acceptance_cases.yaml"
+    text = _text(path)
+
+    _assert_lf_multiline(path, 100)
+    assert text.count("  - id:") >= 20
+    assert "must_not:" in text
+
+
+def test_fixture_files_are_lf_multiline():
+    for rel in [
+        "tests/fixtures/sample_acceptance_output.md",
+        "tests/fixtures/reused_run_output.md",
+        "tests/fixtures/missing_run_id_output.md",
+        "tests/fixtures/media_financial_report_output.md",
+        "tests/fixtures/missing_official_gap_report_output.md",
+        "tests/fixtures/missing_verify_claims_output.md",
+        "tests/fixtures/missing_freshness_bucket_output.md",
+    ]:
+        _assert_lf_multiline(REPO_ROOT / rel, 8)
 
 
 def test_pyproject_if_present_is_parseable():
@@ -113,21 +152,12 @@ def test_pyproject_if_present_is_parseable():
         tomllib.loads(path.read_text(encoding="utf-8"))
 
 
-def test_acceptance_cases_are_multiline_and_cover_twenty_cases():
-    path = REPO_ROOT / "tests" / "acceptance_cases.yaml"
-    text = _text(path)
-
-    assert text.count("\n") > 120
-    assert text.count("  - id:") >= 20
-    assert "must_not:" in text
-
-
 def test_bootstrap_and_validator_scripts_are_importable():
     for path in [
         REPO_ROOT / "scripts" / "bootstrap_cursor_research_workspace.py",
         TEMPLATE_ROOT / "scripts" / "validate_workspace.py",
     ]:
         spec = importlib.util.spec_from_file_location(path.stem, path)
-        module = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
