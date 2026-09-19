@@ -87,6 +87,8 @@ class FailureKind(str, Enum):
     RATE_LIMIT = "rate_limit"
     NETWORK = "network"
     TIMEOUT = "timeout"
+    CANCELLED = "cancelled"
+    BUDGET_EXHAUSTED = "budget_exhausted"
     UPSTREAM_SCHEMA = "upstream_schema"
     UNIMPLEMENTED = "unimplemented"
     BLOCKED_BY_POLICY = "blocked_by_policy"

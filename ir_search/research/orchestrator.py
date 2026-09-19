@@ -35,7 +35,11 @@ def deep_research(
     search_fn: Callable[[Query], SearchResult] = default_search,
     source_health_fn: Callable[[], dict] = default_source_health,
 ) -> ResearchRun:
-    """Run bounded search, fetch, evidence extraction, and claim verification."""
+    """Compatibility-only legacy search/fetch workflow; feature expansion is paused.
+
+    Existing arguments and result fields remain supported. New skill integrations
+    compose get_data, search_materials and retrieve and own their research judgments.
+    """
 
     started = datetime.now(timezone.utc)
     run_id = _run_id(question, started)

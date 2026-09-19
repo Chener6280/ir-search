@@ -1,0 +1,12 @@
+source,series_id,unit,frequency,seasonal_adjustment,source_url
+FRED,CPIAUCSL,index_1982_1984_100,monthly,seasonally_adjusted,https://fred.stlouisfed.org/series/CPIAUCSL
+FRED,UNRATE,percent,monthly,seasonally_adjusted,https://fred.stlouisfed.org/series/UNRATE
+FRED,FEDFUNDS,percent,monthly,not_seasonally_adjusted,https://fred.stlouisfed.org/series/FEDFUNDS
+FRED,DGS10,percent,daily,not_seasonally_adjusted,https://fred.stlouisfed.org/series/DGS10
+FRED,DGS2,percent,daily,not_seasonally_adjusted,https://fred.stlouisfed.org/series/DGS2
+FRED,GDPC1,billions_chained_2017_USD_annual_rate,quarterly,seasonally_adjusted,https://fred.stlouisfed.org/series/GDPC1
+WB,NY.GDP.MKTP.KD.ZG,annual_percent,annual,not_applicable,https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG
+WB,NY.GDP.MKTP.CD,current_USD,annual,not_applicable,https://data.worldbank.org/indicator/NY.GDP.MKTP.CD
+WB,FP.CPI.TOTL.ZG,annual_percent,annual,not_applicable,https://data.worldbank.org/indicator/FP.CPI.TOTL.ZG
+WB,SL.UEM.TOTL.ZS,percent_total_labor_force_ILO_modeled,annual,not_applicable,https://data.worldbank.org/indicator/SL.UEM.TOTL.ZS
+WB,NE.EXP.GNFS.ZS,percent_GDP,annual,not_applicable,https://data.worldbank.org/indicator/NE.EXP.GNFS.ZS

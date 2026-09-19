@@ -101,8 +101,8 @@ def run_diagnostics(
         result["errors"].append(f"Could not parse MCP tool list from selected Python: {tool_probe.stdout!r}")
         return result
     result["tool_names"] = sorted(tool_names)
-    if tool_names != EXPECTED_TOOLS:
-        result["errors"].append(f"MCP tool list mismatch: expected {sorted(EXPECTED_TOOLS)}, got {sorted(tool_names)}")
+    if not EXPECTED_TOOLS <= tool_names:
+        result["errors"].append(f"MCP tool list missing required tools: expected at least {sorted(EXPECTED_TOOLS)}, got {sorted(tool_names)}")
         return result
 
     result["checks"]["tool_list"] = True

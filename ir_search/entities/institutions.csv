@@ -1,0 +1,15 @@
+institution_id,name,aliases,category,region,domains,source_url,reviewed_on,directory_urls
+pbc,中国人民银行,人民银行|PBOC|People's Bank of China,regulator,cn,pbc.gov.cn,https://www.pbc.gov.cn/,2026-09-17,https://www.pbc.gov.cn/tiaofasi/144941/index.html
+csrc,中国证券监督管理委员会,中国证监会|证监会|CSRC,regulator,cn,csrc.gov.cn,https://www.csrc.gov.cn/,2026-09-17,https://www.csrc.gov.cn/csrc/c101953/zfxxgk_zdgk.shtml|https://www.csrc.gov.cn/csrc/c101954/zfxxgk_zdgk.shtml
+nfra,国家金融监督管理总局,金融监管总局|NFRA,regulator,cn,nfra.gov.cn,https://www.nfra.gov.cn/,2026-09-17,https://www.nfra.gov.cn/cn/view/pages/zhengwuxinxi/guizhang.html
+efunds,易方达基金管理有限公司,易方达基金|易方达|E Fund,fund_manager,cn,efunds.com.cn,https://www.efunds.com.cn/,2026-09-17,
+chinaamc,华夏基金管理有限公司,华夏基金|ChinaAMC,fund_manager,cn,chinaamc.com,https://www.chinaamc.com/,2026-09-17,
+icbc,中国工商银行股份有限公司,中国工商银行|工商银行|工行|ICBC,bank,cn,icbc.com.cn,https://www.icbc.com.cn/,2026-09-17,
+cmb,招商银行股份有限公司,招商银行|招行|China Merchants Bank,bank,cn,cmbchina.com,https://www.cmbchina.com/,2026-09-17,
+cicc,中国国际金融股份有限公司,中金公司|CICC,securities,cn,cicc.com,https://www.cicc.com/business/list_134_143_28.html,2026-09-17,
+citics,中信证券股份有限公司,中信证券|CITIC Securities,securities,cn,citics.com,https://www.citics.com/newsite/,2026-09-17,
+blackrock,BlackRock,贝莱德,fund_manager,overseas,blackrock.com,https://www.blackrock.com/,2026-09-17,
+jpmorgan,J.P. Morgan,摩根大通|JPMorgan,bank,overseas,jpmorgan.com,https://www.jpmorgan.com/about-us,2026-09-17,
+goldman_sachs,Goldman Sachs,高盛,securities,overseas,goldmansachs.com,https://www.goldmansachs.com/,2026-09-17,
+federal_reserve,Federal Reserve Board,Federal Reserve|美联储,regulator,overseas,federalreserve.gov,https://www.federalreserve.gov/,2026-09-17,
+sec,U.S. Securities and Exchange Commission,美国证券交易委员会|美国证监会|SEC,regulator,overseas,sec.gov,https://www.sec.gov/,2026-09-17,

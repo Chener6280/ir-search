@@ -7,7 +7,7 @@ from pathlib import Path
 from ir_search.adapters.base import AdapterError
 from ir_search.adapters.wechat_opencli import rows_to_hits
 from ir_search.models import Hit, Query
-from tools import gzh_fetch
+from ir_search.clients import wechat_articles as gzh_fetch
 
 
 class DajialaAdapter:

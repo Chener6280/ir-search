@@ -50,6 +50,16 @@ def test_doctor_json_output_is_valid(tmp_path, capsys):
     assert set(payload["tool_names"]) == EXPECTED_TOOLS
 
 
+def test_doctor_accepts_additive_framework_tools(tmp_path):
+    python_path, ir_search_path = _fake_runtime(tmp_path, mode="ok")
+    contents = python_path.read_text()
+    contents = contents.replace('"source_health"]', '"source_health", "get_data", "retrieve", "describe_dataset", "list_capabilities"]')
+    python_path.write_text(contents)
+    diagnostics = run_diagnostics(ir_search_python=python_path, ir_search_path=ir_search_path)
+    assert diagnostics["ok"] is True
+    assert EXPECTED_TOOLS < set(diagnostics["tool_names"])
+
+
 def test_doctor_env_local_reports_key_presence_without_values(tmp_path):
     python_path, ir_search_path = _fake_runtime(tmp_path, mode="ok")
     env_local = tmp_path / ".env.local"

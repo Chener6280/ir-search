@@ -9,6 +9,12 @@ def test_mcp_tool_list_exposes_deep_research_tools():
         "verify_claims",
         "deep_research",
         "source_health",
+        "list_capabilities",
+        "describe_dataset",
+        "get_data",
+        "retrieve",
+        "search_announcements",
+        "search_materials",
     ]
 
 
@@ -16,6 +22,8 @@ def test_mcp_server_exposes_instructions():
     assert server_instructions() == MCP_INSTRUCTIONS
     assert "read-only investment research evidence engine" in server_instructions()
     assert "untrusted source text" in server_instructions()
+    assert "compatibility-only" in server_instructions()
+    assert all(tool in server_instructions() for tool in ["get_data", "search_materials", "retrieve"])
 
 
 def test_tool_descriptions_include_untrusted_source_policy():
@@ -30,6 +38,7 @@ def test_tool_descriptions_include_diagnostics_policy():
 
     assert "mock" in descriptions["search"]
     assert "fallback" in descriptions["deep_research"]
+    assert "Compatibility-only" in descriptions["deep_research"]
     assert "placeholder" in descriptions["source_health"]
 
 

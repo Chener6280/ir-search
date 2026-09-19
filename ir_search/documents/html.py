@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from html import unescape
 from html.parser import HTMLParser
+import re
 from typing import Any, Optional
 from urllib.parse import urljoin
 
@@ -23,10 +24,17 @@ class ArticleHTMLParser(HTMLParser):
         self._skip_depth = 0
         self._title_depth = 0
         self._text_parts: list[str] = []
+        self.image_count = 0
+        self.script_count = 0
+        self._anchor = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
         tag = tag.lower()
         attr = {key.lower(): value or "" for key, value in attrs}
+        if tag == "img":
+            self.image_count += 1
+        if tag == "script":
+            self.script_count += 1
         self._tag_stack.append(tag)
         if tag in {"script", "style", "noscript", "svg"}:
             self._skip_depth += 1
@@ -46,12 +54,23 @@ class ArticleHTMLParser(HTMLParser):
                 if rel == "canonical":
                     self.canonical_url = absolute
         if tag == "a" and attr.get("href"):
-            self.links.append({"rel": "href", "href": urljoin(self.base_url, attr["href"])})
+            self._anchor = {"rel": "href", "href": urljoin(self.base_url, attr["href"]), "text": ""}
+            if attr.get('download'):
+                self._anchor['download'] = attr['download'][:1000]
+            self.links.append(self._anchor)
+        if tag in {'iframe', 'embed', 'object'}:
+            target = attr.get('data') if tag == 'object' else attr.get('src')
+            # Only explicit PDF embeds, never arbitrary frames or script endpoints.
+            if target and (attr.get('type') == 'application/pdf' or re.search(r'\.pdf(?:[?#]|$)', target, re.I)):
+                self.links.append({'rel': 'embedded_document', 'href': urljoin(self.base_url, target),
+                                   'text': attr.get('title', '')[:1000]})
         if tag in BLOCK_TAGS:
             self._text_parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
+        if tag == "a":
+            self._anchor = None
         if tag in BLOCK_TAGS:
             self._text_parts.append("\n")
         if tag == "title" and self._title_depth:
@@ -69,6 +88,8 @@ class ArticleHTMLParser(HTMLParser):
             return
         if self._title_depth:
             self.title = f"{self.title} {cleaned}".strip()
+        if self._anchor is not None:
+            self._anchor["text"] = (self._anchor["text"] + " " + cleaned).strip()[:1000]
         self._text_parts.append(cleaned)
 
     def extracted_text(self) -> str:
@@ -107,12 +128,14 @@ def extract_html_document(
         or parser.canonical_url
         or url
     )
-    published_at = parse_datetime(
-        parser.meta.get("article:published_time")
-        or parser.meta.get("pubdate")
-        or parser.meta.get("date")
-        or parser.meta.get("publishdate")
-    )
+    dates = [(key, parser.meta[key], parse_datetime(parser.meta[key]))
+             for key in ("article:published_time", "pubdate", "date", "publishdate") if key in parser.meta]
+    valid_dates = [entry for entry in dates if entry[2] is not None]
+    published_at = valid_dates[0][2] if valid_dates else None
+    if len({entry[2].date() for entry in valid_dates}) > 1:
+        warnings.append("publication_date_conflict")
+    if dates and not valid_dates:
+        warnings.append("publication_date_invalid")
     raw_hash = hash_bytes(raw)
     text_hash = hash_text(extracted)
     content_type = "wechat" if "mp.weixin.qq.com" in url or source_hint == "wechat" else "html"
@@ -130,12 +153,16 @@ def extract_html_document(
         fetched_at=utc_now(),
         extraction_method="stdlib_html_parser",
         text=extracted,
-        links=parser.links[:100],
+        links=parser.links[:1000],
         raw_hash=raw_hash,
         text_hash=text_hash,
         warnings=warnings,
         errors=errors,
-        extra={"source_text_trust": "untrusted"},
+        extra={"source_text_trust": "untrusted", "image_count": parser.image_count,
+               "script_count": parser.script_count, "links_truncated": len(parser.links) > 1000,
+               "publication_metadata": {"field": valid_dates[0][0], "raw": valid_dates[0][1][:100],
+                   "rule": "explicit_html_meta", "timezone_known": published_at.utcoffset() is not None}
+                   if valid_dates else {}},
     )
 
 
@@ -143,6 +170,8 @@ def parse_datetime(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
     cleaned = value.strip()
+    if re.fullmatch(r"\d{4}/\d{2}/\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?", cleaned):
+        cleaned = cleaned.replace("/", "-")
     try:
         return datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
     except ValueError:

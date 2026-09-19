@@ -1,0 +1,1019 @@
+{
+  "schema_version": "1.0",
+  "as_of": "2026-09-18",
+  "package_version": "0.2.0rc1",
+  "basis": "48 local reference records plus 9 documented service references; no upstream refresh this handoff",
+  "entries": [
+    {
+      "id": "s045",
+      "name": "jydb-remote-query",
+      "public_urls": [],
+      "adoption": "adapted",
+      "used_for": "数据库只读取数与表字段映射",
+      "implementation": [
+        "ir_search/adapters/jydb.py",
+        "ir_search/adapters/jydb_market.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "7f1c62c07aa6d66924a8b745986106bb0ee75af3d1d00899e583f494fc773ef6"
+    },
+    {
+      "id": "s048",
+      "name": "akshare",
+      "public_urls": [],
+      "adoption": "adapted",
+      "used_for": "近期日内行情接口思路；实际实现独立封装",
+      "implementation": [
+        "ir_search/adapters/akshare_intraday.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "2f237e7bf0753d9dd8eea128c737aad20565d410e7bac367c3b276b16acf8936"
+    },
+    {
+      "id": "s049",
+      "name": "alphapai-research",
+      "public_urls": [],
+      "adoption": "reviewed_only",
+      "used_for": "正式API与账号接入分开；仅参考语料和生成观点分层，官方API尚未接入，账号版共享会议已独立实现。",
+      "implementation": [],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "5b376b6f2144542162768e6580b70d2232ea3113fe170c8f98df612027f64d58"
+    },
+    {
+      "id": "s058",
+      "name": "news-aggregator-skill",
+      "public_urls": [],
+      "adoption": "reviewed_only",
+      "used_for": "新闻来源取材流程与来源分层",
+      "implementation": [],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "8e6603150ab6ca2db4e90a73e81173215e89a6909d2547df462bf8cd451b4621"
+    },
+    {
+      "id": "s064",
+      "name": "wind-find-finance-skill",
+      "public_urls": [],
+      "adoption": "reviewed_only",
+      "used_for": "Wind/iFind 能力盘点；未迁入原 MCP 调用器",
+      "implementation": [],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "5beee921fb2537c183a2d32ad6a035ac8b56f80d0e6d4008ef554d09e97d31fa"
+    },
+    {
+      "id": "s065",
+      "name": "wind-mcp-skill",
+      "public_urls": [],
+      "adoption": "reviewed_only",
+      "used_for": "Wind MCP 能力盘点；本项目采用独立 MySQL adapter",
+      "implementation": [],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "7b2e2cc61572d69db721f25085ed4f049225cf6581f94a8b60b356f40dc8ac15"
+    },
+    {
+      "id": "s069",
+      "name": "xueqiu-scraper",
+      "public_urls": [],
+      "adoption": "adapted",
+      "used_for": "雪球主帖选择器与浏览器渲染；保留来源行，独立实现可选浏览器读取和预算/诊断；自动主帖实测仍受验证阻断",
+      "implementation": [
+        "ir_search/infrastructure/community_documents.py",
+        "ir_search/infrastructure/xueqiu_browser.py",
+        "ir_search/infrastructure/_xueqiu_browser_worker.py",
+        "ir_search/infrastructure/_xueqiu_tunnel.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "2415f5a2c3cdbbb928e05b9ba8c6731ae7fc8af3a17b9e98c29d9b9172f48fba"
+    },
+    {
+      "id": "s070",
+      "name": "yfinance",
+      "public_urls": [],
+      "adoption": "reviewed_only",
+      "used_for": "海外数据候选；当前主数据源为 FMP",
+      "implementation": [],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "b1ce71ee39f56f5e5b9aa53fdf57d5e5a9b7fc6be91839825072fa511eb91bab"
+    },
+    {
+      "id": "s072",
+      "name": "zsxq-scraper",
+      "public_urls": [],
+      "adoption": "adapted",
+      "used_for": "星球选择、时间流、帖子与附件取材",
+      "implementation": [
+        "ir_search/adapters/zsxq_materials.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "503f8b3d21c459f0ccf900a7d99ba97634564c41c0b7cc1e2aca5b1bcefb22dc"
+    },
+    {
+      "id": "s086",
+      "name": "announcement-filter",
+      "public_urls": [],
+      "adoption": "adapted",
+      "used_for": "公告标题按证券与时间筛选",
+      "implementation": [
+        "ir_search/services/announcements.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "f44629296025f1240e385c8deed211d2e353745acc2caddc87562f16d9318c9d"
+    },
+    {
+      "id": "s087",
+      "name": "ashare-data",
+      "public_urls": [],
+      "adoption": "adapted",
+      "used_for": "Wind MySQL 单表查询与数据字典",
+      "implementation": [
+        "ir_search/adapters/wind_mysql.py",
+        "ir_search/adapters/financial_statements.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "09ecc9e5ea47f52abd0019500db3d674aaf69a2ccd0f4122bcc35262022317c4"
+    },
+    {
+      "id": "s092",
+      "name": "mutual-fund-data",
+      "public_urls": [],
+      "adoption": "reviewed_only",
+      "used_for": "基金库与口径参考；不能视作全基金接口已迁入",
+      "implementation": [],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "87a89077112ae3b82c4f5185a6608d96561c2f619e93eb67f963587644e8303a"
+    },
+    {
+      "id": "zsxq-shared",
+      "name": "zsxq-shared",
+      "public_urls": [
+        "https://github.com/unnoo/zsxq-skill",
+        "https://garden.zsxq.com/skill/"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方接入能力与帖子/集合行为参考",
+      "implementation": [
+        "ir_search/infrastructure/zsxq.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "36428ddc2159dfc98465c7eff8952b7ddd6183163b25403bfcb3665e1569816c"
+    },
+    {
+      "id": "zsxq-topic",
+      "name": "zsxq-topic",
+      "public_urls": [
+        "https://github.com/unnoo/zsxq-skill",
+        "https://garden.zsxq.com/skill/"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方接入能力与帖子/集合行为参考",
+      "implementation": [
+        "ir_search/infrastructure/zsxq.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "576859dd469e7945b63ef81f2826925863993c12eb0713af20237ea54704229b"
+    },
+    {
+      "id": "zsxq-group",
+      "name": "zsxq-group",
+      "public_urls": [
+        "https://github.com/unnoo/zsxq-skill",
+        "https://garden.zsxq.com/skill/"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方接入能力与帖子/集合行为参考",
+      "implementation": [
+        "ir_search/infrastructure/zsxq.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "04eb76b36413e0cc9caab2c683dcfc92552f336782fb8300304b0216dc95fedd"
+    },
+    {
+      "id": "ima-0",
+      "name": "IMA 官方 SKILL.md",
+      "public_urls": [
+        "https://app-dl.ima.qq.com/skills/ima-skills-1.1.10.zip"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方只读知识库、笔记与授权资源接口",
+      "implementation": [
+        "ir_search/infrastructure/ima.py",
+        "ir_search/infrastructure/ima_documents.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "4a0a5228470ccd59015c1a03610dd2e84471f88243d1086eb8079aefcfaa8776"
+    },
+    {
+      "id": "ima-1",
+      "name": "IMA 官方 knowledge-base/SKILL.md",
+      "public_urls": [
+        "https://app-dl.ima.qq.com/skills/ima-skills-1.1.10.zip"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方只读知识库、笔记与授权资源接口",
+      "implementation": [
+        "ir_search/infrastructure/ima.py",
+        "ir_search/infrastructure/ima_documents.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "d86160326b12b3df17a044c5affa91744ee7269b15e3798c323fb9a104f6c8aa"
+    },
+    {
+      "id": "ima-2",
+      "name": "IMA 官方 knowledge-base/references/api.md",
+      "public_urls": [
+        "https://app-dl.ima.qq.com/skills/ima-skills-1.1.10.zip"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方只读知识库、笔记与授权资源接口",
+      "implementation": [
+        "ir_search/infrastructure/ima.py",
+        "ir_search/infrastructure/ima_documents.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "2cefd6b8d8715813f2fa657d072179e238db441617b30680ce606aa066aef93e"
+    },
+    {
+      "id": "ima-3",
+      "name": "IMA 官方 notes/SKILL.md",
+      "public_urls": [
+        "https://app-dl.ima.qq.com/skills/ima-skills-1.1.10.zip"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方只读知识库、笔记与授权资源接口",
+      "implementation": [
+        "ir_search/infrastructure/ima.py",
+        "ir_search/infrastructure/ima_documents.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "3d710335f7001e41b9059ffacfa0cfdd52a4e44ddebce31058dbbf04d8c94e80"
+    },
+    {
+      "id": "ima-4",
+      "name": "IMA 官方 notes/references/api.md",
+      "public_urls": [
+        "https://app-dl.ima.qq.com/skills/ima-skills-1.1.10.zip"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方只读知识库、笔记与授权资源接口",
+      "implementation": [
+        "ir_search/infrastructure/ima.py",
+        "ir_search/infrastructure/ima_documents.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "1a524caa5651e8e86658126af4ae93d98e0d46a656d54194f614fe85666890e9"
+    },
+    {
+      "id": "crawl4ai",
+      "name": "Crawl4AI",
+      "public_urls": [
+        "https://github.com/unclecode/crawl4ai"
+      ],
+      "adoption": "optional_dependency",
+      "used_for": "已安装实测；借鉴可选动态渲染、非 LLM 提取；未将其作为默认正文热路径",
+      "implementation": [
+        "ir_search/infrastructure/web_browser.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": true,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "55f7260931a7d13c9d282b5c3f14bb557cb51fa09506108071e6702fa6b4747a"
+    },
+    {
+      "id": "wechat-to-md",
+      "name": "podcast-summary / wechat-to-md",
+      "public_urls": [
+        "https://github.com/hxer7963/podcast-summary/tree/main/.codebuddy/skills/wechat-to-md"
+      ],
+      "adoption": "design_reference",
+      "used_for": "参考文章、元数据与图片分开存储；独立实现，未执行外部 skill",
+      "implementation": [
+        "ir_search/documents/wechat_html.py",
+        "ir_search/services/material_archive.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "0544fd1ccba6e5e497aa695532ea8c7ac55a78a35ce35ec50d69a453948e2b33"
+    },
+    {
+      "id": "cnfinancialscraper",
+      "name": "cnfinancialscraper 文章设计参考",
+      "public_urls": [
+        "https://mp.weixin.qq.com/s/tLXt6iKMP18lylI3tVMDmQ"
+      ],
+      "adoption": "design_reference",
+      "used_for": "仅借鉴机构目录、附件、受预算约束并发与 dry_run 思路；未取得/复制 skill 实现，不采用作者宣称的覆盖率",
+      "implementation": [
+        "ir_search/institutions.py",
+        "ir_search/infrastructure/web_material_plan.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "cecfb45fe73bf2b5867d4b7dd8064d9bdac81d83b95198aaeb8784941b70dfa6"
+    },
+    {
+      "id": "wisburg",
+      "name": "智堡 Agent 官方接入",
+      "public_urls": [
+        "https://www.wisburg.com/#agent"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方工具与返回字段核验；摘要与原文分开",
+      "implementation": [
+        "ir_search/infrastructure/wisburg.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "0f00a943d086a074eba00d737874aef9cd6458c25ce7a0eb9dff39bb8a26674d"
+    },
+    {
+      "id": "tushare-corpus",
+      "name": "Tushare 大模型语料",
+      "public_urls": [
+        "https://tushare.pro/weborder/#/activity/25"
+      ],
+      "adoption": "adapted",
+      "used_for": "官方语料只读工具与认证；研报摘要、新闻、政策分层",
+      "implementation": [
+        "ir_search/adapters/tushare_corpus.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "dfc722eabda0c1ea82c9ada5b057e73e8d30d5207a76e0f9d663c8d6c2d59385"
+    },
+    {
+      "id": "youtube-transcript-api",
+      "name": "YouTube Transcript API",
+      "public_urls": [
+        "https://github.com/jdepoix/youtube-transcript-api"
+      ],
+      "adoption": "optional_dependency",
+      "used_for": "本轮视频字幕参考和可选依赖；无字幕或访问受限时不生成替代文稿",
+      "implementation": [
+        "ir_search/infrastructure/video_documents.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": true,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "858761f44e2bb6210bf69f1d4f3c52020a9184d2241d192d952df251d7c6c7fe"
+    },
+    {
+      "id": "yt-dlp",
+      "name": "yt-dlp",
+      "public_urls": [
+        "https://github.com/yt-dlp/yt-dlp"
+      ],
+      "adoption": "design_reference",
+      "used_for": "仅评估字幕/元数据设计；本轮不执行视频或音频下载",
+      "implementation": [],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "edcd619ffed0112af260df415fcffc45a63b349e266a27f149f9e7276335265a"
+    },
+    {
+      "id": "podcast-fetch",
+      "name": "podcast-summary / podcast-fetch",
+      "public_urls": [
+        "https://github.com/hxer7963/podcast-summary/tree/main/.codebuddy/skills/podcast-fetch"
+      ],
+      "adoption": "design_reference",
+      "used_for": "参考单集元数据/简介与音频地址分层；Agent Plan 使用另一种流式接口，未执行上游脚本",
+      "implementation": [
+        "ir_search/infrastructure/audio_documents.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "c11717e67a80adafc49e5a9111ddaf8d2092dd1fe467fbe7a319d83c89eee432"
+    },
+    {
+      "id": "volc-agent-plan-audio",
+      "name": "火山 Agent Plan 接入语音模型",
+      "public_urls": [
+        "https://ark.volcengine.com/region:cn-beijing/docs/82379/2516286"
+      ],
+      "adoption": "adapted",
+      "used_for": "2026-09-17 已通过浏览器核对，页面更新 2026-09-14；采用 Plan 专属 Seed ASR 2.0 流式认证与资源标识，不采用普通录音 URL 异步 API。仅保存参考卡片。",
+      "implementation": [
+        "ir_search/infrastructure/audio_asr.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "f1944a2d7b76452c325c0ead3b237d9ec7ba01588f0f52a0fa302c63b6af891d"
+    },
+    {
+      "id": "volc-streaming-asr",
+      "name": "火山流式 ASR 协议",
+      "public_urls": [
+        "https://docs.volcengine.com/docs/6561/1354869"
+      ],
+      "adoption": "adapted",
+      "used_for": "Agent Plan 文档链接的协议，2026-09-17 已核对；独立实现二进制帧、最终结果、句段时间、200ms PCM 包；关闭语义顺滑，不复制示例日志输出。仅保存参考卡片。",
+      "implementation": [
+        "ir_search/infrastructure/audio_asr.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-17",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "53448d99b5e416ec21db1a8c58ec6acb4fb4f9b3e0b0d09fa4bac96fa5ff725a"
+    },
+    {
+      "id": "alphapai-transcript",
+      "name": "Alpha派共享纪要与本人转记技能",
+      "public_urls": [],
+      "adoption": "adapted",
+      "used_for": "独立重构账号登录与共享会议列表/详情；修正完整时间参数、轮换ID及高亮标题，区分存量AI摘要与部分JSON转录，增加私有缓存与安全进程协议。个人录音未启用。",
+      "implementation": [
+        "ir_search/adapters/alphapai_materials.py",
+        "ir_search/infrastructure/alphapai.py",
+        "ir_search/infrastructure/_alphapai_worker.py",
+        "ir_search/infrastructure/alphapai_documents.py",
+        "ir_search/infrastructure/alphapai_cache.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "1142292391af8651d3978d1a5a6191c288206d9dd6f735761e5f87e5be7ecd29"
+    },
+    {
+      "id": "alphapai-official-api",
+      "name": "Alpha派官方 Open API / v1.3 安装说明",
+      "public_urls": [
+        "https://open-api.rabyte.cn/alpha/open-api/v1/file/api-docs/install.md"
+      ],
+      "adoption": "reviewed_only",
+      "used_for": "读取说明并只读比较v1.3包；包内三个核心文本与本地v1.2一致，未安装。专用Key未验证，recall片段不等于全文。",
+      "implementation": [
+        "docs/alphapai_evaluation.md"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "bc37f577c2c783636f871179864f148f0a3104b0894cd2bcb930272c586ac73b"
+    },
+    {
+      "id": "gangtise-web-account",
+      "name": "岗底斯官方网页账号素材接口",
+      "public_urls": [
+        "https://open.gangtise.com/#/login"
+      ],
+      "adoption": "adapted",
+      "used_for": "按官方网页客户端和有限真实请求核对正常账号认证、纪要/研报摘要/观点接口；独立实现，未混用官方 AK/SK MCP。",
+      "implementation": [
+        "ir_search/infrastructure/gangtise.py",
+        "ir_search/infrastructure/gangtise_auth.py",
+        "ir_search/infrastructure/gangtise_documents.py",
+        "ir_search/adapters/gangtise_materials.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "ce50e56170c987cf957363a576dc7e7aa292e22587562210b94b60c97fcb69ac"
+    },
+    {
+      "id": "xhs-insight-agent",
+      "name": "xhs-insight-agent",
+      "public_urls": [],
+      "adoption": "design_reference",
+      "used_for": "仅借鉴原始互动数、快照与结论分离、明确元数据范围；未采用AI分析、报告或飞书推送。",
+      "implementation": [
+        "ir_search/adapters/xhs_materials.py",
+        "ir_search/infrastructure/xhs.py",
+        "ir_search/infrastructure/xhs_documents.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "1e9093f8e8f5bed6ec96a72496c76c9a0e265151bbb89f3ea8d38ba950af1e54"
+    },
+    {
+      "id": "xiaohongshu-mcp-v2.5.0",
+      "name": "xiaohongshu-mcp-v2.5.0",
+      "public_urls": [
+        "https://github.com/xpzouying/xiaohongshu-mcp/blob/v2.5.0/docs/API.md"
+      ],
+      "adoption": "external_optional_backend",
+      "used_for": "v2.5.0只读HTTP登录状态/搜索/详情契约；包内独立实现凭证隔离、缓存、预算、引用及诊断。",
+      "implementation": [
+        "ir_search/adapters/xhs_materials.py",
+        "ir_search/infrastructure/xhs.py",
+        "ir_search/infrastructure/xhs_documents.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": true,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": "Apache-2.0",
+      "snapshot_sha256": "da316e1025dae1ff50fdc16db9f98fe453e10071422f827289a1fffc97887fe4"
+    },
+    {
+      "id": "review-web-ui",
+      "name": "web-ui",
+      "public_urls": [
+        "https://github.com/browser-use/web-ui"
+      ],
+      "adoption": "design_reference",
+      "used_for": "浏览器会话与人工登录边界；用于来源诊断和恢复建议，不引入LLM浏览器主链路。",
+      "implementation": [
+        "ir_search/services/source_diagnostics.py",
+        "ir_search/services/material_runs.py",
+        "ir_search/infrastructure/recovery.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": "61962296c38a0d064e0ba02c827192b7a81d1819",
+      "license_in_reviewed_snapshot": "MIT",
+      "snapshot_sha256": "5047bcf2f0e92f0d34a57ac7d83166903a16a9909c700c0647b8a48363bd94f9"
+    },
+    {
+      "id": "review-mediacrawler",
+      "name": "MediaCrawler",
+      "public_urls": [
+        "https://github.com/NanmiCoder/MediaCrawler"
+      ],
+      "adoption": "design_reference",
+      "used_for": "参考采集/存储分离、主帖评论结构和配置预算；未复制实现，非商业学习许可证不作为部署依赖。",
+      "implementation": [
+        "ir_search/services/source_diagnostics.py",
+        "ir_search/services/material_runs.py",
+        "ir_search/infrastructure/recovery.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": "8ecfa31de22c5cbc890e5b0b520b450f24ec4b21",
+      "license_in_reviewed_snapshot": "NON-COMMERCIAL LEARNING LICENSE 1.1",
+      "snapshot_sha256": "1758eb71a7104b41fe719d1cd7b16f40e1edf6da3c916b810f2162b16b6e22f0"
+    },
+    {
+      "id": "review-agent-reach",
+      "name": "Agent-Reach",
+      "public_urls": [
+        "https://github.com/Panniantong/Agent-Reach"
+      ],
+      "adoption": "design_reference",
+      "used_for": "参考来源体检、后端声明、已配置与已验证分离；包内独立实现doctor与修复规则，不执行安装器。",
+      "implementation": [
+        "ir_search/services/source_diagnostics.py",
+        "ir_search/services/material_runs.py",
+        "ir_search/infrastructure/recovery.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": "a19a171fa980a0785849596492e0af4db800c82f",
+      "license_in_reviewed_snapshot": "MIT",
+      "snapshot_sha256": "7b723bcd4e5992c37ad1c25c3a2badd89c723a105b787fde9d1aa19a215f7ff7"
+    },
+    {
+      "id": "wikiskill-design",
+      "name": "WikiSkill article and paper",
+      "public_urls": [
+        "https://arxiv.org/abs/2608.27454v1"
+      ],
+      "adoption": "design_reference",
+      "used_for": "明确采用范围的参考卡片；运行摘要、已审阅恢复规则、回归验证分离。",
+      "implementation": [
+        "ir_search/services/material_runs.py",
+        "ir_search/infrastructure/recovery.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "622430a077f14fcf8c6183e77109109fa95315dc075023ded5428daebf9cd25a"
+    },
+    {
+      "id": "review-firecrawl",
+      "name": "firecrawl",
+      "public_urls": [
+        "https://github.com/firecrawl/firecrawl"
+      ],
+      "adoption": "optional_service_client",
+      "used_for": "官方 rawHtml API，显式启用、无 LLM、记录远端读取边界。",
+      "implementation": [
+        "ir_search/infrastructure/web_toolkit.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": "e3e324e3d4258bbf1c72ddfde90ad7649cf676cb",
+      "license_in_reviewed_snapshot": "AGPL-3.0",
+      "snapshot_sha256": "a5c4aa0d637d739818486995f789bde3103e8b1e658c481f064c0020e9579543"
+    },
+    {
+      "id": "review-scrapling",
+      "name": "Scrapling",
+      "public_urls": [
+        "https://github.com/D4Vinci/Scrapling"
+      ],
+      "adoption": "optional_dependency",
+      "used_for": "只采用 HTML Selector；保留唯一正文选择和失败诊断，不启用 stealth、自适应匹配或 AI/MCP。",
+      "implementation": [
+        "ir_search/infrastructure/web_toolkit.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": true,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": "2b160ee18bfee79bb0115e2d9e9c746c8d9bf4c9",
+      "license_in_reviewed_snapshot": "BSD-3-Clause",
+      "snapshot_sha256": "1b20aad7aae634e96e599ad18092645a461f9627aa5df6fe8ab93dca8758de9f"
+    },
+    {
+      "id": "review-trendradar",
+      "name": "TrendRadar",
+      "public_urls": [
+        "https://github.com/sansan0/TrendRadar"
+      ],
+      "adoption": "design_reference",
+      "used_for": "借鉴 RSS 素材发现、关键词过滤和去重；独立实现 RSS/Atom，不复制运行源码、不迁入调度/推送/AI。",
+      "implementation": [
+        "ir_search/infrastructure/rss.py",
+        "ir_search/adapters/rss_materials.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": "792bcc3928b1617bba09df34989fd5675c159b86",
+      "license_in_reviewed_snapshot": "GPL-3.0",
+      "snapshot_sha256": "f3c92a9aa6e255244d5ef368b704a2b96997903b6ae84d2310bd978f27673bca"
+    },
+    {
+      "id": "mutual-fund-data-expanded",
+      "name": "mutual-fund-data: NAV / shares / holdings / listed fund quotes",
+      "public_urls": [],
+      "adoption": "adapted",
+      "used_for": "单表只读、独立份额类别、原始/累计/复权净值、万份与百分比口径；实际表字段重新核对后在包内独立实现。",
+      "implementation": [
+        "ir_search/adapters/funds.py",
+        "ir_search/contracts/expanded_data.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "d9eb49e6e1378d18036e8772300f58fff9182fd9aaa15b6155f28c0face09b51"
+    },
+    {
+      "id": "etf-premium-reference",
+      "name": "etf-premium",
+      "public_urls": [],
+      "adoption": "design_reference",
+      "used_for": "仅借鉴交易价和净值应分离、日期/币种对齐；不复制 Yahoo 代码或推断资金流。",
+      "implementation": [
+        "ir_search/adapters/funds.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "e654bd8d917af20a8ae2db4ae3441e8f5cc3e7a7e5093cc0b1b1f6ecb9f986d1"
+    },
+    {
+      "id": "china-nav-tieout-reference",
+      "name": "china-nav-tieout",
+      "public_urls": [],
+      "adoption": "design_reference",
+      "used_for": "仅借鉴净值、份额与持仓核对的输入约束；不采用未核实的分析规则。",
+      "implementation": [
+        "ir_search/adapters/funds.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "9dbf5f3bc45d40f1ffe32d0e04a0cf2845276f58c037cc8b37326ee148c6b35d"
+    },
+    {
+      "id": "macro-regime-reference",
+      "name": "macro-regime-detector",
+      "public_urls": [],
+      "adoption": "design_reference",
+      "used_for": "仅借鉴宏观序列需求，周期判断仍由调用 skill 完成，不引入 LLM 热路径。",
+      "implementation": [
+        "ir_search/adapters/global_macro.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "14e678e948e8f077f08822194fb9e03d1de4282bc427e4b9b4d4cdb6b2191b53"
+    },
+    {
+      "id": "hkex-title-interface",
+      "name": "HKEX official title search",
+      "public_urls": [
+        "https://www.hkexnews.hk/search/titlesearch.xhtml"
+      ],
+      "adoption": "design_reference",
+      "used_for": "核对官网标题搜索参数、股票目录与发行人原始披露链接；独立只读实现。",
+      "implementation": [
+        "ir_search/infrastructure/official_materials.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "00735dbbaeeec86d92b7676c9fa1f0d4b4c168a4f1da89fc5fd2eabc193448fe"
+    },
+    {
+      "id": "fiona-formal-schema",
+      "name": "Fiona official futures MCP guide",
+      "public_urls": [
+        "https://www.finoview.com.cn/guide/mcp/futures_market_data.html"
+      ],
+      "adoption": "design_reference",
+      "used_for": "复用已验收 Bearer 客户端；按实际单对象/多行返回、合约场所和存续期校验，不猜风险指标单位。",
+      "implementation": [
+        "ir_search/adapters/fiona.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": "e36b2b6775f77041851d07eaf88d23911f63df1f9fb29a95e0f463a80824bc90"
+    },
+    {
+      "id": "exa",
+      "name": "Exa Search",
+      "public_urls": [
+        "https://exa.ai/docs/reference/search"
+      ],
+      "adoption": "service_client",
+      "used_for": "独立网页发现客户端；不请求生成摘要",
+      "implementation": [
+        "ir_search/infrastructure/web_search.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    },
+    {
+      "id": "bocha",
+      "name": "博查 Web Search",
+      "public_urls": [
+        "https://open.bochaai.com/"
+      ],
+      "adoption": "service_client",
+      "used_for": "中文/国内网页发现客户端",
+      "implementation": [
+        "ir_search/infrastructure/web_search.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    },
+    {
+      "id": "anysearch",
+      "name": "AnySearch",
+      "public_urls": [
+        "https://anysearch.com/docs/api-endpoints"
+      ],
+      "adoption": "service_client",
+      "used_for": "兼容网页发现客户端；与 Agent 原生搜索区分",
+      "implementation": [
+        "ir_search/infrastructure/web_search.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    },
+    {
+      "id": "tavily",
+      "name": "Tavily",
+      "public_urls": [
+        "https://docs.tavily.com/documentation/api-reference/endpoint/search"
+      ],
+      "adoption": "reviewed_only",
+      "used_for": "真实对照评估；新素材入口尚未接入 Tavily 搜索",
+      "implementation": [
+        "docs/search_provider_comparison.md"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    },
+    {
+      "id": "fmp",
+      "name": "FMP Stable API",
+      "public_urls": [
+        "https://site.financialmodelingprep.com/developer/docs/stable"
+      ],
+      "adoption": "service_client",
+      "used_for": "美股资料、基础行情和年度三表",
+      "implementation": [
+        "ir_search/adapters/fmp.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    },
+    {
+      "id": "sec-edgar",
+      "name": "SEC EDGAR",
+      "public_urls": [
+        "https://www.sec.gov/search-filings/edgar-application-programming-interfaces"
+      ],
+      "adoption": "service_client",
+      "used_for": "官方披露索引和原文",
+      "implementation": [
+        "ir_search/infrastructure/sec.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    },
+    {
+      "id": "fred",
+      "name": "FRED",
+      "public_urls": [
+        "https://fred.stlouisfed.org/"
+      ],
+      "adoption": "service_client",
+      "used_for": "宏观序列",
+      "implementation": [
+        "ir_search/adapters/global_macro.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    },
+    {
+      "id": "ecb",
+      "name": "ECB Data Portal",
+      "public_urls": [
+        "https://data.ecb.europa.eu/"
+      ],
+      "adoption": "service_client",
+      "used_for": "宏观汇率序列",
+      "implementation": [
+        "ir_search/adapters/global_macro.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    },
+    {
+      "id": "world-bank",
+      "name": "World Bank Indicators API",
+      "public_urls": [
+        "https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation"
+      ],
+      "adoption": "service_client",
+      "used_for": "宏观接口；本机真实 TLS 未通过",
+      "implementation": [
+        "ir_search/adapters/global_macro.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    }
+  ]
+}

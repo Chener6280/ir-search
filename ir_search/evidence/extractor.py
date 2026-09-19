@@ -30,6 +30,8 @@ def extract_evidence(
 ) -> list[EvidenceSpan]:
     """Return deterministic evidence spans relevant to a question."""
 
+    if type(max_span_chars) is not int or max_span_chars < 1:
+        raise ValueError("max_span_chars must be positive")
     if max_spans <= 0 or not document.text.strip() or not question.strip():
         return []
 
@@ -38,6 +40,7 @@ def extract_evidence(
         return []
 
     spans: list[EvidenceSpan] = []
+    text_hash = hashlib.sha256(document.text.encode("utf-8")).hexdigest()
     for chunk in chunk_document_text(document.text, max_span_chars=max_span_chars):
         chunk_terms = terms_for_text(chunk.text)
         score, breakdown = relevance_score(
@@ -49,9 +52,9 @@ def extract_evidence(
         )
         if score <= 0:
             continue
-        text = chunk.text.strip()
-        if len(text) > max_span_chars:
-            text = text[:max_span_chars].rstrip()
+        text = chunk.text
+        if text != document.text[chunk.start:chunk.end]:
+            raise ValueError("Evidence offsets do not address the source text")
         spans.append(
             EvidenceSpan(
                 span_id=make_span_id(document.doc_id, question, chunk.start, chunk.end, text),
@@ -71,6 +74,8 @@ def extract_evidence(
                 extracted_for_question=question,
                 extra={
                     "source_text_trust": "untrusted",
+                    "text_hash": text_hash,
+                    "offset_unit": "unicode_code_points",
                     "adapter_mode": document.extra.get("adapter_mode"),
                     "content_type": document.content_type,
                     "document_warnings": list(document.warnings),
@@ -87,6 +92,8 @@ def extract_evidence(
 def chunk_document_text(text: str, *, max_span_chars: int = 1200) -> list[TextChunk]:
     """Split source text into paragraph-like chunks while preserving offsets."""
 
+    if type(max_span_chars) is not int or max_span_chars < 1:
+        raise ValueError("max_span_chars must be positive")
     chunks: list[TextChunk] = []
     current_section: Optional[str] = None
     current_page: Optional[int] = None
@@ -250,7 +257,10 @@ def _split_long_chunk(text: str, *, max_span_chars: int) -> Iterable[tuple[str, 
             sentence_end = max(text.rfind("。", offset, end), text.rfind(".", offset, end), text.rfind("\n", offset, end))
             if sentence_end > offset + max_span_chars // 2:
                 end = sentence_end + 1
-        yield text[offset:end].strip(), offset
+        raw = text[offset:end]
+        part = raw.strip()
+        if part:
+            yield part, offset + len(raw) - len(raw.lstrip())
         offset = end
 
 

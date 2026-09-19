@@ -10,6 +10,12 @@ def test_mcp_exposes_research_tools():
         "verify_claims",
         "deep_research",
         "source_health",
+        "list_capabilities",
+        "describe_dataset",
+        "get_data",
+        "retrieve",
+        "search_announcements",
+        "search_materials",
     ]
 
 
@@ -42,3 +48,14 @@ def test_mcp_source_health_payload_has_no_secret_values(monkeypatch):
 
     assert payload["env"]["has_BOCHA_API_KEY"] is True
     assert "secret" not in str(payload)
+
+
+def test_legacy_health_failure_preserves_new_source_status_without_raw_error(monkeypatch):
+    def fail():
+        raise ImportError("legacy import must_not_escape")
+    monkeypatch.setattr("ir_search.mcp_server.source_health_impl", fail)
+    payload = source_health_payload()
+    assert payload["status"] == "partial"
+    assert payload["diagnostics"][0]["code"] == "legacy_health_unavailable"
+    assert {item["provider"] for item in payload["configured_sources"]["sources"]} == {"wind_mysql", "jydb", "akshare", "fmp", "tushare_corpus", "web", "zsxq", "wechat", "ima", "wisburg", "xueqiu", "eastmoney", "video", "xiaoyuzhou", "sec", "fiona", "alphapai", "gangtise", "xhs", "rss", "global_macro", "hkex", "company_ir"}
+    assert "must_not_escape" not in str(payload)

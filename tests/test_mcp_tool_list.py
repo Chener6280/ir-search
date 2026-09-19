@@ -11,4 +11,10 @@ def test_mcp_tool_list_contains_deep_research_surface():
         "verify_claims",
         "deep_research",
         "source_health",
+        "list_capabilities",
+        "describe_dataset",
+        "get_data",
+        "retrieve",
+        "search_announcements",
+        "search_materials",
     ]
