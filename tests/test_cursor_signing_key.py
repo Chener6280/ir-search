@@ -36,13 +36,14 @@ def test_key_is_random_persistent_and_private(tmp_path, monkeypatch):
     assert pagination._cursor_key() != first  # another installation, another key
 
 
-def test_unusable_state_location_falls_back_to_a_process_key(tmp_path, monkeypatch):
+def test_unusable_state_location_reports_no_persistent_cursor_state(tmp_path, monkeypatch):
     blocker = tmp_path / ".local"
     blocker.write_text("not a directory", encoding="ascii")
     monkeypatch.setenv("IR_SEARCH_CREDENTIALS_FILE", str(tmp_path / "credentials.env"))
     monkeypatch.setattr(pagination, "_KEYS", {})
-    key = pagination._cursor_key()
-    assert len(key) == 32 and pagination._cursor_key() == key
+    with pytest.raises(DataAdapterError, match="cursor_state_unavailable"):
+        pagination._cursor_key()
+    assert not pagination._KEYS
 
 
 def test_tampered_or_foreign_cursor_is_rejected(monkeypatch):
@@ -53,5 +54,5 @@ def test_tampered_or_foreign_cursor_is_rejected(monkeypatch):
         pagination._decode_cursor(with_cursor(data + "." + "0" * 64), PROFILE)
     monkeypatch.setattr(pagination, "_KEYS", {None: b"k" * 32})
     monkeypatch.setattr(pagination, "credentials_path", lambda: (_ for _ in ()).throw(OSError()))
-    with pytest.raises(DataAdapterError, match="invalid_cursor"):
+    with pytest.raises(DataAdapterError, match="cursor_state_unavailable"):
         pagination._decode_cursor(with_cursor(token), PROFILE)

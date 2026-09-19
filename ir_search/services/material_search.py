@@ -26,8 +26,7 @@ _GENERIC_TERMS = frozenset((
     "影响", "原因", "变化", "分析", "展望", "趋势", "进展", "最新", "近期", "目前", "当前", "未来",
     "为何", "为什么", "哪些", "什么", "多少", "是否", "问题", "表现", "解读", "点评", "梳理", "总结",
     "观点", "看法", "判断", "逻辑", "相关", "有关", "方面", "主要", "具体", "整体", "以及", "对于"))
-# Single-character function words. A bigram containing one is a junction, not evidence.
-_FUNCTION_CHARS = frozenset("的了吗呢吧和与及或对在将被把从向于是有为等并而也都就还又这那其")
+# Never remove individual characters inside financial terms (有色、对冲、在建).
 _PARTIAL_MIN_CHARS, _PARTIAL_MIN_COVERAGE = 5, 0.6
 _ASCII_TERM = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,30}")
 _CJK_TERM = re.compile(r"[\u4e00-\u9fff]{2,20}")
@@ -74,8 +73,11 @@ def _partial_match(term, body):
     """Character-bigram overlap for a long CJK term whose words are not adjacent in the text."""
     if len(term) < _PARTIAL_MIN_CHARS or not _CJK_TERM.fullmatch(term):
         return None
-    parts = list(dict.fromkeys(term[i:i + 2] for i in range(len(term) - 1)
-                               if not _FUNCTION_CHARS.intersection(term[i:i + 2])))
+    segments = re.split(r"(?<=[\u4e00-\u9fff]{2})(?:对(?!冲)|与|和)(?=[\u4e00-\u9fff]{2})", term)
+    parts = list(dict.fromkeys(segment[i:i + 2] for segment in segments for i in range(len(segment) - 1)))
+    # Preserve the leading topic discriminator; generic trailing words cannot substitute it.
+    if term[:2] not in body:
+        return None
     hits = [part for part in parts if part in body]
     if len(parts) < 2 or len(hits) < 2 or len(hits) / len(parts) < _PARTIAL_MIN_COVERAGE:
         return None
@@ -172,16 +174,15 @@ def _validate_page(page, cap, request):
         raise ValueError('Web fallback exceeds shared reading budget')
     for candidate in page.candidates:
         if not isinstance(candidate, MaterialCandidate):
-            raise ValueError("Untyped candidate")
-        candidate = replace(candidate)  # Revalidate even a mutated/injected object.
+            continue  # Individual malformed content is rejected below.
         record_key = (candidate.source_ref, candidate.discovery_provider)
         if (candidate.provenance.provider != cap.provider or candidate.provenance.adapter_mode != AdapterMode.LIVE
                 or (candidate.provenance.generated and not (
                     cap.allows_stored_summaries and candidate.text_scope == TextScope.ABSTRACT
                     and candidate.provenance.evidence_type == EvidenceType.OPINION
                     and candidate.read_details.get('content_origin') == 'provider_stored_summary'))
-                or candidate.channel != cap.channel
-                or candidate.material_type not in cap.material_types or record_key in seen):
+                or candidate.channel != cap.channel or candidate.material_type not in cap.material_types
+                or record_key in seen):
             raise ValueError("Candidate source/capability mismatch")
         seen.add(record_key)
     from ir_search.infrastructure.material_cursor import _decode
@@ -189,7 +190,30 @@ def _validate_page(page, cap, request):
         raise ValueError('Invalid continuation cursors')
     for token in page.continuation_cursors:
         if _decode(token)['provider'] != cap.provider: raise ValueError('Cursor provider mismatch')
-    page.to_dict()
+
+
+def _validate_candidate(candidate, cap, seen):
+    if not isinstance(candidate, MaterialCandidate):
+        raise ValueError("Untyped candidate")
+    candidate = replace(candidate)
+    record_key = (candidate.source_ref, candidate.discovery_provider)
+    if (candidate.provenance.provider != cap.provider or candidate.provenance.adapter_mode != AdapterMode.LIVE
+            or (candidate.provenance.generated and not (
+                cap.allows_stored_summaries and candidate.text_scope == TextScope.ABSTRACT
+                and candidate.provenance.evidence_type == EvidenceType.OPINION
+                and candidate.read_details.get('content_origin') == 'provider_stored_summary'))
+            or candidate.channel != cap.channel or candidate.material_type not in cap.material_types
+            or record_key in seen):
+        raise ValueError("Candidate source/capability mismatch")
+    candidate.to_dict()
+    seen.add(record_key)
+    return candidate
+
+
+def _source_weight(adapter):
+    # Built-in browser startup needs a larger allowance; third-party hooks aren't run in preview.
+    from ir_search.adapters.wechat_materials import WechatMaterialAdapter
+    return 2 if type(adapter) is WechatMaterialAdapter else 1
 
 
 def _matching(candidate, plan, request):
@@ -292,7 +316,11 @@ def _version(raw, adapter, cap, request, result):
                "warnings": sorted(set(warnings)), "match": match, "evidence_spans": _spans(candidate, match, version_id)}
     score = (100 if match["topic_terms"] else 60 if match["partial_topic_terms"] else 0)
     score += 5 * len(match["topic_terms"]) + 3 * len(match["partial_topic_terms"]) + len(match["related_terms"])
-    score += int(candidate.provenance.source_tier or 0)
+    # A vendor's claimed publisher category is not independent original-source verification.
+    tier_score = int(candidate.provenance.source_tier or 0)
+    if candidate.read_details.get('publisher_verification') == 'vendor_claim_unverified':
+        tier_score = min(tier_score, 2)
+    score += tier_score
     score += 2 if candidate.text_scope == TextScope.EXTRACTED_TEXT else 1 if candidate.text_scope == TextScope.ABSTRACT else 0
     return group_key, basis, candidate, version, score
 
@@ -475,15 +503,18 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
         'max_chars_per_record': request.max_chars, 'max_operations': context.max_operations,
         'operations_already_used': context.operations, 'operations_remaining': max(0, context.max_operations - context.operations),
         'timeout_seconds': context.timeout_seconds, 'remaining_seconds': context.remaining_seconds(),
-        'source_time_share': 'remaining_seconds_divided_by_pending_sources_unused_time_rolls_over',
+        'source_time_share': 'weighted_remaining_time_unused_time_rolls_over',
         'cost_estimate': None, 'cost_basis': 'provider_pricing_and_entitlements_not_queried',
         'limits_are_caps_not_expected_results': True}
     result.plan['source_plans'] = []
     for adapter, state in selected:
-        source_plan = {'provider': adapter.name, 'verification': 'registration_only_not_live_probe',
+        source_plan = {'provider': adapter.name, 'time_weight': _source_weight(adapter), 'verification': 'registration_only_not_live_probe',
                        'max_candidates': request.candidates_per_source,
                        'max_text_reads': request.text_reads_per_source,
                        'network_attempts_upper_bound': None}
+        if _source_weight(adapter) == 2:
+            source_plan['browser_min_remaining_seconds'] = 12
+            source_plan['browser_budget_shortfall'] = 'keep_discovery_evidence_without_paid_body_fallback'
         # Only the built-in pure planner is used. Never call arbitrary adapter
         # methods during preview, including a third-party "preview" hook.
         if type(adapter) is WebMaterialAdapter:
@@ -535,12 +566,17 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
     for index, (adapter, state) in enumerate(selected):
         cap = adapter.capability
         started = context._clock()
-        # An equal share of the time still left: one slow source cannot starve the rest.
-        share = SourceSlice(context, context.remaining_seconds() / (len(selected) - index))
+        # Weighted remaining time with rollover; one slow source cannot starve the rest.
+        weight = _source_weight(adapter)
+        pending_weight = sum(_source_weight(source) for source, _ in selected[index:])
+        share = SourceSlice(context, context.remaining_seconds() * weight / pending_weight)
         try:
             share.begin_operation()
             page = adapter.search_materials(request_for_source, context=share)
-            share.check_active()
+            # A source may return useful partial evidence after its own deadline.
+            # Parent cancellation/deadline still prevents accepting a late response.
+            context.check_active()
+            slice_expired = share.expired()
             _validate_page(page, cap, request)
             result.fallback_requests.extend(page.fallback_requests)
             if page.fallback_requests:
@@ -559,11 +595,13 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
                 result.gaps.append({"code": "source_scan_incomplete", "provider": adapter.name})
             if not cap.supports_publication_filter:
                 result.gaps.append({"code": "publication_filter_applied_locally", "provider": adapter.name})
+            seen = set()
             for raw in page.candidates:
                 context.check_active()
                 try:
-                    entry = _version(raw, adapter, cap, request, result)
-                except (ValueError, TypeError):
+                    candidate = _validate_candidate(raw, cap, seen)
+                    entry = _version(candidate, adapter, cap, request, result)
+                except (ValueError, TypeError, AttributeError, KeyError):
                     # One unusable record must not discard the source's other records.
                     state["rejected_count"] = state.get("rejected_count", 0) + 1
                     continue
@@ -582,6 +620,10 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
                 result.gaps.append({"code": "candidate_rejected", "provider": adapter.name, "count": state["rejected_count"]})
             if queried and not state["matched_count"]:
                 result.gaps.append({"code": "no_match_in_scanned_records", "provider": adapter.name})
+            if slice_expired:
+                state.update(state="source_time_share_exceeded", source_page_complete=False)
+                result.diagnostics.append(_diag("source_time_share_exceeded", adapter.name, FailureKind.TIMEOUT, cap.adapter_mode))
+                result.gaps.append({"code": "source_time_share_exceeded", "provider": adapter.name})
             context.check_active()
         except RequestStopped as exc:
             try:

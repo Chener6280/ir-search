@@ -413,7 +413,9 @@ def _fetch_uncached(url, *, context, client, transport, mode, renderer):
                 if isinstance(exc, RequestStopped) and exc.code == 'cancelled': raise
                 attempts.append({'reader': 'crawl4ai', 'state': exc.code})
         else:
-            attempts.append({'reader': 'crawl4ai', 'state': 'skipped_reserve_vendor_budget'})
+            attempts.append({'reader': 'crawl4ai', 'state': 'skipped_insufficient_budget'})
+            # A budget cut must not silently choose a paid body read over the free browser.
+            raise DataAdapterError('wechat_browser_budget_insufficient')
     elif mode != 'http':
         attempts.append({'reader': 'crawl4ai', 'state': 'skipped_no_loading_gap'})
     if client is None:

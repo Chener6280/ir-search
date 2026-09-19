@@ -55,11 +55,7 @@ class _WechatCache:
                     raise OSError()
                 if os.name == 'nt':
                     import msvcrt
-                    if not info.st_size:
-                        # A concurrent holder may already have written and locked this byte;
-                        # Windows then refuses the write. That is contention, not a broken cache.
-                        try: os.write(fd, b'0')
-                        except PermissionError: pass
+                    # Lock beyond EOF without a racy initialization write.
                 while not locked:
                     context.check_active()
                     try:

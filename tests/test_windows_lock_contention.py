@@ -29,8 +29,8 @@ def test_threads_racing_to_create_the_lock_file_never_overlap(tmp_path):
     assert entered[0] == 8 and overlaps[0] == 0
 
 
-@pytest.mark.skipif(os.name != "nt", reason="the first-byte write exists only in the Windows byte-range lock")
-def test_refused_first_byte_write_is_contention_not_failure(tmp_path, monkeypatch):
+@pytest.mark.skipif(os.name != "nt", reason="native Windows byte-range locking")
+def test_empty_file_lock_does_not_need_a_first_byte_write(tmp_path, monkeypatch):
     real_write = os.write
 
     def refuse_initial_byte(fd, data):

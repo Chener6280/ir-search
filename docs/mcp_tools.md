@@ -23,12 +23,18 @@ search_materials
 
 ## Errors: whose problem is it
 
-Every core tool separates two failure classes so an agent does not rewrite valid arguments to fix an environment problem:
+Core wrappers distinguish argument and execution failures so an agent does not rewrite valid arguments to fix an environment problem:
 
-- `invalid_request` — the arguments were rejected **before any source was contacted**. `detail` names the field and the accepted range (for example `Search budget out of range: max_chars must be an integer between 1 and 50000`). Values and URLs are never echoed.
+- `invalid_request` — the arguments were rejected **before any source was contacted**. `detail`, when available, contains only an allow-listed field name (for example `max_chars`) or a fixed `unknown_argument` label. Arbitrary exception text is discarded. Values and URLs are never echoed.
 - `internal_error` — the arguments were accepted and the service or a source failed while running. `exception_type` is included; exception text is not, because it can contain URLs, SQL or tokens. Check `source_health`, then retry or report; do not change the arguments.
 
 `audit_dir` and `archive_dir` are confined to one local output root (`IR_SEARCH_OUTPUT_ROOT`, default `.local/exports` beside the private credentials file). Pass a relative folder name. The Python SDK is not restricted.
+
+## Core-only registration (rc2)
+
+Set the MCP **server process environment** `IR_SEARCH_MCP_MODE=core` for new integrations. It exposes the seven tools from `source_health` through `search_materials` listed above. The default `legacy` mode retains all twelve tools for existing clients; no legacy research expansion is implied.
+
+A bad local output root returns `invalid_output_root` with key `IR_SEARCH_OUTPUT_ROOT`; a caller path outside that root returns `invalid_request`. Foreign volumes/UNC targets are rejected before resolution. Private-network access through legacy fetch tools requires trusted server environment `IR_SEARCH_ALLOW_PRIVATE_NETWORK=1`; a tool argument alone cannot grant it.
 
 ## Tool Notes
 

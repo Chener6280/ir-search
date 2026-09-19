@@ -79,11 +79,11 @@ $env:IR_SEARCH_CREDENTIALS_FILE = "$env:LOCALAPPDATA\ir-search\credentials.env"
 
 密钥可以原样带到另一台电脑，**路径不行**。`*_CACHE_DIR`、`*_STATE_DIR`、`*_BROWSER_EXECUTABLE`、`*_SSL_CA`、`WECHAT_ACCOUNTS_FILE` 这类键：
 
-- 留空使用默认位置（凭证文件所在目录下的 `.local/...`），或写 `~/...`，这两种写法在 Windows 与 macOS/Linux 上都有效；
+- 可选缓存/状态路径留空采用各 adapter 的默认值，多数位于凭证目录旁 `.local/...`，AlphaPai 使用用户缓存目录；微信账号列表不能省略，TLS CA 是否可省略取决于模式。`~/...` 可表示当前用户目录；不要复制另一台电脑的绝对路径；
 - 写了另一种操作系统的绝对路径（Windows 上的 `/Users/...`，或 macOS/Linux 上的 `C:\...`）时，来源会报 `path_not_absolute_on_this_platform`，并在 `key` 字段指出是哪个键；
 - 配置了 `*_SSL_CA` 但证书文件不在本机时，体检直接报 `ssl_ca_file_missing`，不必等到第一次查询才以 `tls_error` 失败。
 
-`ir-search-doctor` 对每个配置错误给出 `detail_code`（具体原因）和 `key`（要改的键名，从不含值）；`code` 仍为 `source_config_error`，保持对已有调用方兼容。
+`ir-search-doctor` 对配置错误给出 `detail_code`（具体原因），能确定修复目标时附带 `key`（键名，从不含值）；`code` 仍为 `source_config_error`，保持对已有调用方兼容。
 
 每台电脑分别维护 Cookie、账号池、星球范围、IMA 权限、本地 XHS 后端和登录会话。辅助路径按对应指南配置，不把原电脑的绝对路径当作可移植配置。本机已有 Wind 非 TLS 设置是用户明确选择；不自动从 TLS 失败降级。
 
@@ -134,3 +134,13 @@ MCP 工具的路径参数由模型填写，而模型同时会读到不可信的�
 修改后重新构建、安装 wheel 并从无关目录测试；不要只在源码目录跑通就宣称跨电脑完成。稳定版发布前还需实际多系统 CI、隐私检查和版本/散列固定。[GitHub Actions](https://github.com/Chener6280/ir-search/actions/workflows/standalone.yml) 执行 `.github/workflows/standalone.yml`；以当前提交对应的运行结果为准，存在配置不代表检查通过。
 
 早期逐次安装记录归档在[历史部署记录](history_standalone_deployment.md)。
+
+## 评审修复候选 rc2
+
+同一代码库支持 Windows、macOS、Linux，平台差异集中在文件锁、连接取消和路径处理。安装建议使用 Python 3.12；Python 3.9 仅验证基础 SDK，MCP 依赖更高版本。
+
+新 MCP 集成建议在 **MCP 服务进程环境** 设置 `IR_SEARCH_MCP_MODE=core`（不是数据源 env 配置项），默认 `legacy` 保持旧工具兼容。`IR_SEARCH_OUTPUT_ROOT` 同样属于服务环境；它只约束 MCP 输出，SDK 可显式选择其他安全目录。
+
+数据库分页需要凭证目录旁 `.local/state` 可私有写入，多个 worker 共用该目录并要求文件系统提供可靠锁与原子替换。只读安装请把凭证路径指向本机可写的私有目录。损坏密钥不自动重建，以免掩盖状态问题；修复状态后重新发起第一页。未验证 SMB/NFS 的锁语义，不建议把状态目录放网络盘。旧密码签名数据库游标失效，素材来源的独立续取游标不受该迁移影响。
+
+`Diagnostic.datasets=[]` 表示共享诊断；非空时只适用于列出的数据集。共享认证/连接配置错误不得伪装成覆盖不足后切换来源。

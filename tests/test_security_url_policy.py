@@ -80,15 +80,17 @@ def test_fetcher_checks_resolution_at_the_network_seam(monkeypatch):
     import urllib.request
     from ir_search.documents import fetcher
 
-    monkeypatch.setattr(fetcher, "ensure_host_resolves_public",
-                        lambda url: (_ for _ in ()).throw(UrlBlockedError("host resolves to a private or local address")))
+    from ir_search.infrastructure import public_web
+    from ir_search.registry import DataAdapterError
+    monkeypatch.setattr(public_web, "_request",
+                        lambda url, **kw: (_ for _ in ()).throw(DataAdapterError("blocked_url")))
 
     class Opener:
         def open(self, request, timeout):
             raise AssertionError("no request may be sent")
 
     request = urllib.request.Request("https://rebind.example.com/a")
-    with pytest.raises(urllib.error.URLError):
+    with pytest.raises(UrlBlockedError):
         fetcher._open_once(Opener(), request, 5)
     request.allow_private_network = True
     with pytest.raises(AssertionError):

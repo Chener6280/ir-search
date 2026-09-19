@@ -11,6 +11,9 @@ from .models import FailureKind
 class DataAdapterError(Exception):
     """Safe typed errors; raw upstream exception text never crosses this boundary."""
     KINDS = {
+        "cursor_state_unavailable": FailureKind.BLOCKED_BY_POLICY,
+        "dns_busy": FailureKind.BUDGET_EXHAUSTED,
+        "wechat_browser_budget_insufficient": FailureKind.BUDGET_EXHAUSTED,
         'xhs_login_required': FailureKind.NO_CREDENTIAL,
         'xhs_backend_unavailable': FailureKind.NETWORK,
         'xhs_backend_error': FailureKind.UPSTREAM_SCHEMA,
@@ -239,26 +242,44 @@ def build_data_registry(*, env_file=None) -> DataRegistry:
         registry.diagnostics.append(Diagnostic(exc.code, "configure",
                                                failure_kind=FailureKind.BLOCKED_BY_POLICY))
         return registry
+    from .adapters.wind_mysql import WindMySQLAdapter
+    from .adapters.jydb_market import JYDBMarketAdapter
+    from .adapters.financial_statements import FinancialStatementsAdapter
+    from .adapters.domestic_derivatives import DomesticDerivativesAdapter
+    from .adapters.funds import FundAdapter
+    from .contracts.expanded_data import FUND_DATASETS
     for provider in ("wind_mysql", "jydb"):
         try:
-            profile = mysql_profile(provider, values=values)
-            if profile:
-                if provider == "wind_mysql":
-                    wind_calendar_profile = profile
-                    from .adapters.wind_mysql import WindMySQLAdapter
-                    registry.register(WindMySQLAdapter(profile))
-                else:
-                    from .adapters.jydb_market import JYDBMarketAdapter
-                    registry.register(JYDBMarketAdapter(profile))
-                from .adapters.financial_statements import FinancialStatementsAdapter
-                registry.register(FinancialStatementsAdapter(profile))
-                from .adapters.domestic_derivatives import DomesticDerivativesAdapter
-                registry.register(DomesticDerivativesAdapter(profile))
-                from .adapters.funds import FundAdapter
-                registry.register(FundAdapter(profile))
+            common = mysql_profile(provider, values=values, datasets=())
         except SourceConfigError as exc:
             registry.diagnostics.append(Diagnostic(exc.code, "configure", provider=provider,
                                                    failure_kind=FailureKind.BLOCKED_BY_POLICY))
+            continue
+        if not common:
+            continue
+        if provider == "wind_mysql": wind_calendar_profile = common
+        # Isolate units/currency and constructor errors to the affected dataset.
+        for factory in (WindMySQLAdapter if provider == "wind_mysql" else JYDBMarketAdapter,
+                        FinancialStatementsAdapter, DomesticDerivativesAdapter, FundAdapter):
+            scopes = {FinancialStatementsAdapter: ("financial_statements",),
+                      DomesticDerivativesAdapter: ("futures_contracts", "options_contracts", "futures_daily", "options_daily", "trading_calendar"),
+                      FundAdapter: tuple(FUND_DATASETS)}
+            try:
+                template = factory(common)
+            except SourceConfigError as exc:
+                registry.diagnostics.append(Diagnostic(exc.code, "configure", provider=provider,
+                    failure_kind=FailureKind.BLOCKED_BY_POLICY, datasets=scopes.get(factory, ("prices_daily", "securities"))))
+                continue
+            for capability in template.capabilities:
+                dataset = capability.dataset
+                try:
+                    profile = mysql_profile(provider, values=values, datasets=(dataset,))
+                    adapter = factory(profile)
+                    adapter.capabilities = tuple(cap for cap in adapter.capabilities if cap.dataset == dataset)
+                    registry.register(adapter)
+                except SourceConfigError as exc:
+                    registry.diagnostics.append(Diagnostic(exc.code, "configure", provider=provider,
+                        failure_kind=FailureKind.BLOCKED_BY_POLICY, datasets=(dataset,)))
     try:
         from .infrastructure.credentials import fmp_profile
         profile = fmp_profile(values=values)

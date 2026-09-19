@@ -50,13 +50,13 @@ flowchart TD
 - `plan.topic_term_basis` 说明主题词来自哪里：`caller_keywords`（调用方传入，原样使用、从不改写）、`packaged_topic_rules`（包内显式规则）或 `inferred_from_question`（从问题推断）。**推断只是兜底，调用方应尽量传 `keywords`。**
 - 推断时会剥掉词首尾的泛词（影响、原因、变化、进展、展望……）和连词；若剥完什么都不剩，则保留原词，不会因此放宽为任意匹配。
 - 英文与数字词按**完整词**匹配：`AI` 不会命中 `said`，`800G` 不会命中 `1800G`。中文仍是子串匹配。
-- 5 个字及以上的中文主题词若没有整词命中，会按字符二元组重合度判断（含虚词的二元组不计，重合度需 ≥ 0.6 且至少 2 处）：“光模块需求”可以命中“光模块的需求出现了明显变化”，但不会命中只谈“消费需求变化”的文章。这类结果标为 `partial_topic_term_match`，`match.partial_topic_terms` 给出命中的片段与重合度，排序低于整词命中；全部结果都只是部分命中时追加缺口 `partial_topic_term_matches_only`。
+- 5 个字及以上的中文主题词若没有整词命中，会按字符二元组重合度判断（保留词内字符；仅拆分中部明确连词，首部二元组必须命中；重合度需 ≥ 0.6 且至少 2 处）：“光模块需求”可以命中“光模块的需求出现了明显变化”，但不会命中只谈“消费需求变化”的文章。这类结果标为 `partial_topic_term_match`，`match.partial_topic_terms` 给出命中的片段与重合度，排序低于整词命中；全部结果都只是部分命中时追加缺口 `partial_topic_term_matches_only`。
 
 ### 多来源的时间分配与单条记录隔离
 
-- 每个来源得到“剩余时间 ÷ 尚未查询的来源数”的时间份额，未用完的时间顺延给后面的来源（`plan.budget.source_time_share`）。某个来源用完自己的份额只会得到 `source_time_share_exceeded`，其余来源继续执行；整个请求超时或被取消时，行为与之前一样（后续来源标为 `not_queried_request_stopped`）。
-- 单条记录未通过契约校验时只丢弃该条并计入 `coverage[].rejected_count`（诊断与缺口 `candidate_rejected`），同一来源的其余记录保留。
-- `timing`（总耗时与每个来源的 `elapsed_ms`）记录实际耗时，它和 `request_id` 一样每次不同，所以不放进 `items`/`coverage`，后两者在相同输入下保持可比；适配器诊断里的路由标签（如 `discovery_provider=...;web_region=...`）现在会保留在 `diagnostics[].message` 中。
+- 每个来源按“剩余时间 × 本来源权重 ÷ 尚未查询来源的总权重”分配时间（内置微信权重 2，其他 1；`source_plans[].time_weight` 可查看），未用完的时间顺延给后面的来源（`plan.budget.source_time_share`）。某个来源用完自己的份额只会得到 `source_time_share_exceeded`，其余来源继续执行，已经返回且通过校验的部分页、扫描和游标保留；整个请求超时或被取消时，行为与之前一样（后续来源标为 `not_queried_request_stopped`）。
+- 单条文本契约或转换错误只丢弃该条并计入 `coverage[].rejected_count`（诊断与缺口 `candidate_rejected`），同一来源的其余记录保留。计数不含不匹配、类型过滤或窗口外候选。来源身份不符、未授权机器生成内容、重复记录及页/扫描/游标不变量错误仍拒绝整页，不能因隔离坏记录而接受不可信来源。
+- `timing`（总耗时与每个来源的 `elapsed_ms`）记录实际耗时，它和 `request_id` 一样每次不同，所以不放进 `items`/`coverage`，后两者在相同输入下保持可比；`material_runs` 的运行指纹含 timing，因此不是跨运行稳定的内容指纹；适配器诊断里的路由标签（如 `discovery_provider=...;web_region=...`）现在会保留在 `diagnostics[].message` 中。
 - 本机没有启用任何素材来源时，零来源响应会附带 `no_material_source_enabled`，其 `message` 说明凭证文件是否找到以及下一步该配置什么。所有来源文本均标记为不可信输入，不作为 agent 指令执行。
 
 `text_scope` 区分 `metadata`、`abstract`、`search_snippet`、`source_excerpt`、`extracted_text`；`source_excerpt` 表示完整性或角色尚未确认的来源文本；搜索摘要不等于原文，供应商文本仍不等于已核验的原始文件。哈希和引用绑定的是本次实际返回的文本，截断时不代表全文件哈希；目前未自动持久化正文，调用方需保存返回结果以供之后复核。
@@ -211,3 +211,7 @@ skills 处理返回结果时，应先看 `required_inputs`、`coverage`、`gaps`
 ## 运行记录和续取辅助
 
 `search_materials(request, audit_dir=".local/material-runs")` 可显式保存私有运行摘要，MCP 同样支持 `audit_dir`。`next_material_request(result)` 只生成实际游标对应来源的下次请求；`None` 不表示全量完成。预算截断、游标失效和无权限均保持可见。详见 [来源可靠性指南](platform_reliability.md)。
+
+微信浏览器启动需要超过 12 秒剩余时间及足够操作次数；预览给出这一限制。预算不够时保留已获得的元数据/摘要并返回 `wechat_browser_budget_insufficient`，不会仅为满足时间切分而启用付费正文。调用方可选择单来源请求或提高总时间预算。
+
+供应商转录保留发布者类别，同时使用 `read_details.transmission=vendor_transcription`、`publisher_verification=vendor_claim_unverified` 和 `original_file_verified=false`；此类未核验的发布者类别排序贡献上限为 2，仍需 `retrieve` 官方原文核对。词面重合度不表示事实已确认。

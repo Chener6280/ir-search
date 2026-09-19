@@ -24,7 +24,7 @@ def _absolute_elsewhere(value):
     """True for a path that is absolute on another operating system but not on this one."""
     if os.name == "nt":
         return value.startswith("/") and not value.startswith("//")
-    return bool(re.match(r"[A-Za-z]:[/\\]", value)) or value.startswith("\\\\")
+    return bool(re.match(r"[A-Za-z]:", value)) or value.startswith(("\\\\", "//"))
 
 
 def require_local_path(values, *keys, allow_relative=False):
@@ -37,8 +37,15 @@ def require_local_path(values, *keys, allow_relative=False):
         value = values.get(key, "")
         if not isinstance(value, str) or not value:
             continue
-        if _absolute_elsewhere(value) or not (allow_relative or Path(value).expanduser().is_absolute()):
-            raise SourceConfigError("path_not_absolute_on_this_platform", key)
+        try:
+            foreign = _absolute_elsewhere(value)
+            if os.name == "nt" and re.match(r"[A-Za-z]:(?![/\\])", value):
+                foreign = True  # Drive-relative paths depend on hidden per-drive cwd.
+            expanded = Path(value).expanduser()
+            if foreign or not (allow_relative or expanded.is_absolute()):
+                raise ValueError()
+        except (OSError, ValueError, RuntimeError):
+            raise SourceConfigError("path_not_absolute_on_this_platform", key) from None
 
 
 def _error_row(provider, exc):
@@ -63,7 +70,7 @@ def credentials_file_state(path=None) -> dict:
     explicit = path is not None or bool(os.environ.get("IR_SEARCH_CREDENTIALS_FILE"))
     try:
         found = credentials_path(path).is_file()
-    except OSError:
+    except (OSError, ValueError, RuntimeError):
         found = False
     return {"selection": "explicit_path" if explicit else "default_location", "found": found}
 
@@ -80,7 +87,10 @@ def setup_hint(path=None) -> str:
 
 def read_credentials(path=None) -> dict[str, str]:
     """Return private values. Never log the result; missing default file is allowed."""
-    target = credentials_path(path)
+    try:
+        target = credentials_path(path)
+    except (ValueError, OSError, RuntimeError):
+        raise SourceConfigError("invalid_credentials_path", "IR_SEARCH_CREDENTIALS_FILE") from None
     try:
         if target.is_symlink():
             raise SourceConfigError("credentials_file_unreadable")
@@ -143,7 +153,7 @@ class MySQLProfile:
     financial_currency: Optional[str] = None
 
 
-def mysql_profile(provider: str, *, values: Optional[Mapping[str, str]] = None, env_file=None) -> Optional[MySQLProfile]:
+def mysql_profile(provider: str, *, values: Optional[Mapping[str, str]] = None, env_file=None, datasets=None) -> Optional[MySQLProfile]:
     """Build an explicitly enabled profile; no cross-provider credential fallback."""
     if provider not in {"wind_mysql", "jydb"}:
         raise SourceConfigError()
@@ -163,19 +173,23 @@ def mysql_profile(provider: str, *, values: Optional[Mapping[str, str]] = None, 
     if any(v in {"未配置", "请填写", "YOUR_USERNAME", "YOUR_PASSWORD"}
            or v.startswith(("${", "$WIND_", "$JYDB_", "$ASHARE_")) for v in required):
         raise SourceConfigError("source_credentials_missing")
+    config_key = "PORT"
     try:
         port = int(values.get(prefix + "PORT", "3306"))
         if not 1 <= port <= 65535:
             raise ValueError()
         multipliers = []
         for key in ("VOLUME_MULTIPLIER", "AMOUNT_MULTIPLIER", "DERIVATIVES_AMOUNT_MULTIPLIER"):
-            raw = values.get(prefix + key, "")
+            config_key = key
+            scope = {"VOLUME_MULTIPLIER": {"prices_daily"}, "AMOUNT_MULTIPLIER": {"prices_daily"},
+                     "DERIVATIVES_AMOUNT_MULTIPLIER": {"futures_daily", "options_daily"}}[key]
+            raw = values.get(prefix + key, "") if datasets is None or scope.intersection(datasets) else ""
             value = Decimal(raw) if raw else None
             if value is not None and (not value.is_finite() or value <= 0 or value > 1000000000):
                 raise ValueError()
             multipliers.append(value)
     except (ValueError, InvalidOperation):
-        raise SourceConfigError() from None
+        raise SourceConfigError("invalid_source_config", prefix + config_key) from None
     tls_mode = values.get(prefix + "TLS_MODE", "verify_identity")
     ca = values.get(prefix + "SSL_CA") or None
     fingerprint = values.get(prefix + "SSL_CA_SHA256") or None
@@ -185,9 +199,9 @@ def mysql_profile(provider: str, *, values: Optional[Mapping[str, str]] = None, 
         raise SourceConfigError("invalid_tls_config")
     if tls_mode == "pinned_ca" and (provider != "jydb" or not ca or not fingerprint or not re.fullmatch(r"[a-fA-F0-9]{64}", fingerprint)):
         raise SourceConfigError("invalid_tls_config")
-    currency = values.get(prefix + 'FINANCIAL_CURRENCY') or None
+    currency = (values.get(prefix + 'FINANCIAL_CURRENCY') or None) if datasets is None or 'financial_statements' in datasets else None
     if currency is not None and not re.fullmatch('[A-Z]{3}', currency):
-        raise SourceConfigError()
+        raise SourceConfigError('invalid_source_config', prefix + 'FINANCIAL_CURRENCY')
     return MySQLProfile(provider, *required, port=port, ssl_ca=ca, tls_mode=tls_mode,
                         ca_sha256=fingerprint, volume_multiplier=multipliers[0], amount_multiplier=multipliers[1],
                         derivatives_amount_multiplier=multipliers[2], financial_currency=currency)
@@ -403,10 +417,9 @@ def wechat_profile(*, values=None, env_file=None) -> Optional[WechatProfile]:
             rows = json.load(stream)
         if not isinstance(rows, list) or any(not isinstance(row, dict) or set(row) - {"name", "ghid"} for row in rows):
             raise SourceConfigError("invalid_wechat_accounts")
-        cache_dir = Path(values.get('WECHAT_CACHE_DIR') or '.local/wechat-cache').expanduser()
-        if not cache_dir.is_absolute(): cache_dir = credentials_path(env_file).absolute().parent / cache_dir
-        return WechatProfile(values.get("DAJIALA_KEY", ""), tuple(WechatAccount(**row) for row in rows),
-            int(values.get("WECHAT_MAX_ACCOUNTS_PER_QUERY", "3")), int(values.get("WECHAT_MAX_PAGES_PER_ACCOUNT", "2")), str(cache_dir))
+        accounts = tuple(WechatAccount(**row) for row in rows)
+        if not accounts or len(accounts) > 500 or len({a.name for a in accounts}) != len(accounts) or len({a.ghid for a in accounts if a.ghid}) != sum(bool(a.ghid) for a in accounts):
+            raise SourceConfigError("invalid_wechat_accounts")
     except SourceConfigError as exc:
         # Every failure here concerns the private inventory file; point at its key.
         raise SourceConfigError(exc.code, exc.key or "WECHAT_ACCOUNTS_FILE") from None
@@ -416,6 +429,21 @@ def wechat_profile(*, values=None, env_file=None) -> Optional[WechatProfile]:
         raise SourceConfigError("invalid_wechat_accounts", "WECHAT_ACCOUNTS_FILE") from None
     finally:
         if fd is not None: os.close(fd)
+
+    budgets = []
+    for key, default, upper in (("WECHAT_MAX_ACCOUNTS_PER_QUERY", "3", 5), ("WECHAT_MAX_PAGES_PER_ACCOUNT", "2", 3)):
+        try:
+            value = int(values.get(key, default))
+            if not 1 <= value <= upper: raise ValueError()
+        except (ValueError, TypeError):
+            raise SourceConfigError("invalid_source_config", key) from None
+        budgets.append(value)
+    cache_dir = Path(values.get('WECHAT_CACHE_DIR') or '.local/wechat-cache').expanduser()
+    if not cache_dir.is_absolute(): cache_dir = credentials_path(env_file).absolute().parent / cache_dir
+    try:
+        return WechatProfile(values.get("DAJIALA_KEY", ""), accounts, *budgets, str(cache_dir))
+    except SourceConfigError as exc:
+        raise SourceConfigError(exc.code, "DAJIALA_KEY") from None
 
 
 @dataclass(frozen=True)

@@ -502,6 +502,7 @@ rss.fetch_feed=lambda url,**kw:rss.parse_feed(feed_xml,url,fetched_at=datetime.n
 # The adapter resolves its default client from the module import; patch that alias too.
 import ir_search.adapters.rss_materials as rss_adapter
 rss_adapter.fetch_feed=rss.fetch_feed
+from ir_search.services import material_search
 material_search.build_material_registry=ir_search.build_material_registry
 rss_request=ir_search.MaterialSearchRequest('Revenue',providers=['rss'],published_start='2026-09-01',published_end='2026-09-18',text_reads_per_source=0)
 feed_result=ir_search.search_materials(rss_request).to_dict()

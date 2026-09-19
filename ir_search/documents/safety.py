@@ -47,7 +47,7 @@ def is_url_allowed(
     ip = _parse_ip(host)
     if ip and _is_blocked_ip(ip):
         return UrlPolicyResult(False, f"blocked private or local IP: {ip}", normalized, host)
-    if ip is None and re.fullmatch(r"[0-9a-fx.]+", host):
+    if ip is None and re.fullmatch(r"(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+))*", host):
         # Resolvers also accept 2130706433, 0x7f000001, 0177.0.0.1 and 127.1 as addresses.
         return UrlPolicyResult(False, "blocked ambiguous numeric host", normalized, host)
     if ip is None and ("." not in host.rstrip(".") or host.rstrip(".").endswith(_INTERNAL_SUFFIXES)):

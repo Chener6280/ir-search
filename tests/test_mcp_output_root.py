@@ -47,4 +47,6 @@ def test_symlinked_folder_cannot_escape_the_root(tmp_path, monkeypatch):
 
 def test_relative_root_setting_is_a_configuration_error(monkeypatch):
     monkeypatch.setenv("IR_SEARCH_OUTPUT_ROOT", "relative/root")
-    assert rejected(mcp_server.search_materials_payload({"question": "q"}, audit_dir="runs"), "IR_SEARCH_OUTPUT_ROOT")
+    result = mcp_server.search_materials_payload({"question": "q"}, audit_dir="runs")
+    assert result['diagnostics'][0]['code'] == 'invalid_output_root'
+    assert result['diagnostics'][0]['key'] == 'IR_SEARCH_OUTPUT_ROOT'

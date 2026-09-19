@@ -4,14 +4,17 @@ from pathlib import Path
 from ir_search.infrastructure.private_files import _oldest_first, _private_write, _stamp_written
 
 
-def test_burst_writes_get_strictly_increasing_modification_times(tmp_path):
+def test_burst_writes_keep_wall_time_without_inventing_future_age(tmp_path):
     # Names are deliberately in reverse order of writing: name order must not decide age.
     paths = [tmp_path / f"{99 - index:02d}.json" for index in range(60)]
+    import time
+    started = time.time_ns()
     for path in paths:
         _private_write(path, b"{}")
+    ended = time.time_ns()
     stamps = [path.stat().st_mtime_ns for path in paths]
-    assert stamps == sorted(stamps) and len(set(stamps)) == len(stamps)
-    assert _oldest_first(tmp_path.glob("*.json")) == paths
+    assert all(started - 20_000_000 <= stamp <= ended for stamp in stamps)
+    assert _oldest_first(paths) == sorted(paths, key=lambda p: (p.stat().st_mtime_ns, p.name))
 
 
 def test_equal_timestamps_fall_back_to_a_stable_name_order(tmp_path):

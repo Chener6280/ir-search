@@ -10,6 +10,7 @@ import hashlib
 from html import escape
 import json
 import os
+import errno
 import re
 from pathlib import Path
 from urllib.parse import urljoin
@@ -193,8 +194,7 @@ def export_material(material: Material, output_dir, *, download_images=False, ma
     except RequestStopped as exc:
         result['diagnostics'].append(exc.code)
     except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError, DataAdapterError) as exc:
-        # root/<20>/<64>/images/<32>.webp: without OS long-path support Windows refuses paths
-        # beyond 259 characters, which otherwise looks like an unexplained I/O failure.
-        too_long = os.name == 'nt' and isinstance(exc, OSError) and len(str(root)) + 1 + 20 + 1 + 64 + 45 > 259
+        # Classify the actual failure; a hypothetical future image path cannot explain ENOSPC.
+        too_long = isinstance(exc, OSError) and (getattr(exc, 'winerror', None) == 206 or exc.errno == errno.ENAMETOOLONG)
         result['diagnostics'].append('archive_path_too_long' if too_long else 'archive_validation_or_io_failed')
     return result

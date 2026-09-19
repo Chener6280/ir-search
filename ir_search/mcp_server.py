@@ -84,6 +84,10 @@ def source_health_impl():
     return source_health()
 
 
+class _OutputConfigurationError(RuntimeError):
+    pass
+
+
 def _output_root():
     """Where MCP-requested exports may be written on this computer."""
     import os
@@ -110,9 +114,22 @@ def _mcp_output_dir(value, field):
         return None
     if not isinstance(value, str) or not value.strip() or any(ord(c) < 32 for c in value):
         raise ValueError(f"{field} must be a directory path without control characters")
-    root = _output_root().resolve()
-    target = Path(value).expanduser()
-    target = (target if target.is_absolute() else root / target).resolve()
+    try:
+        root = _output_root().resolve()
+    except (OSError, ValueError, RuntimeError):
+        raise _OutputConfigurationError("invalid_output_root") from None
+    try:
+        # Reject foreign and drive-relative paths rather than interpreting them as folders.
+        from .infrastructure.credentials import _absolute_elsewhere
+        if _absolute_elsewhere(value):
+            raise ValueError("foreign_path")
+        target = Path(value).expanduser()
+        if target.drive and (not target.is_absolute() or target.drive.casefold() != root.drive.casefold()):
+            # In particular, never resolve an untrusted remote UNC share.
+            raise ValueError("foreign_volume")
+        target = (target if target.is_absolute() else root / target).resolve()
+    except (OSError, ValueError, RuntimeError):
+        raise ValueError(f"{field} must be a valid local path") from None
     if target != root and root not in target.parents:
         raise ValueError(f"{field} must be inside the local output root: pass a relative folder name, "
                          "or set IR_SEARCH_OUTPUT_ROOT for the MCP server")
@@ -141,6 +158,10 @@ def search_materials_payload(request: Mapping[str, Any], *, registry=None, timeo
         typed = MaterialSearchRequest(**dict(request))
         context = RequestContext(timeout_seconds=timeout_seconds, max_operations=100)
         audit_dir = _mcp_output_dir(audit_dir, "audit_dir")
+    except _OutputConfigurationError as exc:
+        return {"schema_version": "1.0", "status": "error", "diagnostics": [{
+            "code": "invalid_output_root", "operation": "search_materials",
+            "key": "IR_SEARCH_OUTPUT_ROOT", "message": "Fix the MCP server output root configuration."}]}
     except (ValueError, TypeError) as exc:
         return _framework_input_error("search_materials", exc)
     try:
@@ -171,6 +192,10 @@ def retrieve_payload(question: str, urls: list[str], *, max_chars: int = 20000,
         for url in typed.urls:
             _check_credential_free_url(url)
         context = RequestContext(timeout_seconds=timeout_seconds, max_operations=100)
+    except _OutputConfigurationError as exc:
+        return {"schema_version": "1.0", "status": "error", "diagnostics": [{
+            "code": "invalid_output_root", "operation": "retrieve",
+            "key": "IR_SEARCH_OUTPUT_ROOT", "message": "Fix the MCP server output root configuration."}]}
     except (ValueError, TypeError) as exc:
         return _framework_input_error("retrieve", exc)
     try:
@@ -213,10 +238,16 @@ def _framework_input_error(operation, exc=None):
         "code": "invalid_request", "operation": operation,
         "message": "Check argument types, ranges and dataset fields; provide credential-free URLs.",
     }
-    detail = str(exc)[:200] if exc is not None else ""
-    # Validation messages name fields, never values; still never echo anything URL-shaped.
-    if detail and "://" not in detail:
-        diagnostic["detail"] = detail
+    # Python enum/date/path exceptions can include tokens, cookies or passwords.
+    # Only allow-listed field names are exposed, never the rest of an exception.
+    import re
+    safe_fields = set(DataRequest.__dataclass_fields__) | set(MaterialSearchRequest.__dataclass_fields__) | set(MaterialRequest.__dataclass_fields__) | {"timeout_seconds", "audit_dir", "archive_dir", "request"}
+    message = str(exc) if exc is not None else ""
+    match = re.match(r"^(?:Search budget out of range: )?([a-z][a-z0-9_]*) (?:must |requires |is required)", message)
+    if match and match[1] in safe_fields:
+        diagnostic["detail"] = match[1]
+    elif "got an unexpected keyword argument" in message:
+        diagnostic["detail"] = "unknown_argument"
     return {"schema_version": "1.0", "status": "error", "diagnostics": [diagnostic]}
 
 
@@ -231,7 +262,10 @@ def _framework_internal_error(operation, exc):
 
 
 def list_tool_names() -> list[str]:
-    return TOOL_NAMES[:]
+    import os
+    mode = os.environ.get("IR_SEARCH_MCP_MODE", "legacy")
+    if mode not in {"core", "legacy"}: raise ValueError("invalid_mcp_mode")
+    return TOOL_NAMES[5:] if mode == "core" else TOOL_NAMES[:]
 
 
 def server_instructions() -> str:
@@ -275,6 +309,10 @@ def fetch_document_payload(
     include_tables: bool = True,
     allow_private_network: bool = False,
 ) -> dict:
+    import os
+    if allow_private_network and os.environ.get("IR_SEARCH_ALLOW_PRIVATE_NETWORK") != "1":
+        return {"errors": ["blocked_by_policy: private network access requires local server configuration"],
+                "source_text_trust": "untrusted"}
     try:
         document = fetch_document_impl(
             url,
@@ -423,8 +461,13 @@ def run() -> None:
         raise SystemExit("Install MCP support with: python -m pip install 'ir-search[mcp]'") from exc
 
     mcp = make_fastmcp(FastMCP)
+    selected_tools = set(list_tool_names())
+    def register_tool():
+        def register(function):
+            return mcp.tool()(function) if function.__name__ in selected_tools else function
+        return register
 
-    @mcp.tool()
+    @register_tool()
     def search(
         query: str,
         sources: Optional[list[str]] = None,
@@ -449,7 +492,7 @@ def run() -> None:
         )
         return ir_search(q).to_dict()
 
-    @mcp.tool()
+    @register_tool()
     def fetch_document(
         url: str,
         source_hint: Optional[str] = None,
@@ -465,7 +508,7 @@ def run() -> None:
             include_tables=include_tables,
         )
 
-    @mcp.tool()
+    @register_tool()
     def extract_evidence(
         url: str,
         question: str,
@@ -475,7 +518,7 @@ def run() -> None:
 
         return extract_evidence_payload(url, question, max_spans=max_spans)
 
-    @mcp.tool()
+    @register_tool()
     def verify_claims(
         claims: list[str],
         evidence_urls: Optional[list[str]] = None,
@@ -491,7 +534,7 @@ def run() -> None:
             question=question,
         )
 
-    @mcp.tool()
+    @register_tool()
     def deep_research(
         question: str,
         intent: Optional[str] = None,
@@ -520,7 +563,7 @@ def run() -> None:
             allow_broker=allow_broker,
         )
 
-    @mcp.tool()
+    @register_tool()
     def source_health(providers: Optional[list[str]] = None, live: bool = False,
                       timeout_seconds: float = 30) -> dict:
         """Report configuration, dependencies, backend routes and remediation without secrets.
@@ -532,17 +575,17 @@ def run() -> None:
 
         return source_health_payload(providers=providers, live=live, timeout_seconds=timeout_seconds)
 
-    @mcp.tool()
+    @register_tool()
     def list_capabilities() -> dict:
         """List numeric and material declarations plus unregistered intentions; not a live permission check."""
         return list_capabilities_payload()
 
-    @mcp.tool()
+    @register_tool()
     def describe_dataset(dataset: str) -> dict:
         """Describe fields, units and keys; a defined dataset may have no registered provider."""
         return describe_dataset_payload(dataset)
 
-    @mcp.tool()
+    @register_tool()
     def get_data(
         dataset: str, symbols: Optional[list[str]] = None, fields: Optional[list[str]] = None,
         start: Optional[str] = None, end: Optional[str] = None, market: str = "A_SHARE",
@@ -570,7 +613,7 @@ def run() -> None:
             "period_basis": period_basis, "revision": revision,
         }, timeout_seconds=timeout_seconds)
 
-    @mcp.tool()
+    @register_tool()
     def retrieve(question: str, urls: list[str], max_chars: int = 20000,
                  max_spans: int = 10, timeout_seconds: float = 30, web_read_mode: str = "auto",
                  follow_links: int = 0, link_domains: Optional[list[str]] = None,
@@ -616,14 +659,14 @@ def run() -> None:
                                 audio_window_count=audio_window_count,
                                 xhs_comment_limit=xhs_comment_limit, xhs_cache_mode=xhs_cache_mode)
 
-    @mcp.tool()
+    @register_tool()
     def search_announcements(symbols: list[str], start: str, end: str, query: str = "",
                              limit: int = 50, cursor: Optional[str] = None, timeout_seconds: float = 30) -> dict:
         """Read one JYDB announcement metadata page; pass source_ref values to retrieve for text and citations."""
         return search_announcements_payload(symbols, start, end, query=query, limit=limit,
                                             cursor=cursor, timeout_seconds=timeout_seconds)
 
-    @mcp.tool()
+    @register_tool()
     def search_materials(
         question: str, symbols: Optional[list[str]] = None, entities: Optional[list[str]] = None,
         keywords: Optional[list[str]] = None, published_start: Optional[str] = None, published_end: Optional[str] = None,

@@ -1,38 +1,36 @@
 # 变更记录
 
-## 未发布 —— 0.2.0rc1 之后的本地修复（2026-09-19）
+## 0.2.0rc2 — 2026-09-19，综合评审修复候选
 
-依据对 `891847e` 的独立评审，在 Windows 11（中文系统，Python 3.12）上实测修复。契约只增不改：没有删除或改名任何已有字段。
+整合四份本机评审、Windows PR #2（`891847e..3f918f7`）及其独立审核。维护同一套跨平台代码，不分叉 Windows/Mac 产品版本。逐项处理与未验边界见 [修复对照](docs/review_resolution.md)；Windows 接手步骤见 [复验交接](docs/windows_review_handoff.md)。测试通过不等于真实供应商、物理电脑或生产 SLA 已验收。
 
-**跨平台**
-- 完整离线测试在 Windows 上由 40 个失败降为 0；CI 改为三个操作系统都跑全量，并新增一个不启用 UTF-8 模式的 Windows 任务（五个任务均已通过）。依赖 POSIX 权限位、symlink 特权或 zsh 的用例带明确理由跳过。CI 失败时把失败用例写入公开注解，无需登录即可查看。
-- 取消或超时现在能在 Windows 上立即中断阻塞中的读取（此前 `shutdown` 唤不醒阻塞读，MySQL 用例要等 120 秒）；十处重复的监视线程代码合并为 `infrastructure/_interrupt.py`。
-- 修复 Windows 文件锁的竞态：多个线程同时首次创建锁文件时，后到者会在**没有拿到锁**的情况下继续执行，可能造成重复的付费正文调用。
-- 缓存淘汰不再依赖文件系统时间戳粒度：每次写入的修改时间严格递增，排序以文件名作稳定次序。
-- 旧 Cursor 工作区 bootstrap 明确为仅支持 macOS/Linux，在 Windows 上给出说明后退出；修复其把路径未转义写入 JSON 的问题（与平台无关）。
+**可靠性与跨平台**
+- 9 处连接取消复用 `_interrupt`：Windows 在取消时先 detach 使原对象失效，再关闭其拥有的句柄，覆盖 makefile 缓冲引用；POSIX 保持 shutdown。新增真实本机 TCP、HTTPResponse、TLS、PyMySQL 缓冲读及关闭后新连接测试。
+- Windows 首字节锁直接锁定文件范围（可越过 EOF），去掉加锁前的竞争写入，不吞掉首次写入权限错误。
+- 缓存 mtime 使用实际保存时间；相同时间以文件名稳定排序。不再人为推进时间，避免影响音频 TTL；不承诺相同时间写入的跨进程严格先后。
+- 归档路径过长仅依据实际 `ENAMETOOLONG` / Windows 206 分类；磁盘满不再误报。旧 64 位十六进制图片 manifest 可复用。
+- 三平台完整离线 CI、Windows UTF-8 开/关、Python 3.9/3.12 无 MCP 基础安装检查；测试崩溃无摘要也生成注解并保存日志。
 
-**配置与诊断**
-- 配置错误带上要修改的键名（`key`，从不含值）；`ir-search-doctor` 保留具体原因 `detail_code`，不再只给笼统的 `source_config_error`。
-- 另一种操作系统的绝对路径报 `path_not_absolute_on_this_platform`；`*_SSL_CA` 指向的文件不在本机时体检直接报 `ssl_ca_file_missing`。
-- 全新电脑上：`search_materials` 返回 `no_material_source_enabled`，`get_data` 返回 `no_data_source_enabled`，说明凭证文件是否找到及下一步。
-- 体检报告新增 `private_file_protection`，如实说明本平台是否校验了属主与权限位（目前仅 POSIX）。
+**检索与诊断**
+- 来源按权重分配剩余时间（内置微信 2，其他 1），未用时间顺延。局部超时保留已返回且通过校验的文本、扫描记录和续取游标；父请求取消/超时仍停止接受结果。
+- 浏览器预算不足时保留微信发现结果并报告 `wechat_browser_budget_insufficient`，不因时间切分自动转收费正文。
+- 单条文本契约/转换错误隔离为 `candidate_rejected`；伪造来源身份、未授权 generated 内容、重复记录、无效页/扫描/游标仍拒绝整页。
+- 长中文部分匹配保留“有色、对冲、在建”等词内字符与首部主题区分；重合度仅是字面提示，不是主题或事实置信度。保留英文/代码边界。
+- `timing` 为附加运行指标，包含它的运行指纹每次可能不同，不是内容指纹。
+- `Diagnostic.datasets` 为附加的配置作用域；数值单位/财务币种错误只阻断相关数据集，共享认证配置错误仍阻断该来源，不自动换源。微信配置指出实际错误键；路径展开错误有稳定诊断。
+- Tushare/JYDB 保留原始发布者类别，同时声明供应商转录、发布者未独立核验；排序不把这种类别当已取得官方原件。
 
-**素材检索**
-- 主题词推断不再把整段中文当成一个词；泛词不再作为主题词；英文/数字词按完整词匹配；长中文词支持按二元组重合度的部分匹配（`partial_topic_term_match`）。新增 `plan.topic_term_basis`。
-- 每个来源独立的时间份额（`source_time_share_exceeded`）；单条坏记录只丢弃该条（`candidate_rejected`）；新增 `timing` 字段（与 `items`/`coverage` 分开，保持后者可比）；适配器诊断的 `message` 不再被丢弃。
+**安全与兼容变化**
+- MCP 校验错误只可能包含固定字段名，不反射 Python 异常正文；服务器输出根错误用 `invalid_output_root`，坏工具参数用 `invalid_request`。
+- MCP `audit_dir/archive_dir` 仅限 `IR_SEARCH_OUTPUT_ROOT` 内，默认凭证目录下 `.local/exports`。SDK 仍允许显式本地目录。路径别名由本平台规范化，拒绝越界 symlink/junction 和异卷/远端 UNC 目标。
+- 新集成可设服务进程环境 `IR_SEARCH_MCP_MODE=core`，只注册核心数据/素材及诊断工具；默认 `legacy` 保留所有旧入口，`deep_research` 不扩建。
+- Wind/JYDB 共用的数据库分页游标改用安装级随机密钥，经跨进程锁和原子写入持久化。**旧密码签名游标失效**，重新查询；星球/微信/IMA/XHS 的 material cursor 不因此失效。状态不可写或密钥损坏返回 `cursor_state_unavailable`，不再静默使用进程内密钥。
+- 旧公开 fetch 复用验证并固定 IP 的 public_web 传输，重定向共享预算，DNS 等待有截止/取消与并发上限。MCP 工具参数不能单独授权私网；仅可信服务配置 `IR_SEARCH_ALLOW_PRIVATE_NETWORK=1` 可开放旧私网读取。SDK 的显式私网选项保留。
+- 修复合法 `abc.de/cafe.de` 被当数字地址拒绝的问题；真正的非标准数字地址仍拒绝。
+- 旧模拟结果使用 `mock.invalid`、显眼 MOCK 标题及不可作证据标记，不再显示为真实官方披露。旧 Tushare 默认官方 HTTPS，其他代理需要显式配置；不输出上游异常正文。
+- 离线测试固定 live 开关、隔离合成凭证，禁止外部 DNS/socket（本机回环测试允许）。个人公众号选集从当前版本移除，保留公共示例；没有改写 Git 历史。
 
-**MCP**
-- 区分 `invalid_request`（参数被拒，`detail` 指出字段与取值范围）与 `internal_error`（参数有效、服务或来源失败）。此前服务端内部异常会被报成“请检查参数”。
-- `audit_dir` / `archive_dir` 限制在一个本机输出根目录内（`IR_SEARCH_OUTPUT_ROOT`，默认凭证目录下的 `.local/exports`）。**行为变化：** 经 MCP 传入根目录之外的绝对路径会被拒绝；Python SDK 不受影响。
-
-**安全**
-- 分页游标改用安装级随机密钥签名（存于凭证目录下 `.local/state/cursor.key`），不再使用数据库密码。**行为变化：** 旧游标失效，需重新发起查询。
-- 旧抓取入口的 URL 校验补上：十进制/十六进制/短点分形式的地址、单标签与内网后缀主机名、非默认端口，以及“公网域名解析到内网地址”的情况。
-
-**其他**
-- 新增 `ir_search.__version__`（取自安装元数据，单一来源）。
-
-尚未处理（需要真实数据库或更大改动，见评审报告）：A 股复权与交易状态、A 股交易日历、统一证券代码规范化、返回体总量预算、适配器插件化、Windows ACL 校验。
+本轮不新增数据源、不执行真实带凭证/收费调用。A 股复权/交易日历/PIT、统一证券代码、Windows ACL、跨进程额度账本、向量库和大规模接口重构均不冒充已完成。
 
 ## 0.2.0rc1 — 2026-09-18，交接候选
 

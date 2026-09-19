@@ -13,7 +13,17 @@ class MockSearchAdapter:
 
     def query(self, q: Query) -> list[Hit]:
         builder = BUILDERS.get(self.name, _generic_hits)
-        return builder(q, self.name)[: q.count]
+        import hashlib
+        hits = builder(q, self.name)[: q.count]
+        for hit in hits:
+            identity = hashlib.sha256(hit.url.encode()).hexdigest()[:20]
+            hit.url = f"https://mock.invalid/{self.name}/{identity}"
+            hit.title = "[MOCK / 模拟示例，非真实资料] " + hit.title
+            hit.snippet = "[MOCK / 不可作为证据] " + hit.snippet
+            hit.tier = SourceTier.UGC
+            hit.evidence_type = EvidenceType.UNKNOWN
+            hit.extra.update(adapter_mode="mock", synthetic=True, usable_as_evidence=False)
+        return hits
 
 
 def _company(q: Query) -> str:

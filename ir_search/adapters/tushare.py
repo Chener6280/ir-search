@@ -14,7 +14,7 @@ from ir_search.models import EntityType, EvidenceType, Hit, Query, SourceTier
 from ir_search.network import http_error_message, open_url
 
 
-ENDPOINT_DEFAULT = "https://fastapic.stockai888.top"
+ENDPOINT_DEFAULT = "https://api.tushare.pro"
 MAX_SYMBOLS = 5
 
 EXPLICIT_TS_CODE_RE = re.compile(r"\b(?:[036]\d{5})\.(?:SH|SZ)\b", re.IGNORECASE)
@@ -77,6 +77,10 @@ class TushareAdapter:
 
 class TushareClient:
     def __init__(self, token: str, endpoint: str = ENDPOINT_DEFAULT) -> None:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(endpoint)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise AdapterError("TUSHARE_HTTP_URL must be a credential-free HTTPS endpoint", retryable=False)
         self.token = token
         self.endpoint = endpoint
 
@@ -102,13 +106,13 @@ class TushareClient:
         except urllib.error.HTTPError as exc:
             raise AdapterError(http_error_message("tushare request failed", exc), retryable=True) from exc
         except Exception as exc:
-            raise AdapterError(f"tushare request failed: {exc}", retryable=True) from exc
+            raise AdapterError("tushare request failed", retryable=True) from None
 
         code = data.get("code", 0)
         if code not in (0, "0"):
             message = data.get("msg") or "unknown error"
             retryable = any(needle in str(message).lower() for needle in ["timeout", "频繁", "超时", "network", "429"])
-            raise AdapterError(f"tushare {api_name} failed: code={code}, msg={message}", retryable=retryable)
+            raise AdapterError("tushare upstream rejected the request", retryable=retryable)
 
         payload_data = data.get("data") or {}
         return table_to_rows(payload_data.get("fields") or [], payload_data.get("items") or [])

@@ -5,57 +5,44 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import re
 import secrets
 from threading import Lock
 
 from ir_search.registry import DataAdapterError
 from .credentials import credentials_path
-from .private_files import _private_dir, _private_read
+from .private_files import _private_read
 
 _KEYS: dict = {}
 _KEYS_LOCK = Lock()
 
 
 def _cursor_key() -> bytes:
-    """A random per-installation signing key, never derived from a credential.
-
-    Cursors travel to callers, model context, logs and shared test reports. Signing them
-    with the database password would give every reader a way to test password guesses
-    offline. The key lives beside the private credentials file; where that location cannot
-    hold private state the key is process-local and cursors end with the process.
-    """
+    """Persistent installation secret; fail explicitly instead of issuing ephemeral cursors."""
     try:
         root = credentials_path().absolute().parent / ".local" / "state"
-    except OSError:
-        root = None
-    with _KEYS_LOCK:
-        if root not in _KEYS:
-            _KEYS[root] = _stored_key(root) or secrets.token_bytes(32)
-        return _KEYS[root]
+        with _KEYS_LOCK:
+            if root not in _KEYS:
+                _KEYS[root] = _stored_key(root)
+            return _KEYS[root]
+    except (OSError, ValueError, RuntimeError):
+        raise DataAdapterError("cursor_state_unavailable") from None
 
 
 def _stored_key(root):
-    if root is None:
-        return None
-    try:
-        path = _private_dir(root) / "cursor.key"
-        for _ in range(2):
-            try:
-                raw = _private_read(path, 256).strip()
-                return bytes.fromhex(raw.decode("ascii")) if re.fullmatch(rb"[0-9a-f]{64}", raw) else None
-            except FileNotFoundError:
-                pass
-            try:  # Exclusive create: a concurrent process keeps its key and this one re-reads it.
-                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-            except FileExistsError:
-                continue
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(secrets.token_hex(32).encode("ascii"))
-    except (OSError, ValueError):
-        pass
-    return None
+    from ir_search.context import RequestContext
+    from .private_files import _directory_lock, _private_write
+    # Readers also lock: an exclusive empty file is not an atomic publication.
+    with _directory_lock(root, RequestContext(timeout_seconds=5)) as directory:
+        path = directory / "cursor.key"
+        try:
+            raw = _private_read(path, 256).strip()
+        except FileNotFoundError:
+            raw = secrets.token_hex(32).encode("ascii")
+            _private_write(path, raw)
+        if not re.fullmatch(rb"[0-9a-f]{64}", raw):
+            raise ValueError("invalid_cursor_key")
+        return bytes.fromhex(raw.decode("ascii"))
 
 
 def _binding(request, profile):
@@ -83,5 +70,7 @@ def _decode_cursor(request, profile):
         if not hmac.compare_digest(signature, expected) or payload["v"] != 1 or payload["request"] != _binding(request, profile):
             raise ValueError()
         return payload["last"]
+    except DataAdapterError:
+        raise
     except Exception:
         raise DataAdapterError("invalid_cursor") from None

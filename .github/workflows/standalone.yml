@@ -64,6 +64,9 @@ jobs:
         shell: bash
         run: |
           grep -aE '^(FAILED|ERROR) ' pytest-report.log | cut -c1-300 > failures.txt || true
+          if [ ! -s failures.txt ]; then
+            echo 'ERROR pytest produced no failure summary; inspect the uploaded log or earlier failed step.' > failures.txt
+          fi
           echo "failing tests: $(wc -l < failures.txt)"
           split -l 12 failures.txt failures_part_ || true
           for part in failures_part_*; do
@@ -71,3 +74,30 @@ jobs:
             message=$(sed -e 's/%/%25/g' "$part" | tr '\n' '\r' | sed -e 's/\r/%0A/g')
             echo "::error title=pytest failures (${{ matrix.os }}, utf8=${{ matrix.utf8 }})::${message}"
           done
+
+      - name: Upload offline test log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pytest-${{ matrix.os }}-${{ matrix.python }}-utf8-${{ matrix.utf8 }}
+          path: pytest-report.log
+          if-no-files-found: ignore
+
+  base-only:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]
+    env:
+      IR_SEARCH_LIVE: "0"
+      IR_SEARCH_RUN_LIVE_TESTS: "0"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install ".[dev]"
+      - run: python -c "import importlib.util; assert importlib.util.find_spec('mcp') is None"
+      - run: python -m pytest tests/test_standalone_package.py -q

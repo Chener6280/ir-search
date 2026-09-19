@@ -144,4 +144,4 @@ def test_adapter_route_labels_survive_the_service_boundary():
     result = search([Source("source_a", diagnostics=[note])])
     passed = next(d for d in result.diagnostics if d.code == "web_discovery_route_failed")
     assert passed.message == "discovery_provider=bocha;web_region=domestic" and passed.provider == "source_a"
-    assert result.plan["budget"]["source_time_share"] == "remaining_seconds_divided_by_pending_sources_unused_time_rolls_over"
+    assert result.plan["budget"]["source_time_share"] == "weighted_remaining_time_unused_time_rolls_over"

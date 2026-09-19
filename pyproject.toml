@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ir-search"
-version = "0.2.0rc1"
+version = "0.2.0rc2"
 description = "Deterministic investment research search kernel"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -19,7 +19,7 @@ ir-search-gangtise-login = "ir_search.infrastructure.gangtise_auth:main"
 ir-search-doctor = "ir_search.services.source_diagnostics:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "setuptools>=61", "wheel"]
+dev = ["pytest>=8", "setuptools>=61", "wheel", "cryptography>=43"]
 mcp = ["mcp>=1,<2"]
 mysql = ["PyMySQL>=1.1.1,<2"]
 akshare = ["akshare>=1.18,<2"]

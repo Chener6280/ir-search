@@ -120,8 +120,12 @@ class Diagnostic(JsonModel):
     failure_kind: FailureKind = FailureKind.NONE
     message: str = ""
     adapter_mode: AdapterMode = AdapterMode.UNKNOWN
+    datasets: tuple[str, ...] = ()
 
     def __post_init__(self):
+        if not isinstance(self.datasets, (tuple, list)) or any(not isinstance(v, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", v) for v in self.datasets):
+            raise ValueError("Invalid diagnostic dataset scope")
+        object.__setattr__(self, "datasets", tuple(self.datasets))
         for name in ("code", "operation"):
             value = getattr(self, name)
             if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", value):
