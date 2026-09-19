@@ -21,6 +21,15 @@ search_materials
 
 `search_materials.providers` must reflect the user’s chosen sources. Omitted or empty lists return `required_inputs` and `plan.source_options` with zero source calls, including dry-run. Reuse existing user choices when applicable; do not automatically select all configured sources or alphabetical defaults. Numeric routing remains unchanged. See [the contract](source_selection.md) and [handoff](../HANDOFF.md).
 
+## Errors: whose problem is it
+
+Every core tool separates two failure classes so an agent does not rewrite valid arguments to fix an environment problem:
+
+- `invalid_request` — the arguments were rejected **before any source was contacted**. `detail` names the field and the accepted range (for example `Search budget out of range: max_chars must be an integer between 1 and 50000`). Values and URLs are never echoed.
+- `internal_error` — the arguments were accepted and the service or a source failed while running. `exception_type` is included; exception text is not, because it can contain URLs, SQL or tokens. Check `source_health`, then retry or report; do not change the arguments.
+
+`audit_dir` and `archive_dir` are confined to one local output root (`IR_SEARCH_OUTPUT_ROOT`, default `.local/exports` beside the private credentials file). Pass a relative folder name. The Python SDK is not restricted.
+
 ## Tool Notes
 
 - `alphapai` is an opt-in shared-meeting source for `search_materials`, using account login and the optional browser dependency. `retrieve` accepts `alphapai://meeting/<ID>/summary` and `/transcript`; stored AI summaries and partial machine transcripts retain separate scope, exact citations and completeness warnings. No Open API key is required. See [AlphaPai configuration and limits](alphapai_material_adapter.md).

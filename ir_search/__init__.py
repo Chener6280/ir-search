@@ -1,4 +1,11 @@
 from .context import RequestContext
+from importlib.metadata import PackageNotFoundError, version as _distribution_version
+
+try:  # Single source: the installed distribution metadata written from pyproject.toml.
+    __version__ = _distribution_version("ir-search")
+except PackageNotFoundError:  # Imported from a source tree that was never installed.
+    __version__ = "0+unknown"
+
 from .contracts import (
     AccessStatus, AdapterMode, AdvisoryResult, AnnouncementRequest, DataCapability, DataPage, DataRequest,
     DataResult, Diagnostic, MaterialBundle, MaterialRequest, Provenance, Status, ValueKind,

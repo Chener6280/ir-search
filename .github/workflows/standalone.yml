@@ -15,16 +15,24 @@ jobs:
         include:
           - os: ubuntu-latest
             python: "3.10"
+            utf8: "1"
           - os: ubuntu-latest
             python: "3.12"
+            utf8: "1"
           - os: macos-latest
             python: "3.12"
+            utf8: "1"
           - os: windows-latest
             python: "3.12"
+            utf8: "1"
+          # What a Windows user actually runs: no UTF-8 mode, the locale code page decides.
+          - os: windows-latest
+            python: "3.12"
+            utf8: "0"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     env:
-      PYTHONUTF8: "1"
+      PYTHONUTF8: ${{ matrix.utf8 }}
       IR_SEARCH_LIVE: "0"
     steps:
       - uses: actions/checkout@v7
@@ -42,6 +50,7 @@ jobs:
       - run: python -m pip install ".[dev,mcp,mysql]"
       - name: Installed package without checkout or local skills
         run: python -m pytest tests/test_standalone_package.py -q
-      - name: Full offline suite on Linux
-        if: runner.os == 'Linux'
+      # Tests that need POSIX mode bits, symlink privilege or the zsh wrapper skip themselves
+      # with a stated reason; nothing is left unrun because of the operating system.
+      - name: Full offline suite
         run: python -m pytest -m "not live" -q
