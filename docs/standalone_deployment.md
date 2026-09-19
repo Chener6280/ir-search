@@ -65,7 +65,25 @@ chmod 600 "$HOME/.config/ir-search/credentials.env"
 export IR_SEARCH_CREDENTIALS_FILE="$HOME/.config/ir-search/credentials.env"
 ```
 
-Windows 使用当前用户私有目录及文件访问控制；PowerShell 可设置 `$env:IR_SEARCH_CREDENTIALS_FILE='C:/PRIVATE/credentials.env'`。不要直接执行/source env 内容，库按字面解析，不执行其中命令。
+Windows 把凭证放在**当前用户目录**下（该目录默认只对本人、SYSTEM 和管理员开放），例如 PowerShell：
+
+```powershell
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\ir-search" | Out-Null
+Copy-Item credentials.env.example "$env:LOCALAPPDATA\ir-search\credentials.env"
+$env:IR_SEARCH_CREDENTIALS_FILE = "$env:LOCALAPPDATA\ir-search\credentials.env"
+```
+
+不要放在盘符根目录（如 `C:/PRIVATE`）或共享目录：那里新建的目录会继承对普通用户开放的访问权限。属主与权限位检查只在 macOS/Linux 上执行，`ir-search-doctor` 的 `private_file_protection` 会如实标出本平台是否做了这项检查。不要直接执行/source env 内容，库按字面解析，不执行其中命令。
+
+### 路径类配置不可跨电脑照搬
+
+密钥可以原样带到另一台电脑，**路径不行**。`*_CACHE_DIR`、`*_STATE_DIR`、`*_BROWSER_EXECUTABLE`、`*_SSL_CA`、`WECHAT_ACCOUNTS_FILE` 这类键：
+
+- 留空使用默认位置（凭证文件所在目录下的 `.local/...`），或写 `~/...`，这两种写法在 Windows 与 macOS/Linux 上都有效；
+- 写了另一种操作系统的绝对路径（Windows 上的 `/Users/...`，或 macOS/Linux 上的 `C:\...`）时，来源会报 `path_not_absolute_on_this_platform`，并在 `key` 字段指出是哪个键；
+- 配置了 `*_SSL_CA` 但证书文件不在本机时，体检直接报 `ssl_ca_file_missing`，不必等到第一次查询才以 `tls_error` 失败。
+
+`ir-search-doctor` 对每个配置错误给出 `detail_code`（具体原因）和 `key`（要改的键名，从不含值）；`code` 仍为 `source_config_error`，保持对已有调用方兼容。
 
 每台电脑分别维护 Cookie、账号池、星球范围、IMA 权限、本地 XHS 后端和登录会话。辅助路径按对应指南配置，不把原电脑的绝对路径当作可移植配置。本机已有 Wind 非 TLS 设置是用户明确选择；不自动从 TLS 失败降级。
 
@@ -103,7 +121,11 @@ Windows 换成对应解释器路径。doctor 默认不取数；`configured_unver
 }
 ```
 
-Windows 使用 `C:/.../.venv/Scripts/python.exe`。从无源码工作目录启动已安装服务也应正常加载包内资源。MCP 应列出 12 个工具；新业务使用 `list_capabilities`、`source_health`、`describe_dataset` 与三个核心入口。旧工具保留，不要求测试 Agent 使用旧报告流程。
+Windows 使用 `C:/.../.venv/Scripts/python.exe`（或直接用 `C:/.../.venv/Scripts/ir-search-mcp.exe`，不带 `args`）。旧 Cursor 工作区模板及其 bootstrap 依赖 zsh 包装脚本，只支持 macOS/Linux，在 Windows 上会直接给出提示并退出。
+
+MCP 工具的路径参数由模型填写，而模型同时会读到不可信的网页和文章，所以 `search_materials.audit_dir` 与 `retrieve.archive_dir` 只能写到一个本机根目录之内：默认是凭证文件所在目录下的 `.local/exports`，可用环境变量 `IR_SEARCH_OUTPUT_ROOT`（绝对路径）改到别处。传相对目录名（如 `runs/2026-09`）即可；指向根目录之外的路径返回 `invalid_request`。Python SDK 由本机可信代码调用，不受此限制。
+
+从无源码工作目录启动已安装服务也应正常加载包内资源。MCP 应列出 12 个工具；新业务使用 `list_capabilities`、`source_health`、`describe_dataset` 与三个核心入口。旧工具保留，不要求测试 Agent 使用旧报告流程。
 
 ## 6. 外部验收与升级
 

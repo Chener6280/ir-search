@@ -15,6 +15,7 @@ import ssl
 from threading import Event, Thread
 from urllib.parse import urlencode
 
+from ._interrupt import wake_blocked_socket
 from .credentials import TushareCorpusProfile
 from ir_search.context import RequestStopped
 from ir_search.registry import DataAdapterError
@@ -80,11 +81,7 @@ def _post(profile, payload, *, session_id, version, context):
                     context.check_active()
                 except RequestStopped:
                     sock = active_socket or connection.sock
-                    if sock is not None:
-                        try:
-                            sock.shutdown(socket.SHUT_RDWR)
-                        except OSError:
-                            pass
+                    wake_blocked_socket(sock)
                     return
 
         watcher = Thread(target=stop_socket, daemon=True)

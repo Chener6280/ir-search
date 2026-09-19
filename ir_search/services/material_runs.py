@@ -24,6 +24,7 @@ _CODES = frozenset(DataAdapterError.KINDS) | frozenset(_RULES) | {
     'ima_page_budget_exhausted', 'ima_pagination_unknown', 'wechat_page_budget_exhausted',
     'original_text_fetch_failed', 'not_queried_request_stopped', 'no_match_in_scanned_records',
     'material_source_not_registered', 'unknown_diagnostic',
+    'source_time_share_exceeded', 'candidate_rejected', 'partial_topic_term_matches_only',
 }
 
 

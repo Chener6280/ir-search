@@ -6,7 +6,7 @@ import re
 from dataclasses import replace
 from urllib.parse import urlsplit, urlunsplit
 
-from ir_search.context import RequestContext, RequestStopped
+from ir_search.context import RequestContext, RequestStopped, SourceSlice
 from ir_search.contracts import AdapterMode, Diagnostic, Status
 from ir_search.contracts.materials import MaterialCandidate, MaterialSearchPage, MaterialSearchRequest, MaterialSearchResult, MaterialSourceScan, TextScope, WebSearchFallback
 from ir_search.entity import load_entities
@@ -19,6 +19,67 @@ _TOPICS = {
     "动销": (("动销", "终端销售", "终端销量"), ("批价", "库存", "回款", "发货", "补货", "开瓶")),
     "渠道调研": (("渠道调研", "经销商调研", "终端调研"), ("库存", "批价", "回款")),
 }
+
+# Words that carry no topical signal on their own. Dropped from inferred terms only
+# when a more specific term, entity or symbol remains; caller keywords are never dropped.
+_GENERIC_TERMS = frozenset((
+    "影响", "原因", "变化", "分析", "展望", "趋势", "进展", "最新", "近期", "目前", "当前", "未来",
+    "为何", "为什么", "哪些", "什么", "多少", "是否", "问题", "表现", "解读", "点评", "梳理", "总结",
+    "观点", "看法", "判断", "逻辑", "相关", "有关", "方面", "主要", "具体", "整体", "以及", "对于"))
+# Single-character function words. A bigram containing one is a junction, not evidence.
+_FUNCTION_CHARS = frozenset("的了吗呢吧和与及或对在将被把从向于是有为等并而也都就还又这那其")
+_PARTIAL_MIN_CHARS, _PARTIAL_MIN_COVERAGE = 5, 0.6
+_ASCII_TERM = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,30}")
+_CJK_TERM = re.compile(r"[\u4e00-\u9fff]{2,20}")
+
+
+def _inferred_terms(text):
+    """Split a question remainder into lexical terms; no dictionary or model is used."""
+    terms = []
+    for token in re.findall(r"[\u4e00-\u9fff]{2,20}|[A-Za-z0-9][A-Za-z0-9_.+-]{0,30}", text):
+        token = token.strip("._+-")
+        if _CJK_TERM.fullmatch(token) or (len(token) >= 2 and re.search(r"[A-Za-z]", token)):
+            terms.append(token)
+    return terms
+
+
+def _strip_generic(term):
+    """Remove generic research words from the edges of an inferred CJK term."""
+    if not _CJK_TERM.fullmatch(term):
+        return term
+    changed = True
+    while changed and len(term) >= 2:
+        changed = False
+        for word in _GENERIC_TERMS:
+            if term.startswith(word):
+                term, changed = term[len(word):], True
+            elif term.endswith(word):
+                term, changed = term[:-len(word)], True
+        stripped = term.strip("与和及或")  # A run cut by an ASCII token keeps its conjunction.
+        term, changed = stripped, changed or stripped != term
+    return term if len(term) >= 2 else ""
+
+
+def _term_pattern(term):
+    """ASCII terms match whole tokens only, so `AI` never matches `said`; CJK is substring."""
+    pattern = re.escape(term)
+    if re.match(r"[A-Za-z0-9]", term):
+        pattern = r"(?<![A-Za-z0-9])" + pattern
+    if re.search(r"[A-Za-z0-9]$", term):
+        pattern += r"(?![A-Za-z0-9])"
+    return re.compile(pattern, re.IGNORECASE)
+
+
+def _partial_match(term, body):
+    """Character-bigram overlap for a long CJK term whose words are not adjacent in the text."""
+    if len(term) < _PARTIAL_MIN_CHARS or not _CJK_TERM.fullmatch(term):
+        return None
+    parts = list(dict.fromkeys(term[i:i + 2] for i in range(len(term) - 1)
+                               if not _FUNCTION_CHARS.intersection(term[i:i + 2])))
+    hits = [part for part in parts if part in body]
+    if len(parts) < 2 or len(hits) < 2 or len(hits) / len(parts) < _PARTIAL_MIN_COVERAGE:
+        return None
+    return {"term": term, "matched_parts": hits, "coverage": f"{len(hits) / len(parts):.2f}"}
 
 
 def _plan(request):
@@ -42,18 +103,23 @@ def _plan(request):
         if trigger in request.question or any(trigger in word for word in request.keywords):
             topic.extend(direct)
             related.extend(proxy)
+    basis = (["caller_keywords"] if request.keywords else []) + (
+        ["packaged_topic_rules"] if len(topic) > len(request.keywords) else [])
     if not topic:
         remaining = request.question
         for alias in sorted(aliases + symbols, key=len, reverse=True):
             remaining = re.sub(re.escape(alias), ' ', remaining, flags=re.I)
         remaining = re.sub(r"\d{4}年|\d{1,2}月|请问|请|帮我|我想|一下|看看|查询|检索|关于|数据|情况|如何|怎么样|的|了|吗", " ", remaining)
-        topic = re.findall(r"[\u4e00-\u9fff]{2,20}|[A-Za-z][A-Za-z0-9_-]{1,30}", remaining)
+        inferred = _inferred_terms(remaining)
+        topic = [term for term in (_strip_generic(term) for term in inferred) if term] or inferred
+        basis.append("inferred_from_question")
     unique = lambda values: list(dict.fromkeys(values))[:20]
     return {"symbols": unique(symbols), "entity_aliases": unique(aliases),
             "institutions": [row.to_dict() for row in institutions],
             "institution_aliases": institution_aliases,
             "institution_catalog_coverage": "curated_seed_not_exhaustive",
             "topic_terms": unique(topic), "related_terms": [v for v in unique(related) if v not in topic],
+            "topic_term_basis": basis,
             "expansion_basis": "packaged_entity_dictionary_and_explicit_rules",
             "matching_basis": "lexical_hints_not_verified_measurements",
             "publication_window": [request.published_start, request.published_end],
@@ -62,8 +128,10 @@ def _plan(request):
             "source_text_trust": "untrusted"}
 
 
-def _diag(code, provider=None, failure=FailureKind.NONE, mode=AdapterMode.UNKNOWN):
-    return Diagnostic(code, "search_materials", provider, failure_kind=failure, adapter_mode=mode)
+def _diag(code, provider=None, failure=FailureKind.NONE, mode=AdapterMode.UNKNOWN, message=""):
+    # Adapter messages are fixed route labels (never source text); bound them anyway.
+    message = message[:200] if isinstance(message, str) else ""
+    return Diagnostic(code, "search_materials", provider, failure_kind=failure, message=message, adapter_mode=mode)
 
 
 def _validate_page(page, cap, request):
@@ -133,9 +201,10 @@ def _matching(candidate, plan, request):
     if (identifiers or institution_ids) and not (institution_hit or set(candidate.symbols) & set(plan['symbols'])
                                                or any(v.casefold() in body for v in identifiers)):
         return None
-    direct = [v for v in plan["topic_terms"] if v.casefold() in body]
-    related = [v for v in plan["related_terms"] if v.casefold() in body]
-    if not direct and not related:
+    direct = [v for v in plan["topic_terms"] if _term_pattern(v).search(body)]
+    related = [v for v in plan["related_terms"] if _term_pattern(v).search(body)]
+    partial = [hit for hit in (_partial_match(v, body) for v in plan["topic_terms"] if v not in direct) if hit]
+    if not direct and not related and not partial:
         return None
     period = "not_requested"
     if request.period_start:
@@ -145,16 +214,17 @@ def _matching(candidate, plan, request):
             return None
         else:
             period = "overlaps_requested_period"
-    return {"topic_terms": direct, "related_terms": related,
-            "classification": "topic_term_match" if direct else "related_term_match",
+    return {"topic_terms": direct, "related_terms": related, "partial_topic_terms": partial,
+            "classification": "topic_term_match" if direct else "partial_topic_term_match" if partial else "related_term_match",
             "business_period": period, "interpretation": "lexical_match_only_not_confirmation_of_fact_or_metric"}
 
 
 def _spans(candidate, match, version_id):
-    terms = match["topic_terms"] + match["related_terms"]
+    terms = match["topic_terms"] + match["related_terms"] + [
+        part for hit in match.get("partial_topic_terms", ()) for part in hit["matched_parts"]]
     spans = []
     for part, text in (("text", candidate.text), ("title", candidate.title)):
-        starts = sorted({m.start() for term in terms for m in re.finditer(re.escape(term), text, re.IGNORECASE)})
+        starts = sorted({m.start() for term in terms for m in _term_pattern(term).finditer(text)})
         for pos in starts:
             start, end = max(0, pos - 70), min(len(text), pos + 150)
             section = next((s for s in candidate.sections if s.start_char <= pos < s.end_char), None) if part == "text" else None
@@ -178,7 +248,7 @@ def _spans(candidate, match, version_id):
             if len(spans) == 3:
                 return spans
     for index, attachment in enumerate(candidate.attachments):
-        if any(term.casefold() in attachment.name.casefold() for term in terms):
+        if any(_term_pattern(term).search(attachment.name) for term in terms):
             spans.append({"version_id": version_id, "source_ref": attachment.source_ref, "url": candidate.original_url,
                           "source_part": "attachment_name", "attachment_index": index, "start_char": 0,
                           "end_char": len(attachment.name), "text": attachment.name, "text_scope": "metadata",
@@ -186,6 +256,45 @@ def _spans(candidate, match, version_id):
                           "offset_unit": "unicode_code_points"})
             if len(spans) == 3: break
     return spans
+
+
+def _version(raw, adapter, cap, request, result):
+    """Turn one validated candidate into a ranked version, or None when it does not match."""
+    sections = tuple(replace(s, end_char=min(s.end_char, request.max_chars)) for s in raw.sections if s.start_char < request.max_chars)
+    candidate = replace(raw, text=raw.text[:request.max_chars], sections=sections, warnings=tuple(dict.fromkeys(
+        raw.warnings + (("text_truncated",) if len(raw.text) > request.max_chars else ()))))
+    if request.material_types and candidate.material_type not in request.material_types:
+        return None
+    if candidate.published_on and not request.published_start <= candidate.published_on <= request.published_end:
+        result.diagnostics.append(_diag("candidate_outside_publication_window", adapter.name, FailureKind.UPSTREAM_SCHEMA, cap.adapter_mode))
+        return None
+    match = _matching(candidate, result.plan, request)
+    if match is None:
+        return None
+    warnings = list(candidate.warnings)
+    if not candidate.published_on:
+        warnings.append("publication_date_unknown")
+    if match["business_period"] == "unknown":
+        warnings.append("business_period_not_verified")
+    if candidate.text_scope == TextScope.ABSTRACT:
+        warnings.append("abstract_not_full_text")
+    if candidate.text_scope == TextScope.METADATA:
+        warnings.append("metadata_only")
+    if candidate.text_scope == TextScope.SEARCH_SNIPPET:
+        warnings.append("search_snippet_not_original_text")
+    if candidate.text_scope == TextScope.SOURCE_EXCERPT:
+        warnings.append("source_excerpt_completeness_unverified")
+    basis, key = _group_key(candidate)
+    group_key = candidate.material_type.value + "|" + basis + "|" + key
+    content_hash = hashlib.sha256(candidate.text.encode()).hexdigest() if candidate.text else None
+    version_id = "sha256:" + hashlib.sha256((candidate.title + "\n" + candidate.text).encode()).hexdigest()
+    version = {**candidate.to_dict(), "content_hash": content_hash, "version_id": version_id,
+               "warnings": sorted(set(warnings)), "match": match, "evidence_spans": _spans(candidate, match, version_id)}
+    score = (100 if match["topic_terms"] else 60 if match["partial_topic_terms"] else 0)
+    score += 5 * len(match["topic_terms"]) + 3 * len(match["partial_topic_terms"]) + len(match["related_terms"])
+    score += int(candidate.provenance.source_tier or 0)
+    score += 2 if candidate.text_scope == TextScope.EXTRACTED_TEXT else 1 if candidate.text_scope == TextScope.ABSTRACT else 0
+    return group_key, basis, candidate, version, score
 
 
 def _group_key(candidate):
@@ -277,6 +386,7 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
     if not isinstance(request, MaterialSearchRequest):
         raise ValueError("MaterialSearchRequest required")
     context = context if context is not None else RequestContext(max_operations=100)
+    default_registry = registry is None
     registry = registry if registry is not None else build_material_registry()
     result = MaterialSearchResult(request, context.request_id, plan=_plan(request))
     result.diagnostics.extend(registry.diagnostics)
@@ -304,6 +414,11 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
         result.plan['unregistered_providers'] = sorted(set(MATERIAL_SOURCE_INTENT) - set(available))
         result.diagnostics.append(_diag('material_source_selection_required'))
         result.gaps.append({'code': 'material_source_selection_required', 'source_calls_started': 0})
+        if default_registry and not available:
+            # A new computer: say what to configure instead of offering an empty choice.
+            from ir_search.infrastructure.credentials import setup_hint
+            result.diagnostics.append(_diag('no_material_source_enabled', failure=FailureKind.NO_CREDENTIAL, message=setup_hint()))
+            result.gaps.append({'code': 'no_material_source_enabled'})
         if len(result.required_inputs) > 1:
             result.diagnostics.append(_diag('research_scope_required'))
         if request.dry_run:
@@ -360,6 +475,7 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
         'max_chars_per_record': request.max_chars, 'max_operations': context.max_operations,
         'operations_already_used': context.operations, 'operations_remaining': max(0, context.max_operations - context.operations),
         'timeout_seconds': context.timeout_seconds, 'remaining_seconds': context.remaining_seconds(),
+        'source_time_share': 'remaining_seconds_divided_by_pending_sources_unused_time_rolls_over',
         'cost_estimate': None, 'cost_basis': 'provider_pricing_and_entitlements_not_queried',
         'limits_are_caps_not_expected_results': True}
     result.plan['source_plans'] = []
@@ -415,12 +531,16 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
         result.to_dict()
         return result
     groups, succeeded = {}, 0
+    search_started = context._clock()
     for index, (adapter, state) in enumerate(selected):
         cap = adapter.capability
+        started = context._clock()
+        # An equal share of the time still left: one slow source cannot starve the rest.
+        share = SourceSlice(context, context.remaining_seconds() / (len(selected) - index))
         try:
-            context.begin_operation()
-            page = adapter.search_materials(request_for_source, context=context)
-            context.check_active()
+            share.begin_operation()
+            page = adapter.search_materials(request_for_source, context=share)
+            share.check_active()
             _validate_page(page, cap, request)
             result.fallback_requests.extend(page.fallback_requests)
             if page.fallback_requests:
@@ -434,56 +554,47 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
             succeeded += int(queried)
             if not queried:
                 result.gaps.append({"code": "source_queries_failed", "provider": adapter.name})
-            result.diagnostics.extend(_diag(d.code, adapter.name, d.failure_kind, cap.adapter_mode) for d in page.diagnostics)
+            result.diagnostics.extend(_diag(d.code, adapter.name, d.failure_kind, cap.adapter_mode, d.message) for d in page.diagnostics)
             if not page.complete:
                 result.gaps.append({"code": "source_scan_incomplete", "provider": adapter.name})
             if not cap.supports_publication_filter:
                 result.gaps.append({"code": "publication_filter_applied_locally", "provider": adapter.name})
             for raw in page.candidates:
                 context.check_active()
-                sections = tuple(replace(s, end_char=min(s.end_char, request.max_chars)) for s in raw.sections if s.start_char < request.max_chars)
-                candidate = replace(raw, text=raw.text[:request.max_chars], sections=sections, warnings=tuple(dict.fromkeys(
-                    raw.warnings + (("text_truncated",) if len(raw.text) > request.max_chars else ()))))
-                if request.material_types and candidate.material_type not in request.material_types:
+                try:
+                    entry = _version(raw, adapter, cap, request, result)
+                except (ValueError, TypeError):
+                    # One unusable record must not discard the source's other records.
+                    state["rejected_count"] = state.get("rejected_count", 0) + 1
                     continue
-                if candidate.published_on and not request.published_start <= candidate.published_on <= request.published_end:
-                    result.diagnostics.append(_diag("candidate_outside_publication_window", adapter.name, FailureKind.UPSTREAM_SCHEMA, cap.adapter_mode))
-                    continue
-                match = _matching(candidate, result.plan, request)
-                if match is None:
+                if entry is None:
                     continue
                 state["matched_count"] += 1
-                warnings = list(candidate.warnings)
-                if not candidate.published_on:
-                    warnings.append("publication_date_unknown")
-                if match["business_period"] == "unknown":
-                    warnings.append("business_period_not_verified")
-                if candidate.text_scope == TextScope.ABSTRACT:
-                    warnings.append("abstract_not_full_text")
-                if candidate.text_scope == TextScope.METADATA:
-                    warnings.append("metadata_only")
-                if candidate.text_scope == TextScope.SEARCH_SNIPPET:
-                    warnings.append("search_snippet_not_original_text")
-                if candidate.text_scope == TextScope.SOURCE_EXCERPT:
-                    warnings.append("source_excerpt_completeness_unverified")
-                basis, key = _group_key(candidate)
-                group_key = candidate.material_type.value + "|" + basis + "|" + key
-                content_hash = hashlib.sha256(candidate.text.encode()).hexdigest() if candidate.text else None
-                version_id = "sha256:" + hashlib.sha256((candidate.title + "\n" + candidate.text).encode()).hexdigest()
-                version = {**candidate.to_dict(), "content_hash": content_hash, "version_id": version_id,
-                           "warnings": sorted(set(warnings)), "match": match, "evidence_spans": _spans(candidate, match, version_id)}
-                score = (100 if match["topic_terms"] else 0) + 5 * len(match["topic_terms"]) + len(match["related_terms"])
-                score += int(candidate.provenance.source_tier or 0)
-                score += 2 if candidate.text_scope == TextScope.EXTRACTED_TEXT else 1 if candidate.text_scope == TextScope.ABSTRACT else 0
+                group_key, basis, candidate, version, score = entry
                 group = groups.setdefault(group_key, {"document_group_id": "material_" + hashlib.sha256(group_key.encode()).hexdigest()[:24],
                     "grouping_basis": basis, "material_type": candidate.material_type.value,
                     "independence": "not_established", "versions": [], "rank_score": score})
                 group["versions"].append(version)
                 group["rank_score"] = max(score, group["rank_score"])
+            if state.get("rejected_count"):
+                result.diagnostics.append(_diag("candidate_rejected", adapter.name, FailureKind.UPSTREAM_SCHEMA, cap.adapter_mode,
+                                                f"rejected_count={state['rejected_count']}"))
+                result.gaps.append({"code": "candidate_rejected", "provider": adapter.name, "count": state["rejected_count"]})
             if queried and not state["matched_count"]:
                 result.gaps.append({"code": "no_match_in_scanned_records", "provider": adapter.name})
             context.check_active()
         except RequestStopped as exc:
+            try:
+                context.check_active()
+                only_share_ended = exc.code == "deadline_exceeded"
+            except RequestStopped:
+                only_share_ended = False
+            if only_share_ended:
+                # The request still has time and budget: keep going with the next source.
+                state["state"] = "source_time_share_exceeded"
+                result.diagnostics.append(_diag("source_time_share_exceeded", adapter.name, FailureKind.TIMEOUT, cap.adapter_mode))
+                result.gaps.append({"code": "source_time_share_exceeded", "provider": adapter.name})
+                continue
             state["state"] = exc.code
             result.diagnostics.append(_diag(exc.code, adapter.name, exc.failure_kind, cap.adapter_mode))
             for _, pending in selected[index + 1:]:
@@ -498,6 +609,10 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
             state["state"] = "invalid_material_response"
             result.diagnostics.append(_diag("invalid_material_response", adapter.name, FailureKind.UPSTREAM_SCHEMA, cap.adapter_mode))
             result.gaps.append({"code": "invalid_material_response", "provider": adapter.name})
+        finally:
+            result.timing.setdefault("sources", []).append(
+                {"provider": adapter.name, "elapsed_ms": max(0, int((context._clock() - started) * 1000))})
+    result.timing["elapsed_ms"] = max(0, int((context._clock() - search_started) * 1000))
     merged = _merge_copies(list(groups.values()))
     result.items = sorted(merged, key=lambda group: (-group["rank_score"], group["document_group_id"]))[:request.limit]
     if len(merged) > request.limit:
@@ -509,8 +624,11 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
         state["returned_evidence"] = _returned_evidence(result.items, state["provider"])
     if request.period_start and not any(v["match"]["business_period"] == "overlaps_requested_period" for g in result.items for v in g["versions"]):
         result.gaps.append({"code": "no_evidence_with_verified_business_period"})
-    if result.items and not any(v["match"]["topic_terms"] for g in result.items for v in g["versions"]):
+    matches = [v["match"] for g in result.items for v in g["versions"]]
+    if matches and not any(m["topic_terms"] or m["partial_topic_terms"] for m in matches):
         result.gaps.append({"code": "related_terms_only_not_direct_topic_evidence"})
+    elif matches and not any(m["topic_terms"] for m in matches):
+        result.gaps.append({"code": "partial_topic_term_matches_only"})
     result.status = Status.PARTIAL if succeeded or result.items else Status.UNAVAILABLE
     result.diagnostics.append(_diag("bounded_search_not_exhaustive"))
     result.to_dict()

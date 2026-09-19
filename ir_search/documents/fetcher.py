@@ -10,7 +10,7 @@ from ir_search.models import EvidenceType, Hit, SourceTier
 from .html import extract_html_document
 from .models import Document, hash_bytes, hash_text, make_doc_id, utc_now
 from .pdf import extract_pdf_document
-from .safety import UrlBlockedError, ensure_url_allowed
+from .safety import UrlBlockedError, ensure_host_resolves_public, ensure_url_allowed
 from .wechat import document_from_wechat_hit, is_wechat_url
 
 
@@ -107,6 +107,7 @@ def _fetch_bytes_with_redirects(
     }
     for _ in range(max_redirects + 1):
         req = urllib.request.Request(current_url, headers=headers)
+        req.allow_private_network = allow_private_network
         try:
             with _open_once(opener, req, timeout_sec) as resp:
                 raw = resp.read(5_000_000)
@@ -131,6 +132,11 @@ def _fetch_bytes_with_redirects(
 
 
 def _open_once(opener, req: urllib.request.Request, timeout_sec: int):
+    if not getattr(req, "allow_private_network", False):
+        try:
+            ensure_host_resolves_public(req.full_url)
+        except UrlBlockedError as blocked:
+            raise urllib.error.URLError(str(blocked)) from blocked
     return opener.open(req, timeout=timeout_sec)
 
 

@@ -84,25 +84,69 @@ def source_health_impl():
     return source_health()
 
 
+def _output_root():
+    """Where MCP-requested exports may be written on this computer."""
+    import os
+    from pathlib import Path
+    configured = os.environ.get("IR_SEARCH_OUTPUT_ROOT", "").strip()
+    if configured:
+        root = Path(configured).expanduser()
+        if not root.is_absolute():
+            raise ValueError("IR_SEARCH_OUTPUT_ROOT must be an absolute path")
+        return root
+    from .infrastructure.credentials import credentials_path
+    return credentials_path().absolute().parent / ".local" / "exports"
+
+
+def _mcp_output_dir(value, field):
+    """Confine MCP-requested writes to one local root.
+
+    Tool arguments are chosen by a model that also reads untrusted web pages, PDFs and
+    posts, so a path argument must not be able to reach arbitrary directories. The Python
+    SDK is called by trusted local code and keeps accepting any directory.
+    """
+    from pathlib import Path
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip() or any(ord(c) < 32 for c in value):
+        raise ValueError(f"{field} must be a directory path without control characters")
+    root = _output_root().resolve()
+    target = Path(value).expanduser()
+    target = (target if target.is_absolute() else root / target).resolve()
+    if target != root and root not in target.parents:
+        raise ValueError(f"{field} must be inside the local output root: pass a relative folder name, "
+                         "or set IR_SEARCH_OUTPUT_ROOT for the MCP server")
+    return str(target)
+
+
 def get_data_payload(request: Mapping[str, Any], *, registry=None, timeout_seconds: float = 30) -> dict:
     try:
         if not isinstance(request, Mapping):
-            raise ValueError("Expected a request object")
-        return get_data_impl(DataRequest(**dict(request)), registry=registry,
-                             context=RequestContext(timeout_seconds=timeout_seconds)).to_dict()
-    except (ValueError, TypeError):
-        return _framework_input_error("query_data")
+            raise ValueError("request must be an object")
+        typed = DataRequest(**dict(request))
+        context = RequestContext(timeout_seconds=timeout_seconds)
+    except (ValueError, TypeError) as exc:
+        return _framework_input_error("query_data", exc)
+    try:
+        return get_data_impl(typed, registry=registry, context=context).to_dict()
+    except Exception as exc:
+        return _framework_internal_error("query_data", exc)
 
 
 def search_materials_payload(request: Mapping[str, Any], *, registry=None, timeout_seconds: float = 30,
                              audit_dir=None) -> dict:
     try:
         if not isinstance(request, Mapping):
-            raise ValueError("Expected a request object")
-        return search_materials_impl(MaterialSearchRequest(**dict(request)), registry=registry,
-            context=RequestContext(timeout_seconds=timeout_seconds, max_operations=100), audit_dir=audit_dir).to_dict()
-    except (ValueError, TypeError):
-        return _framework_input_error("search_materials")
+            raise ValueError("request must be an object")
+        typed = MaterialSearchRequest(**dict(request))
+        context = RequestContext(timeout_seconds=timeout_seconds, max_operations=100)
+        audit_dir = _mcp_output_dir(audit_dir, "audit_dir")
+    except (ValueError, TypeError) as exc:
+        return _framework_input_error("search_materials", exc)
+    try:
+        return search_materials_impl(typed, registry=registry, context=context, audit_dir=audit_dir).to_dict()
+    except Exception as exc:
+        return _framework_internal_error("search_materials", exc)
 
 
 def retrieve_payload(question: str, urls: list[str], *, max_chars: int = 20000,
@@ -113,39 +157,76 @@ def retrieve_payload(question: str, urls: list[str], *, max_chars: int = 20000,
                  audio_start_seconds: int = 0, audio_max_seconds: int = 60, audio_window_count: int = 1,
                  xhs_comment_limit: int = 0, xhs_cache_mode: str = 'use') -> dict:
     try:
-        return retrieve_impl(MaterialRequest(question, urls, max_chars, max_spans, web_read_mode,
-                             follow_links, link_domains or (), previous_text_hashes if previous_text_hashes is not None else {}, wechat_cache_mode,
-                             archive_dir, archive_images, max_archive_images, video_languages if video_languages is not None else ("zh-Hans", "zh-CN", "zh", "en"),
-                             audio_mode, audio_start_seconds, audio_max_seconds, audio_window_count,
-                             xhs_comment_limit, xhs_cache_mode),
-                             context=RequestContext(timeout_seconds=timeout_seconds, max_operations=100)).to_dict()
-    except (ValueError, TypeError):
-        return _framework_input_error("retrieve")
+        typed = MaterialRequest(
+            question=question, urls=urls, max_chars=max_chars, max_spans=max_spans, web_read_mode=web_read_mode,
+            follow_links=follow_links, link_domains=link_domains or (),
+            previous_text_hashes=previous_text_hashes if previous_text_hashes is not None else {},
+            wechat_cache_mode=wechat_cache_mode, archive_dir=_mcp_output_dir(archive_dir, "archive_dir"),
+            archive_images=archive_images,
+            max_archive_images=max_archive_images,
+            video_languages=video_languages if video_languages is not None else ("zh-Hans", "zh-CN", "zh", "en"),
+            audio_mode=audio_mode, audio_start_seconds=audio_start_seconds, audio_max_seconds=audio_max_seconds,
+            audio_window_count=audio_window_count, xhs_comment_limit=xhs_comment_limit, xhs_cache_mode=xhs_cache_mode)
+        from .services.retrieval import _check_credential_free_url
+        for url in typed.urls:
+            _check_credential_free_url(url)
+        context = RequestContext(timeout_seconds=timeout_seconds, max_operations=100)
+    except (ValueError, TypeError) as exc:
+        return _framework_input_error("retrieve", exc)
+    try:
+        return retrieve_impl(typed, context=context).to_dict()
+    except Exception as exc:
+        return _framework_internal_error("retrieve", exc)
 
 
 def describe_dataset_payload(dataset: str) -> dict:
+    if not isinstance(dataset, str) or not dataset.strip():
+        return _framework_input_error("describe_dataset", ValueError("dataset must be a nonempty string"))
     try:
         return describe_dataset_impl(dataset)
-    except (ValueError, TypeError):
-        return _framework_input_error("describe_dataset")
+    except Exception as exc:
+        return _framework_internal_error("describe_dataset", exc)
 
 
 def list_capabilities_payload() -> dict:
-    return list_capabilities_impl()
+    try:
+        return list_capabilities_impl()
+    except Exception as exc:
+        return _framework_internal_error("list_capabilities", exc)
 
 
 def search_announcements_payload(symbols, start, end, *, query="", limit=50, cursor=None, timeout_seconds=30) -> dict:
     try:
-        return search_announcements_impl(AnnouncementRequest(symbols, start, end, query, limit, cursor),
-                                         context=RequestContext(timeout_seconds=timeout_seconds))
-    except (ValueError, TypeError):
-        return _framework_input_error("search_announcements")
+        typed = AnnouncementRequest(symbols, start, end, query, limit, cursor)
+        context = RequestContext(timeout_seconds=timeout_seconds)
+    except (ValueError, TypeError) as exc:
+        return _framework_input_error("search_announcements", exc)
+    try:
+        return search_announcements_impl(typed, context=context)
+    except Exception as exc:
+        return _framework_internal_error("search_announcements", exc)
 
 
-def _framework_input_error(operation):
-    return {"schema_version": "1.0", "status": "error", "diagnostics": [{
+def _framework_input_error(operation, exc=None):
+    """The caller's arguments were rejected before any source was contacted."""
+    diagnostic = {
         "code": "invalid_request", "operation": operation,
         "message": "Check argument types, ranges and dataset fields; provide credential-free URLs.",
+    }
+    detail = str(exc)[:200] if exc is not None else ""
+    # Validation messages name fields, never values; still never echo anything URL-shaped.
+    if detail and "://" not in detail:
+        diagnostic["detail"] = detail
+    return {"schema_version": "1.0", "status": "error", "diagnostics": [diagnostic]}
+
+
+def _framework_internal_error(operation, exc):
+    """The request was valid; the service or a source failed. Exception text may hold secrets."""
+    return {"schema_version": "1.0", "status": "error", "diagnostics": [{
+        "code": "internal_error", "operation": operation, "failure_kind": "unknown",
+        "exception_type": type(exc).__name__,
+        "message": "The arguments were accepted; the service failed while running. Do not rewrite the "
+                   "arguments: check source_health, then retry or report the failure.",
     }]}
 
 

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from importlib.util import find_spec
 import argparse
 import json
+import os
 
 from ir_search.context import RequestContext, RequestStopped
 from ir_search.infrastructure.credentials import source_configuration_status, SourceConfigError
@@ -54,6 +55,18 @@ _SOURCES = {
 }
 
 
+def _private_file_protection(platform=None):
+    """Say plainly what this platform verifies; a silent pass would read as 'checked'."""
+    platform = platform or os.name
+    if platform == 'posix':
+        return {'platform': 'posix', 'owner_and_mode_bits_verified': True}
+    return {'platform': platform, 'owner_and_mode_bits_verified': False,
+            'code': 'permissions_not_verified_on_this_platform',
+            'next_action': '凭证、会话和缓存目录的属主与权限位检查只在 POSIX 上执行。请把它们放在本人用户目录下'
+                           '（例如 %LOCALAPPDATA%\\ir-search），不要放在盘符根目录或共享目录；'
+                           '需要时用 icacls <路径> /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F" 收紧访问。'}
+
+
 def _dependency(name):
     try: installed = find_spec(name) is not None
     except (ImportError, ValueError, AttributeError): installed = False
@@ -81,7 +94,7 @@ def diagnose_sources(providers=(), *, env_file=None, live=False, context=None):
     report = {'schema_version': '1.0', 'checked_at': datetime.now(timezone.utc).isoformat(),
         'verification_basis': 'explicit_live_probe_and_local_metadata' if live else 'local_metadata_only',
         'source_calls_started': 0, 'sources': [], 'diagnostics': configuration['diagnostics'],
-        'automatic_configuration_changes': False}
+        'automatic_configuration_changes': False, 'private_file_protection': _private_file_protection()}
     for provider in selected:
         spec = _SOURCES[provider]; configured = rows.get(provider, {})
         required = [_dependency(name) for name in spec.dependencies]
@@ -93,6 +106,8 @@ def diagnose_sources(providers=(), *, env_file=None, live=False, context=None):
                  'disabled' if not configured.get('enabled') else
                  'dependency_missing' if any(not d['installed'] for d in required) else
                  'configured_unverified')
+        # Keep the precise reason and the env key to fix; the generic code stays for older callers.
+        detail_code, detail_key = (code, configured.get('key')) if state == 'configuration_error' else (None, None)
         if state == 'configuration_error': code = 'source_config_error'
         elif state == 'disabled': code = 'source_disabled'
         elif state == 'dependency_missing': code = 'dependency_missing'
@@ -103,7 +118,11 @@ def diagnose_sources(providers=(), *, env_file=None, live=False, context=None):
             'scope': spec.scope, 'live_probe': {'state': 'not_requested', 'scope': None},
             'search_live_verified': False, 'retrieve_live_verified': False, 'get_data_live_verified': False,
             'diagnostics': []}
-        if code: item['diagnostics'].append({'code': code, **_recovery(code)})
+        if code:
+            diagnostic = {'code': code, **_recovery(code)}
+            if detail_code and detail_code != code: diagnostic['detail_code'] = detail_code
+            if detail_key: diagnostic['key'] = detail_key
+            item['diagnostics'].append(diagnostic)
         if provider == 'xueqiu':
             item['reader_configuration'] = {key: configured[key] for key in (
                 'read_mode', 'browser_cookie_mode', 'browser_channel', 'browser_headless',

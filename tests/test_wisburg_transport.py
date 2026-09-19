@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import json
 import ssl
 import time
-from threading import Event, Timer
+from threading import Event
 
 import pytest
 
@@ -102,14 +102,14 @@ def test_cancel_closes_blocked_response_without_waiting_for_deadline(monkeypatch
     released=Event()
     class BlockingResponse(Response):
         def read1(self,size):
+            # Cancel exactly when the read blocks. A wall-clock timer raced slow hosts, where
+            # building the TLS context alone can outlast it and no read is ever interrupted.
+            context.cancel()
             assert released.wait(2), 'Cancellation did not interrupt the socket'
             raise OSError('closed')
     connections=transport(monkeypatch,BlockingResponse(b''))
     monkeypatch.setattr(Socket,'shutdown',lambda *args:released.set())
     context=RequestContext(timeout_seconds=10)
-    timer=Timer(0.1,context.cancel);timer.start()
-    try:
-        with pytest.raises(RequestStopped,match='cancelled'):
-            rpc._post(PROFILE,PAYLOAD,session_id='',version='',context=context)
-    finally:timer.cancel()
+    with pytest.raises(RequestStopped,match='cancelled'):
+        rpc._post(PROFILE,PAYLOAD,session_id='',version='',context=context)
     assert released.is_set() and connections[0].closed

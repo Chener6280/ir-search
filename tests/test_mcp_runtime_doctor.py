@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from _platform import requires_posix_workspace
 from scripts.doctor_ir_search_mcp import EXPECTED_TOOLS, main as doctor_main, run_diagnostics
 
 
+@requires_posix_workspace
 def test_doctor_succeeds_when_runtime_has_mcp(tmp_path):
     python_path, ir_search_path = _fake_runtime(tmp_path, mode="ok")
 
@@ -17,6 +19,7 @@ def test_doctor_succeeds_when_runtime_has_mcp(tmp_path):
     assert set(diagnostics["tool_names"]) == EXPECTED_TOOLS
 
 
+@requires_posix_workspace
 def test_doctor_reports_missing_mcp_with_install_command(tmp_path):
     python_path, ir_search_path = _fake_runtime(tmp_path, mode="missing_mcp")
 
@@ -29,6 +32,7 @@ def test_doctor_reports_missing_mcp_with_install_command(tmp_path):
     assert f'{python_path} -m pip install -e "{ir_search_path}[mcp]"' == diagnostics["fix"]["install"]
 
 
+@requires_posix_workspace
 def test_doctor_reports_missing_ir_search(tmp_path):
     python_path, ir_search_path = _fake_runtime(tmp_path, mode="missing_ir_search")
 
@@ -38,6 +42,7 @@ def test_doctor_reports_missing_ir_search(tmp_path):
     assert diagnostics["checks"]["import_ir_search"] is False
 
 
+@requires_posix_workspace
 def test_doctor_json_output_is_valid(tmp_path, capsys):
     python_path, ir_search_path = _fake_runtime(tmp_path, mode="ok")
 
@@ -50,6 +55,7 @@ def test_doctor_json_output_is_valid(tmp_path, capsys):
     assert set(payload["tool_names"]) == EXPECTED_TOOLS
 
 
+@requires_posix_workspace
 def test_doctor_accepts_additive_framework_tools(tmp_path):
     python_path, ir_search_path = _fake_runtime(tmp_path, mode="ok")
     contents = python_path.read_text()
@@ -60,6 +66,7 @@ def test_doctor_accepts_additive_framework_tools(tmp_path):
     assert EXPECTED_TOOLS < set(diagnostics["tool_names"])
 
 
+@requires_posix_workspace
 def test_doctor_env_local_reports_key_presence_without_values(tmp_path):
     python_path, ir_search_path = _fake_runtime(tmp_path, mode="ok")
     env_local = tmp_path / ".env.local"

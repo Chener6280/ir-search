@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+from _platform import requires_posix_workspace
 from scripts.bootstrap_cursor_research_workspace import main as bootstrap_main
 
 
@@ -38,6 +39,7 @@ def test_workspace_template_files_exist():
         assert (TEMPLATE_ROOT / rel).exists(), rel
 
 
+@requires_posix_workspace
 def test_bootstrap_dry_run_succeeds(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)
@@ -46,6 +48,7 @@ def test_bootstrap_dry_run_succeeds(tmp_path):
     assert not target.exists()
 
 
+@requires_posix_workspace
 def test_bootstrap_generates_valid_workspace(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)
@@ -84,6 +87,7 @@ def test_validate_workspace_modes_handle_missing_rendered_mcp():
     assert any("Missing .cursor/mcp.json" in error for error in generated_errors)
 
 
+@requires_posix_workspace
 def test_validate_workspace_detects_secret_and_personal_path(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)

@@ -15,7 +15,7 @@ from threading import Thread
 
 from ir_search.context import RequestStopped
 from ir_search.registry import DataAdapterError
-from .credentials import SourceConfigError, read_credentials
+from .credentials import SourceConfigError, read_credentials, require_local_path
 
 MAX_BYTES = 4 * 1024 * 1024
 LIST_PATH = '/external/alpha/api/reading/roadshow/summary/list'
@@ -51,6 +51,7 @@ def alphapai_profile(*, values=None, env_file=None):
     enabled = values.get('ALPHAPAI_MATERIALS_ENABLED', 'false').lower()
     if enabled not in {'true', 'false'}: raise SourceConfigError()
     if enabled == 'false': return None
+    require_local_path(values, 'ALPHAPAI_BROWSER_EXECUTABLE', 'ALPHAPAI_CACHE_DIR')
     try:
         return AlphapaiProfile(values.get('ALPHA_PIE_PHONE', ''), values.get('ALPHA_PIE_PWD', ''),
             values.get('ALPHAPAI_BROWSER_EXECUTABLE', ''), values.get('ALPHAPAI_CACHE_DIR', ''),

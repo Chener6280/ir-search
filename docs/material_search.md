@@ -43,7 +43,21 @@ flowchart TD
 | 引用需要可核对 | 每个版本包含内容哈希、标题与取得的文本；引用标出 `source_part`、字符起止位置和 `version_id`。缺少网页原件时 URL 为 null，不编造页码 |
 | 来源不可用或扫描受限 | 每个来源分别返回状态、扫描条数、命中条数和诊断。失败不抹去其他来源结果；未注册来源、正文读取预算和结果数量限制均可见 |
 
-首版使用显式词表和本地字符串匹配；没有持久化全文索引、语义检索、自动冲突判断或自动研究结论。输出 `topic_term_match` 只是主题词命中，`related_term_match` 只是相关词命中。所有来源文本均标记为不可信输入，不作为 agent 指令执行。
+首版使用显式词表和本地字符串匹配；没有持久化全文索引、语义检索、自动冲突判断或自动研究结论。输出 `topic_term_match` 只是主题词命中，`related_term_match` 只是相关词命中。
+
+### 主题词与匹配规则（确定性，无词典、无模型）
+
+- `plan.topic_term_basis` 说明主题词来自哪里：`caller_keywords`（调用方传入，原样使用、从不改写）、`packaged_topic_rules`（包内显式规则）或 `inferred_from_question`（从问题推断）。**推断只是兜底，调用方应尽量传 `keywords`。**
+- 推断时会剥掉词首尾的泛词（影响、原因、变化、进展、展望……）和连词；若剥完什么都不剩，则保留原词，不会因此放宽为任意匹配。
+- 英文与数字词按**完整词**匹配：`AI` 不会命中 `said`，`800G` 不会命中 `1800G`。中文仍是子串匹配。
+- 5 个字及以上的中文主题词若没有整词命中，会按字符二元组重合度判断（含虚词的二元组不计，重合度需 ≥ 0.6 且至少 2 处）：“光模块需求”可以命中“光模块的需求出现了明显变化”，但不会命中只谈“消费需求变化”的文章。这类结果标为 `partial_topic_term_match`，`match.partial_topic_terms` 给出命中的片段与重合度，排序低于整词命中；全部结果都只是部分命中时追加缺口 `partial_topic_term_matches_only`。
+
+### 多来源的时间分配与单条记录隔离
+
+- 每个来源得到“剩余时间 ÷ 尚未查询的来源数”的时间份额，未用完的时间顺延给后面的来源（`plan.budget.source_time_share`）。某个来源用完自己的份额只会得到 `source_time_share_exceeded`，其余来源继续执行；整个请求超时或被取消时，行为与之前一样（后续来源标为 `not_queried_request_stopped`）。
+- 单条记录未通过契约校验时只丢弃该条并计入 `coverage[].rejected_count`（诊断与缺口 `candidate_rejected`），同一来源的其余记录保留。
+- `timing`（总耗时与每个来源的 `elapsed_ms`）记录实际耗时，它和 `request_id` 一样每次不同，所以不放进 `items`/`coverage`，后两者在相同输入下保持可比；适配器诊断里的路由标签（如 `discovery_provider=...;web_region=...`）现在会保留在 `diagnostics[].message` 中。
+- 本机没有启用任何素材来源时，零来源响应会附带 `no_material_source_enabled`，其 `message` 说明凭证文件是否找到以及下一步该配置什么。所有来源文本均标记为不可信输入，不作为 agent 指令执行。
 
 `text_scope` 区分 `metadata`、`abstract`、`search_snippet`、`source_excerpt`、`extracted_text`；`source_excerpt` 表示完整性或角色尚未确认的来源文本；搜索摘要不等于原文，供应商文本仍不等于已核验的原始文件。哈希和引用绑定的是本次实际返回的文本，截断时不代表全文件哈希；目前未自动持久化正文，调用方需保存返回结果以供之后复核。
 

@@ -12,9 +12,40 @@ import json
 
 
 class SourceConfigError(ValueError):
-    def __init__(self, code="invalid_source_config"):
+    """A stable code plus, when known, the env key to fix. Never carries a value."""
+
+    def __init__(self, code="invalid_source_config", key=None):
         self.code = code
+        self.key = key if isinstance(key, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", key) else None
         super().__init__(code)
+
+
+def _absolute_elsewhere(value):
+    """True for a path that is absolute on another operating system but not on this one."""
+    if os.name == "nt":
+        return value.startswith("/") and not value.startswith("//")
+    return bool(re.match(r"[A-Za-z]:[/\\]", value)) or value.startswith("\\\\")
+
+
+def require_local_path(values, *keys, allow_relative=False):
+    """Private paths are per computer; name the key when one was copied from another OS.
+
+    `/Users/me/cache` is absolute on macOS but not on Windows. `~/...` works on both, and
+    leaving a cache/state key empty selects the documented default.
+    """
+    for key in keys:
+        value = values.get(key, "")
+        if not isinstance(value, str) or not value:
+            continue
+        if _absolute_elsewhere(value) or not (allow_relative or Path(value).expanduser().is_absolute()):
+            raise SourceConfigError("path_not_absolute_on_this_platform", key)
+
+
+def _error_row(provider, exc):
+    row = dict(provider=provider, configured=False, access="unknown", code=exc.code)
+    if getattr(exc, "key", None):
+        row["key"] = exc.key
+    return row
 
 
 def credentials_path(path=None) -> Path:
@@ -25,6 +56,26 @@ def credentials_path(path=None) -> Path:
         return Path(os.environ["IR_SEARCH_CREDENTIALS_FILE"]).expanduser()
     checkout = Path(__file__).resolve().parents[2]
     return (checkout if (checkout / "pyproject.toml").is_file() else Path.cwd()) / "credentials.env"
+
+
+def credentials_file_state(path=None) -> dict:
+    """Whether a credentials file was found, without reading it or revealing its location."""
+    explicit = path is not None or bool(os.environ.get("IR_SEARCH_CREDENTIALS_FILE"))
+    try:
+        found = credentials_path(path).is_file()
+    except OSError:
+        found = False
+    return {"selection": "explicit_path" if explicit else "default_location", "found": found}
+
+
+def setup_hint(path=None) -> str:
+    """One fixed sentence for callers on a computer where nothing is enabled yet."""
+    state = credentials_file_state(path)
+    if not state["found"]:
+        return ("credentials_file=not_found; copy credentials.env.example to a private location, set "
+                "IR_SEARCH_CREDENTIALS_FILE to its absolute path, then enable sources with <SOURCE>_ENABLED=true")
+    return ("credentials_file=found; no source is enabled for this operation: set <SOURCE>_ENABLED=true "
+            "for the sources the user selects, then run ir-search-doctor to check keys and paths")
 
 
 def read_credentials(path=None) -> dict[str, str]:
@@ -104,8 +155,9 @@ def mysql_profile(provider: str, *, values: Optional[Mapping[str, str]] = None, 
     if enabled == "false":
         return None
     required = [values.get(prefix + key, "") for key in ("HOST", "DATABASE", "USER", "PASSWORD")]
-    if not all(required):
-        raise SourceConfigError("source_credentials_missing")
+    for key, value in zip(("HOST", "DATABASE", "USER", "PASSWORD"), required):
+        if not value:
+            raise SourceConfigError("source_credentials_missing", prefix + key)
     if any(not isinstance(v, str) or "\x00" in v or "\n" in v for v in required):
         raise SourceConfigError()
     if any(v in {"未配置", "请填写", "YOUR_USERNAME", "YOUR_PASSWORD"}
@@ -128,7 +180,7 @@ def mysql_profile(provider: str, *, values: Optional[Mapping[str, str]] = None, 
     ca = values.get(prefix + "SSL_CA") or None
     fingerprint = values.get(prefix + "SSL_CA_SHA256") or None
     if tls_mode not in {"verify_identity", "pinned_ca", "disabled"}:
-        raise SourceConfigError("invalid_tls_config")
+        raise SourceConfigError("invalid_tls_config", prefix + "TLS_MODE")
     if tls_mode == "disabled" and (provider != "wind_mysql" or ca or fingerprint):
         raise SourceConfigError("invalid_tls_config")
     if tls_mode == "pinned_ca" and (provider != "jydb" or not ca or not fingerprint or not re.fullmatch(r"[a-fA-F0-9]{64}", fingerprint)):
@@ -334,7 +386,8 @@ def wechat_profile(*, values=None, env_file=None) -> Optional[WechatProfile]:
     if enabled not in {"true", "false"}: raise SourceConfigError()
     if enabled == "false": return None
     raw_path = values.get("WECHAT_ACCOUNTS_FILE", "")
-    if not raw_path: raise SourceConfigError("wechat_accounts_missing")
+    if not raw_path: raise SourceConfigError("wechat_accounts_missing", "WECHAT_ACCOUNTS_FILE")
+    require_local_path(values, "WECHAT_ACCOUNTS_FILE", "WECHAT_CACHE_DIR", allow_relative=True)
     path = Path(raw_path).expanduser()
     if not path.is_absolute(): path = credentials_path(env_file).absolute().parent / path
     fd = None
@@ -354,10 +407,13 @@ def wechat_profile(*, values=None, env_file=None) -> Optional[WechatProfile]:
         if not cache_dir.is_absolute(): cache_dir = credentials_path(env_file).absolute().parent / cache_dir
         return WechatProfile(values.get("DAJIALA_KEY", ""), tuple(WechatAccount(**row) for row in rows),
             int(values.get("WECHAT_MAX_ACCOUNTS_PER_QUERY", "3")), int(values.get("WECHAT_MAX_PAGES_PER_ACCOUNT", "2")), str(cache_dir))
-    except SourceConfigError:
-        raise
+    except SourceConfigError as exc:
+        # Every failure here concerns the private inventory file; point at its key.
+        raise SourceConfigError(exc.code, exc.key or "WECHAT_ACCOUNTS_FILE") from None
+    except FileNotFoundError:
+        raise SourceConfigError("wechat_accounts_file_not_found", "WECHAT_ACCOUNTS_FILE") from None
     except (OSError, UnicodeError, ValueError, TypeError):
-        raise SourceConfigError("invalid_wechat_accounts") from None
+        raise SourceConfigError("invalid_wechat_accounts", "WECHAT_ACCOUNTS_FILE") from None
     finally:
         if fd is not None: os.close(fd)
 
@@ -452,9 +508,13 @@ def source_configuration_status(*, env_file=None) -> dict:
             if profile:
                 item["transport_mode"] = profile.tls_mode
                 item["transport_encrypted"] = profile.tls_mode != "disabled"
+                if profile.ssl_ca and not Path(profile.ssl_ca).expanduser().is_file():
+                    # Common after copying credentials.env to another computer.
+                    prefix = "WIND_MYSQL_" if provider == "wind_mysql" else "JYDB_MYSQL_"
+                    item.update(configured=False, code="ssl_ca_file_missing", key=prefix + "SSL_CA")
             sources.append(item)
         except SourceConfigError as exc:
-            sources.append({"provider": provider, "configured": False, "access": "unknown", "code": exc.code})
+            sources.append(_error_row(provider, exc))
     try:
         profile = fmp_profile(values=values)
         item = {"provider": "fmp", "enabled": profile is not None, "configured": profile is not None,
@@ -464,7 +524,7 @@ def source_configuration_status(*, env_file=None) -> dict:
                         annual_record_limit=profile.annual_record_limit, cache_ttl_seconds=profile.cache_ttl_seconds)
         sources.append(item)
     except SourceConfigError as exc:
-        sources.append({"provider": "fmp", "configured": False, "access": "unknown", "code": exc.code})
+        sources.append(_error_row("fmp", exc))
     enabled = values.get("AKSHARE_ENABLED", "false").lower()
     item = {"provider": "akshare", "enabled": enabled == "true", "configured": enabled == "true",
             "requires_key": False, "access": "unknown", "live_verified": False}
@@ -483,7 +543,7 @@ def source_configuration_status(*, env_file=None) -> dict:
                         "configured": profile is not None, "access": "unknown", "live_verified": False,
                         "transport_encrypted": True})
     except SourceConfigError as exc:
-        sources.append({"provider": "tushare_corpus", "configured": False, "access": "unknown", "code": exc.code})
+        sources.append(_error_row("tushare_corpus", exc))
     try:
         profile = web_material_profile(values=values)
         item = {"provider": "web", "enabled": profile is not None, "configured": profile is not None,
@@ -497,14 +557,14 @@ def source_configuration_status(*, env_file=None) -> dict:
                         quota_fallback='caller_native_web_search')
         sources.append(item)
     except SourceConfigError as exc:
-        sources.append({"provider": "web", "configured": False, "access": "unknown", "code": exc.code})
+        sources.append(_error_row("web", exc))
     try:
         profile = zsxq_profile(values=values)
         sources.append({"provider": "zsxq", "enabled": profile is not None, "configured": profile is not None,
                         "access": "unknown", "live_verified": False, "transport_encrypted": True,
                         "authentication_mode": "official_mcp_bearer"})
     except SourceConfigError as exc:
-        sources.append({"provider": "zsxq", "configured": False, "access": "unknown", "code": exc.code})
+        sources.append(_error_row("zsxq", exc))
     try:
         profile = wechat_profile(values=values, env_file=env_file)
         sources.append({"provider": "wechat", "enabled": profile is not None, "configured": profile is not None,
@@ -513,7 +573,7 @@ def source_configuration_status(*, env_file=None) -> dict:
                         "cache_modes": ["use", "refresh", "off"], "body_cache_ttl_seconds": 86400,
                         "history_head_ttl_seconds": 300})
     except SourceConfigError as exc:
-        sources.append({"provider": "wechat", "configured": False, "access": "unknown", "code": exc.code})
+        sources.append(_error_row("wechat", exc))
     try:
         profile = ima_profile(values=values)
         sources.append({"provider": "ima", "enabled": profile is not None, "configured": profile is not None,
@@ -521,14 +581,14 @@ def source_configuration_status(*, env_file=None) -> dict:
                         "authentication_mode": "official_openapi", "include_notes": profile.include_notes if profile else False,
                         "configured_knowledge_base_count": len(profile.knowledge_base_ids) if profile else 0})
     except SourceConfigError as exc:
-        sources.append({"provider": "ima", "configured": False, "access": "unknown", "code": exc.code})
+        sources.append(_error_row("ima", exc))
     try:
         profile = wisburg_profile(values=values)
         sources.append({'provider':'wisburg', 'enabled':profile is not None, 'configured':profile is not None,
             'access':'unknown', 'live_verified':False, 'transport_encrypted':True,
             'authentication_mode':'official_mcp_bearer'})
     except SourceConfigError as exc:
-        sources.append({'provider':'wisburg', 'configured':False, 'access':'unknown', 'code':exc.code})
+        sources.append(_error_row('wisburg', exc))
     from ir_search.adapters.platform_materials import platform_material_profile
     from importlib.util import find_spec
     for provider in ('xueqiu', 'eastmoney', 'video', 'xiaoyuzhou'):
@@ -560,7 +620,7 @@ def source_configuration_status(*, env_file=None) -> dict:
                 item.update(bocha_configured=bool(profile.bocha_api_key), anysearch_configured=bool(profile.api_key or profile.allow_anonymous))
             sources.append(item)
         except SourceConfigError as exc:
-            sources.append({'provider': provider, 'configured': False, 'access': 'unknown', 'code': exc.code})
+            sources.append(_error_row(provider, exc))
     try:
         from .sec import sec_profile
         profile = sec_profile(values=values)
@@ -568,7 +628,7 @@ def source_configuration_status(*, env_file=None) -> dict:
             'access': 'unknown', 'live_verified': False, 'requires_key': False, 'transport_encrypted': True,
             'contact_configured': profile is not None})
     except SourceConfigError as exc:
-        sources.append({'provider': 'sec', 'configured': False, 'access': 'unknown', 'code': exc.code})
+        sources.append(_error_row('sec', exc))
     try:
         from .fiona import fiona_profile
         profile = fiona_profile(values=values)
@@ -576,7 +636,7 @@ def source_configuration_status(*, env_file=None) -> dict:
             'access': 'unknown', 'live_verified': False, 'authentication_mode': 'fiona_mcp_bearer',
             'transport_encrypted': True, 'integration_stage': 'get_data_adapter'})
     except SourceConfigError as exc:
-        sources.append({'provider': 'fiona', 'configured': False, 'access': 'unknown', 'code': exc.code})
+        sources.append(_error_row('fiona', exc))
     try:
         from .alphapai import alphapai_profile
         profile = alphapai_profile(values=values)
@@ -587,7 +647,7 @@ def source_configuration_status(*, env_file=None) -> dict:
             'browser_runtime_verified':False, 'collection':'shared_meetings',
             'personal_recordings_enabled':False, 'cache_ttl_seconds':profile.cache_ttl_seconds if profile else None})
     except SourceConfigError as exc:
-        sources.append({'provider':'alphapai', 'configured':False, 'access':'unknown', 'code':exc.code})
+        sources.append(_error_row('alphapai', exc))
     try:
         from .gangtise import gangtise_profile
         profile = gangtise_profile(values=values)
@@ -598,7 +658,7 @@ def source_configuration_status(*, env_file=None) -> dict:
             'browser_runtime_verified':False, 'session_verified':False,
             'collections':['summary','report','opinion'], 'official_ak_sk_mcp_enabled':False})
     except SourceConfigError as exc:
-        sources.append({'provider':'gangtise', 'configured':False, 'access':'unknown', 'code':exc.code})
+        sources.append(_error_row('gangtise', exc))
     try:
         from .xhs import xhs_profile
         profile = xhs_profile(values=values, env_file=env_file)
@@ -607,7 +667,7 @@ def source_configuration_status(*, env_file=None) -> dict:
             'authentication_mode':'private_local_bearer_and_user_browser_session',
             'backend_live_verified':False,'login_live_verified':False,'read_only':True})
     except SourceConfigError as exc:
-        sources.append({'provider':'xhs','configured':False,'access':'unknown','code':exc.code})
+        sources.append(_error_row('xhs', exc))
     try:
         from .rss import rss_profile
         profile = rss_profile(values=values)
@@ -615,7 +675,7 @@ def source_configuration_status(*, env_file=None) -> dict:
             'access': 'unknown', 'live_verified': False, 'requires_key': False,
             'feed_count': len(profile.feed_urls) if profile else 0})
     except SourceConfigError as exc:
-        sources.append({'provider': 'rss', 'configured': False, 'access': 'unknown', 'code': exc.code})
+        sources.append(_error_row('rss', exc))
     for provider, key in (('global_macro','GLOBAL_MACRO_ENABLED'), ('hkex','HKEX_ENABLED'), ('company_ir','COMPANY_IR_ENABLED')):
         enabled = values.get(key, 'false').lower()
         sources.append({'provider':provider, 'enabled':enabled=='true', 'configured':enabled=='true',

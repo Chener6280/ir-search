@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+from _platform import requires_posix_workspace
 from scripts.bootstrap_cursor_research_workspace import main as bootstrap_main
 
 
@@ -21,6 +22,7 @@ def test_validator_allows_placeholders_but_flags_real_secret():
     assert not validator._contains_secret("key = key.strip()")
 
 
+@requires_posix_workspace
 def test_validator_personal_path_warning_and_strict_error(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)
@@ -35,6 +37,7 @@ def test_validator_personal_path_warning_and_strict_error(tmp_path):
     assert any("Personal path" in error for error in strict_errors)
 
 
+@requires_posix_workspace
 def test_validator_accepts_wrapper_mcp_without_env_expansion_warning(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)
@@ -46,6 +49,7 @@ def test_validator_accepts_wrapper_mcp_without_env_expansion_warning(tmp_path):
     assert not any("${env:KEY}" in warning for warning in warnings)
 
 
+@requires_posix_workspace
 def test_validator_rejects_unreplaced_absolute_placeholders(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)
@@ -59,6 +63,7 @@ def test_validator_rejects_unreplaced_absolute_placeholders(tmp_path):
     assert any("/ABSOLUTE/PATH/TO" in error for error in errors)
 
 
+@requires_posix_workspace
 def test_validator_rejects_missing_mcp_python(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)
