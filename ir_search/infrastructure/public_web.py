@@ -11,6 +11,7 @@ import ssl
 from threading import Event, Thread
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
+from ._interrupt import wake_blocked_socket
 from ir_search.context import RequestStopped
 from ir_search.contracts.materials import _reference
 from ir_search.documents.html import extract_html_document
@@ -165,11 +166,7 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
                     context.check_active()
                 except RequestStopped:
                     sock = active_socket or connection.sock
-                    if sock is not None:
-                        try:
-                            sock.shutdown(socket.SHUT_RDWR)
-                        except OSError:
-                            pass
+                    wake_blocked_socket(sock)
                     return
 
         watcher = Thread(target=stop_socket, daemon=True)

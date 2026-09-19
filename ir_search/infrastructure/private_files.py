@@ -4,7 +4,28 @@ import os
 from pathlib import Path
 import stat
 import tempfile
+import threading
 import time
+
+
+_LAST_STAMP = [0]
+_STAMP_LOCK = threading.Lock()
+
+
+def _stamp_written(path):
+    """Give this write a strictly later mtime than the previous write of this process.
+
+    File clocks are coarse (about 15 ms on Windows, worse on some file systems), so a burst
+    of writes shares one timestamp and "evict the oldest" would choose among them by name.
+    """
+    with _STAMP_LOCK:
+        _LAST_STAMP[0] = stamp = max(time.time_ns(), _LAST_STAMP[0] + 1_000_000)
+    os.utime(path, ns=(stamp, stamp))
+
+
+def _oldest_first(paths):
+    """Stable eviction order: modification time, then name."""
+    return sorted(paths, key=lambda p: (p.lstat().st_mtime_ns, p.name))
 
 
 def _private_dir(path):
@@ -29,7 +50,10 @@ def _directory_lock(root, context):
             raise OSError('unsafe_lock')
         if os.name == 'nt':
             import msvcrt
-            if not info.st_size: os.write(fd, b'0')
+            if not info.st_size:
+                # A concurrent holder may already have written and locked this byte.
+                try: os.write(fd, b'0')
+                except PermissionError: pass
         else: import fcntl
         while not locked:
             context.check_active()
@@ -69,6 +93,7 @@ def _private_write(path, data):
     try:
         with os.fdopen(fd, 'wb') as stream: stream.write(data)
         os.replace(temporary, path)
+        _stamp_written(path)
     finally:
         try: os.unlink(temporary)
         except FileNotFoundError: pass

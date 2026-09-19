@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import hashlib
 from html import escape
 import json
+import os
 import re
 from pathlib import Path
 from urllib.parse import urljoin
@@ -125,7 +126,7 @@ def export_material(material: Material, output_dir, *, download_images=False, ma
                     if len(p.parts) == 2: _private_dir(directory/p.parent)
                     if _sha(_private_read(directory/p)) != digest: raise ValueError('archive_checksum_mismatch')
                 for record in previous.get('images',[]):
-                    if record.get('status') == 'downloaded' and (not re.fullmatch(r'images/[a-f0-9]{64}\.(png|jpg|gif|webp)',record.get('path',''))
+                    if record.get('status') == 'downloaded' and (not re.fullmatch(r'images/[a-f0-9]{32}(?:[a-f0-9]{32})?\.(png|jpg|gif|webp)',record.get('path',''))
                             or previous.get('files',{}).get(record['path']) != record.get('sha256')):
                         raise ValueError('archive_path_invalid')
                 if previous.get('complete'):
@@ -148,7 +149,7 @@ def export_material(material: Material, output_dir, *, download_images=False, ma
                         try:
                             raw, suffix = _image(url, context, budget)
                             image_dir = _private_dir(directory/'images')
-                            name = _sha(raw) + suffix
+                            name = _sha(raw)[:32] + suffix  # full sha256 stays in the manifest
                             _private_write(image_dir/name, raw)
                             image_paths[url] = 'images/'+name
                             record.update(status='downloaded', path='images/'+name, sha256=_sha(raw), bytes=len(raw))
@@ -191,6 +192,9 @@ def export_material(material: Material, output_dir, *, download_images=False, ma
                           downloaded_images=downloaded, archived_fetched_at=manifest['fetched_at'], manifest=str(manifest_path))
     except RequestStopped as exc:
         result['diagnostics'].append(exc.code)
-    except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError, DataAdapterError):
-        result['diagnostics'].append('archive_validation_or_io_failed')
+    except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError, DataAdapterError) as exc:
+        # root/<20>/<64>/images/<32>.webp: without OS long-path support Windows refuses paths
+        # beyond 259 characters, which otherwise looks like an unexplained I/O failure.
+        too_long = os.name == 'nt' and isinstance(exc, OSError) and len(str(root)) + 1 + 20 + 1 + 64 + 45 > 259
+        result['diagnostics'].append('archive_path_too_long' if too_long else 'archive_validation_or_io_failed')
     return result
