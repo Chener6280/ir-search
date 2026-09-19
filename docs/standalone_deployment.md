@@ -49,6 +49,8 @@ py -3.12 -m venv .venv
 
 不必一次装全部 extras。Python 包存在不代表浏览器二进制、FFmpeg、登录态或远端数据可用。依赖声明以 `pyproject.toml` 为准；候选包未提供跨系统统一依赖锁，测试报告应记录实际版本。
 
+旧 Cursor 工作区模板的启动脚本还依赖 `/bin/zsh`；macOS 通常已带，Linux 全套兼容测试前需安装 `zsh`（例如 `sudo apt-get install zsh`）。新版安装包的 SDK 和直接 Python MCP 启动不使用这套旧脚本，Windows 按下文的直接启动方式配置。
+
 ## 3. 配置本机凭证
 
 复制 `credentials.env.example` 到本机私有目录，填写需要的字段，只开启本轮用户选用来源的 `ENABLED` 开关。模板不会包含其他人的密钥或会话。

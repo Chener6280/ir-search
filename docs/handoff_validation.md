@@ -21,3 +21,5 @@
 上传前再次运行基础环境全套测试：**2078 passed，23 skipped**；Python 3.12 的独立 wheel/MCP、来源选择与额度回退专项：**60 passed**。发布说明已改为从仓库获取源码，私有技能库存加入 Git 忽略规则；凭证、会话和本地参考原文不上传。上文 ZIP/wheel 散列属于此前导出的交接快照，GitHub 版本以提交号识别。
 
 远端跨系统检查见 [GitHub Actions](https://github.com/Chener6280/ir-search/actions/workflows/standalone.yml)，必须核对实际提交的运行结果。不能由本机通过推断远端通过。
+
+首次远端检查（`59154bf`）发现：Linux 缺少旧 Cursor 模板所需的 zsh；Windows 的 asyncio 内部回环通信被测试的零网络保护误拦；提交前空白清理触发了既有多行格式检查。修复保留了旧模板的明确 zsh 依赖和应用外连阻断；并补入模板输出目录的空 `.gitkeep` 文件，实际输出仍被忽略。修复版本须以其远端检查结果验收。

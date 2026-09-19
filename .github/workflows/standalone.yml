@@ -33,6 +33,11 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
+      - name: Install shell required by legacy Cursor workspace tests
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh
       - run: python -m pip install --upgrade pip setuptools wheel
       - run: python -m pip install ".[dev,mcp,mysql]"
       - name: Installed package without checkout or local skills

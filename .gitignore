@@ -11,6 +11,10 @@ work/pycache/
 work/
 output/
 outputs/
+!templates/cursor-research-workspace/outputs/
+templates/cursor-research-workspace/outputs/**/*
+!templates/cursor-research-workspace/outputs/**/
+!templates/cursor-research-workspace/outputs/**/.gitkeep
 .DS_Store
 docs/chat_backup_*.md
 .venv/

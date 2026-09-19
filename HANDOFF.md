@@ -40,7 +40,7 @@
 
 已完成本机离线回归、真实 FastMCP 工具调用、wheel 脱离源码的安装验证，以及此前分来源有限真实样本。具体本轮计数和测试包复测见[本轮验证记录](docs/handoff_validation.md)。历史验收只证明当时样本，不代表现在凭证有效或另一台电脑网络可用。
 
-仍待外部验证：另一台物理电脑、实际 Agent 宿主集成、多系统 CI、来源持续在线表现、Cookie/会话过期恢复、真实 skills 的检索质量和费用观察。世界银行连接、雪球正文、部分 Fiona 分钟耗时和字段口径等限制见能力清单，不应作为隐含已通过项。
+GitHub 的 Linux（Python 3.10/3.12）、macOS 和 Windows（Python 3.12）检查以[当前提交的 Actions 结果](https://github.com/Chener6280/ir-search/actions/workflows/standalone.yml)为准。仍待外部验证：另一台物理电脑、实际 Agent 宿主集成、来源持续在线表现、Cookie/会话过期恢复、真实 skills 的检索质量和费用观察。世界银行连接、雪球正文、部分 Fiona 分钟耗时和字段口径等限制见能力清单，不应作为隐含已通过项。
 
 未在本轮实施：语义向量库、报告生成器、长期调度或自动续费；没有启动收费测试、上传私有数据或购买套餐。
 

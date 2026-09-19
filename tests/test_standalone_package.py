@@ -112,6 +112,9 @@ def test_built_wheel_runs_sdk_search_and_mcp_outside_checkout(tmp_path):
     script = r'''
 import asyncio, importlib.util, json, os, socket, sys
 from pathlib import Path
+# Windows initializes asyncio's self-pipe using a loopback socket pair.
+# Create it before the guard; all application/provider connections stay blocked.
+event_loop = asyncio.new_event_loop()
 def no_network(*args, **kwargs):
     raise AssertionError("Offline package verification attempted network access")
 socket.socket.connect = no_network
@@ -244,8 +247,13 @@ if importlib.util.find_spec("mcp"):
         assert json.loads(response[0].text)['audit']['status'] == 'recorded'
         response = await server.call_tool("get_data", {"dataset":"securities"})
         assert json.loads(response[0].text)["status"] == "unavailable"
-    asyncio.run(check())
+    try:
+        event_loop.run_until_complete(check())
+    finally:
+        event_loop.close()
     mcp_checked = True
+else:
+    event_loop.close()
 Path(os.environ['IR_SEARCH_CREDENTIALS_FILE']).write_text('FMP_ENABLED=true\nFMP_API_KEY=package_test_fmp_key\n')
 catalog = ir_search.list_capabilities()
 assert len(catalog['capabilities']) == 3 and all(c['provider']=='fmp' for c in catalog['capabilities'])
