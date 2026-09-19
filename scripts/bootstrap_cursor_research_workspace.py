@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import shutil
 import sys
@@ -10,6 +11,32 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_ROOT = REPO_ROOT / "templates" / "cursor-research-workspace"
+
+# This template ships a zsh wrapper (scripts/run_ir_search_mcp.sh) and renders a
+# .cursor/mcp.json that launches it through /bin/zsh, so the generated workspace
+# only works on macOS/Linux. Windows is served by the installed console script
+# instead of a ported wrapper; see UNSUPPORTED_PLATFORM_MESSAGE.
+UNSUPPORTED_PLATFORM_MESSAGE = """\
+[ERROR] This Cursor research workspace template is supported on macOS/Linux only.
+        It renders .cursor/mcp.json around a zsh wrapper script (/bin/zsh + scripts/run_ir_search_mcp.sh),
+        which Windows cannot run. Nothing was created.
+
+        On Windows, point your MCP client at the installed ir-search-mcp executable directly, e.g.:
+          "command": "<venv>\\\\Scripts\\\\ir-search-mcp.exe"
+        and pass your private credential file through the IR_SEARCH_CREDENTIALS_FILE environment variable.
+
+[错误] 该 Cursor 研究工作区模板仅支持 macOS/Linux。
+        它生成的 .cursor/mcp.json 依赖 zsh 包装脚本（/bin/zsh + scripts/run_ir_search_mcp.sh），Windows 无法执行。
+        本次没有生成任何文件。
+
+        在 Windows 上，请直接在 MCP 客户端配置里使用已安装的 ir-search-mcp 可执行文件，例如：
+          "command": "<venv>\\\\Scripts\\\\ir-search-mcp.exe"
+        并通过 IR_SEARCH_CREDENTIALS_FILE 环境变量指向你的私有凭证文件。"""
+
+
+def _is_windows() -> bool:
+    """Indirection so tests can exercise the refusal branch on any platform."""
+    return os.name == "nt"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -26,6 +53,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-mcp-runtime-check", action="store_true", help="Skip the ir_search MCP runtime preflight")
     args = parser.parse_args(argv)
+
+    if _is_windows():
+        # Refuse before touching the filesystem so no half-usable workspace is left behind.
+        print(UNSUPPORTED_PLATFORM_MESSAGE)
+        return 2
 
     target = args.target.expanduser().resolve()
     ir_search_path = _resolve_ir_search_path(args.ir_search_path)
@@ -105,15 +137,27 @@ def plan_files(target: Path) -> list[tuple[Path, Path]]:
 
 def render_mcp_files(target: Path, replacements: dict[str, str], *, overwrite: bool) -> None:
     template_path = target / ".cursor" / "mcp.json.template"
-    rendered = template_path.read_text(encoding="utf-8")
-    for needle, value in replacements.items():
-        rendered = rendered.replace(needle, value)
+    rendered = render_mcp_json(template_path.read_text(encoding="utf-8"), replacements)
     example_path = target / ".cursor" / "mcp.json.example"
     mcp_path = target / ".cursor" / "mcp.json"
     if overwrite or not example_path.exists():
         example_path.write_text(rendered, encoding="utf-8")
     if overwrite or not mcp_path.exists():
         mcp_path.write_text(rendered, encoding="utf-8")
+
+
+def render_mcp_json(template_text: str, replacements: dict[str, str]) -> str:
+    """Substitute ``{{PLACEHOLDER}}`` values inside a JSON template.
+
+    Every placeholder sits inside a JSON string literal, so each value is escaped
+    for that context (``json.dumps(value)[1:-1]``). Without this a value holding a
+    backslash or a double quote -- a Windows path, or a directory name with a
+    quote in it -- produces a file that no JSON parser accepts ("Invalid \\escape").
+    Values made only of plain characters are unchanged, so POSIX output is identical.
+    """
+    for needle, value in replacements.items():
+        template_text = template_text.replace(needle, json.dumps(str(value))[1:-1])
+    return template_text
 
 
 def link_env_local(target: Path, source: Path, *, overwrite: bool) -> None:
@@ -124,7 +168,14 @@ def link_env_local(target: Path, source: Path, *, overwrite: bool) -> None:
         if not overwrite:
             return
         destination.unlink()
-    destination.symlink_to(source)
+    try:
+        destination.symlink_to(source)
+    except (OSError, NotImplementedError) as error:
+        raise SystemExit(
+            f"[ERROR] Could not create the .env.local symlink {destination} -> {source}: "
+            f"{type(error).__name__}: {error}\n"
+            "        Create the link yourself (or copy the file to .env.local) and rerun with --overwrite."
+        ) from None
 
 
 def _resolve_ir_search_path(arg_path: Path | None) -> Path:

@@ -31,6 +31,12 @@ _rule('timeout network xhs_backend_unavailable browser_unavailable', 'availabili
       '检查服务是否运行及网络状况；保留已得结果，按诊断决定下一次有界请求。', True)
 _rule('cancelled deadline_exceeded operation_budget_exhausted browser_budget_exhausted', 'budget',
       '使用已返回的续取位置继续，或缩小范围；需要时显式调整下次预算。', True)
+_rule('archive_path_too_long', 'configuration',
+      '归档路径超过 Windows 的 260 字符上限：把归档根目录改到更短的路径（如用户目录下的一层文件夹），或在系统中启用长路径支持。')
+_rule('source_time_share_exceeded', 'budget',
+      '该来源用完了本次请求分给它的时间份额，其余来源已继续执行；需要时单独查询该来源或显式增大 timeout_seconds。')
+_rule('candidate_rejected', 'schema',
+      '个别记录未通过契约校验已被丢弃，同一来源的其余记录已保留；结合 rejected_count 判断是否需要核对上游结构。')
 _rule('dependency_missing browser_dependency_missing browser_version_unsupported video_dependency_missing audio_dependency_missing',
       'dependency', '在当前运行 ir-search 的 Python 环境安装对应可选依赖，并重新验收。', True)
 _rule('source_config_error invalid_source_config unsafe_credentials_file source_disabled', 'configuration',

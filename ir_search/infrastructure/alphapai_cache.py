@@ -11,6 +11,7 @@ import stat
 import tempfile
 
 from ir_search.registry import DataAdapterError
+from .private_files import _oldest_first, _stamp_written
 
 
 class _DetailCache:
@@ -66,7 +67,7 @@ class _DetailCache:
         self._root(); temporary = None
         try:
             # Bound storage. Evict oldest snapshots only; never follow symlinks.
-            entries = sorted(self.root.glob('*.json'), key=lambda p: p.lstat().st_mtime)
+            entries = _oldest_first(self.root.glob('*.json'))
             for path in entries[:max(0, len(entries)-199)]:
                 if stat.S_ISREG(path.lstat().st_mode): path.unlink()
             record = {'fetched_at': response.fetched_at.isoformat(), 'data': response.data}
@@ -75,6 +76,7 @@ class _DetailCache:
             fd, temporary = tempfile.mkstemp(dir=self.root, prefix='.write-')
             with os.fdopen(fd, 'wb') as file: file.write(raw)
             os.replace(temporary, self._path(identifier)); temporary = None
+            _stamp_written(self._path(identifier))
         except (OSError, ValueError, TypeError): raise DataAdapterError('alphapai_cache_unavailable') from None
         finally:
             if temporary:

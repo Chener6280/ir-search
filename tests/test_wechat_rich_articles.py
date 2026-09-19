@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import pytest
 
+from _platform import symlinks_supported
 from ir_search import MaterialRequest, RequestContext, retrieve, export_material
 from ir_search import mcp_server
 from ir_search.infrastructure import wechat as wc
@@ -113,9 +114,10 @@ def test_export_is_offline_by_default_and_versioned_not_title_based(tmp_path, mo
     result=export_material(m,root)
     assert result['status']=='ok' and result['image_requests']==0
     folder=Path(result['directory'])
-    saved=json.loads((folder/'material.json').read_text())
+    saved=json.loads((folder/'material.json').read_text(encoding='utf-8'))
     assert saved['text']==m.text and saved['evidence_spans']==m.evidence_spans
-    assert '12.5' in (folder/'article.md').read_text() and '未经审计' in (folder/'article.md').read_text()
+    markdown=(folder/'article.md').read_text(encoding='utf-8')
+    assert '12.5' in markdown and '未经审计' in markdown
     assert not (folder/'images').exists()
     assert export_material(m,root)['status']=='reused'
     later=replace(m,provenance=replace(m.provenance,fetched_at=NOW+timedelta(hours=1)))
@@ -124,9 +126,9 @@ def test_export_is_offline_by_default_and_versioned_not_title_based(tmp_path, mo
     assert export_material(other,root)['directory']!=result['directory']
     edited=material(monkeypatch,HTML.replace('12.5','15.5'))
     assert export_material(edited,root)['directory']!=result['directory']
-    (folder/'article.md').write_text('用户编辑的内容')
+    (folder/'article.md').write_text('用户编辑的内容',encoding='utf-8')
     assert export_material(m,root)['status']=='error'
-    assert (folder/'article.md').read_text()=='用户编辑的内容'
+    assert (folder/'article.md').read_text(encoding='utf-8')=='用户编辑的内容'
 
 
 def test_images_opt_in_deduplicate_validate_and_resume(tmp_path, monkeypatch):
@@ -139,7 +141,7 @@ def test_images_opt_in_deduplicate_validate_and_resume(tmp_path, monkeypatch):
     root=tmp_path/'archive'
     result=export_material(m,root,download_images=True)
     assert result['status']=='ok' and result['downloaded_images']==1 and len(calls)==1
-    assert '![' in (Path(result['directory'])/'article.md').read_text()
+    assert '![' in (Path(result['directory'])/'article.md').read_text(encoding='utf-8')
     assert export_material(m,root,download_images=True)['status']=='reused' and len(calls)==1
     failed_root=tmp_path/'retry'
     monkeypatch.setattr(archive,'_request',lambda *a,**k:_Reply(503,'text/html','',b'bad',NOW))
@@ -167,8 +169,9 @@ def test_image_redirect_and_file_type_are_checked(tmp_path,monkeypatch):
 
 def test_export_cancel_symlink_and_structure_mismatch(tmp_path,monkeypatch):
     m=material(monkeypatch)
-    target=tmp_path/'other';target.mkdir();link=tmp_path/'linked';link.symlink_to(target,target_is_directory=True)
-    assert export_material(m,link)['status']=='error'
+    if symlinks_supported():
+        target=tmp_path/'other';target.mkdir();link=tmp_path/'linked';link.symlink_to(target,target_is_directory=True)
+        assert export_material(m,link)['status']=='error'
     ctx=RequestContext();ctx.cancel()
     assert export_material(m,tmp_path/'cancelled',context=ctx)['diagnostics']==['cancelled']
     bad=replace(m,article={**m.article,'text_hash':'bad'})
@@ -177,6 +180,7 @@ def test_export_cancel_symlink_and_structure_mismatch(tmp_path,monkeypatch):
 
 def test_sdk_mcp_archive_options_and_search_structure(tmp_path,monkeypatch):
     m=material(monkeypatch)
+    monkeypatch.setenv('IR_SEARCH_OUTPUT_ROOT', str(tmp_path))  # MCP writes are confined to one root
     result=mcp_server.retrieve_payload('收入',[URL],wechat_cache_mode='off',archive_dir=str(tmp_path/'mcp'))
     assert result['materials'][0]['archive']['status']=='ok'
     assert result['materials'][0]['article']['blocks']

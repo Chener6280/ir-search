@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import pytest
 
+from _platform import POSIX_PERMISSIONS, symlinks_supported
 from ir_search import MaterialRegistry, MaterialSearchRequest, RequestContext, search_materials, build_material_registry
 from ir_search.adapters.wechat_materials import WechatMaterialAdapter
 from ir_search.infrastructure.credentials import (WechatAccount,WechatProfile,wechat_profile,SourceConfigError,source_configuration_status)
@@ -93,12 +94,16 @@ def test_invalid_private_inventory(tmp_path,data):
 
 
 def test_private_inventory_permissions_symlink_and_configuration_failures(tmp_path):
-    p=tmp_path/'a.json';p.write_text('[{"name":"test"}]');p.chmod(0o644)
+    p=tmp_path/'a.json';p.write_text('[{"name":"test"}]',encoding='utf-8')
     values={'WECHAT_MATERIALS_ENABLED':'true','DAJIALA_KEY':PROFILE.api_key,'WECHAT_ACCOUNTS_FILE':str(p)}
-    with pytest.raises(SourceConfigError,match='permissions'):wechat_profile(values=values)
-    p.chmod(0o600);link=tmp_path/'link';link.symlink_to(p)
-    with pytest.raises(SourceConfigError):wechat_profile(values=dict(values,WECHAT_ACCOUNTS_FILE=str(link)))
-    for more in ({'WECHAT_MAX_ACCOUNTS_PER_QUERY':'6'},{'WECHAT_MAX_PAGES_PER_ACCOUNT':'4'},{'DAJIALA_KEY':''},{'WECHAT_MATERIALS_ENABLED':'yes'}):
+    if POSIX_PERMISSIONS:
+        p.chmod(0o644)
+        with pytest.raises(SourceConfigError,match='permissions'):wechat_profile(values=values)
+    p.chmod(0o600)
+    if symlinks_supported():
+        link=tmp_path/'link';link.symlink_to(p)
+        with pytest.raises(SourceConfigError):wechat_profile(values=dict(values,WECHAT_ACCOUNTS_FILE=str(link)))
+    for more in({'WECHAT_MAX_ACCOUNTS_PER_QUERY':'6'},{'WECHAT_MAX_PAGES_PER_ACCOUNT':'4'},{'DAJIALA_KEY':''},{'WECHAT_MATERIALS_ENABLED':'yes'}):
         with pytest.raises(SourceConfigError):wechat_profile(values=dict(values,**more))
 
 

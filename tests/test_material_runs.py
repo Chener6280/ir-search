@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from _platform import POSIX_PERMISSIONS, symlinks_supported
 from ir_search import record_material_run, next_material_request, search_materials, RequestContext
 from ir_search.contracts import Diagnostic
 from ir_search.context import RequestStopped
@@ -20,31 +21,35 @@ def test_audit_opt_in_private_immutable_and_positive_redaction(tmp_path):
     r.diagnostics.append(Diagnostic('synthetic_private_secret','search_materials',message='private-user-message'))
     r.request_id='private-account-identifying-request'
     output=tmp_path/'runs'
-    a=record_material_run(r,output);raw=Path(a['path']).read_text();stored=json.loads(raw)
+    a=record_material_run(r,output);raw=Path(a['path']).read_text(encoding='utf-8');stored=json.loads(raw)
     assert a['status']=='recorded' and stored['summary']['source_text_included'] is False
     for secret in ['synthetic_private_secret','private-user-message','private-account-identifying-request',
                    r.request.question,ID,'xhs://','合成测试作者']:
         assert secret not in raw
     assert 'unknown_diagnostic' in raw
     assert record_material_run(r,output)['status']=='reused'
-    assert output.stat().st_mode&0o077==0 and Path(a['path']).stat().st_mode&0o077==0
+    if POSIX_PERMISSIONS:
+        assert output.stat().st_mode&0o077==0 and Path(a['path']).stat().st_mode&0o077==0
     r.items[0]['versions'][0]['title']='changed source version'
     assert record_material_run(r,output)['run_id']!=a['run_id']
 
 
 def test_record_tamper_or_unsafe_destination_never_overwrites(tmp_path):
     p,t,c,reg=setup(tmp_path);r=search_materials(req(),registry=reg)
-    a=record_material_run(r,tmp_path/'runs');path=Path(a['path']);path.write_text('{}')
-    assert record_material_run(r,tmp_path/'runs')['status']=='error' and path.read_text()=='{}'
-    link=tmp_path/'link';link.symlink_to(tmp_path/'runs',target_is_directory=True)
-    assert record_material_run(r,link)['code']=='run_record_unavailable'
-    unsafe=tmp_path/'unsafe';unsafe.mkdir();unsafe.chmod(0o755)
-    assert record_material_run(r,unsafe)['status']=='error'
+    a=record_material_run(r,tmp_path/'runs');path=Path(a['path']);path.write_text('{}',encoding='utf-8')
+    assert record_material_run(r,tmp_path/'runs')['status']=='error' and path.read_text(encoding='utf-8')=='{}'
+    if symlinks_supported():
+        link=tmp_path/'link';link.symlink_to(tmp_path/'runs',target_is_directory=True)
+        assert record_material_run(r,link)['code']=='run_record_unavailable'
+    if POSIX_PERMISSIONS:
+        unsafe=tmp_path/'unsafe';unsafe.mkdir();unsafe.chmod(0o755)
+        assert record_material_run(r,unsafe)['status']=='error'
     ctx=RequestContext();ctx.cancel()
     assert record_material_run(r,tmp_path/'cancelled',context=ctx)['code']=='cancelled'
 
 
-def test_search_and_mcp_recording_does_not_lose_results_on_storage_failure(tmp_path):
+def test_search_and_mcp_recording_does_not_lose_results_on_storage_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv('IR_SEARCH_OUTPUT_ROOT', str(tmp_path))  # MCP writes are confined to one root
     p,t,c,reg=setup(tmp_path)
     file=tmp_path/'file';file.write_text('not a directory')
     r=search_materials(req(),registry=reg,audit_dir=file)

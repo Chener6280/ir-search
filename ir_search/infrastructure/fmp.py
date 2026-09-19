@@ -16,6 +16,7 @@ from functools import lru_cache
 from threading import Event, Lock, Thread
 from urllib.parse import urlencode
 
+from ._interrupt import wake_blocked_socket
 from ir_search.context import RequestStopped
 from ir_search.registry import DataAdapterError
 
@@ -100,11 +101,7 @@ def _download(profile, endpoint, params, *, context):
                     context.check_active()
                 except RequestStopped:
                     sock = active_socket or connection.sock
-                    if sock is not None:
-                        try:
-                            sock.shutdown(socket.SHUT_RDWR)
-                        except OSError:
-                            pass
+                    wake_blocked_socket(sock)
                     return
 
         watcher = Thread(target=stop_socket, daemon=True)

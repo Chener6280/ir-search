@@ -11,6 +11,9 @@ from .verifier import verify_claims
 
 
 def classify_hit(hit: Hit) -> Hit:
+    if hit.extra.get("adapter_mode") == "mock":
+        hit.tier, hit.evidence_type = SourceTier.UGC, EvidenceType.UNKNOWN
+        return hit
     hit.tier = classify_tier(hit.url, hit.source)
     hit.evidence_type = classify_evidence_type(hit)
     return hit

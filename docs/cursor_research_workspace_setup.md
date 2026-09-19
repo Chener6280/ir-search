@@ -1,5 +1,7 @@
 # Cursor Research Workspace Setup
 
+> **Platform support:** this legacy template and its bootstrap rely on a zsh wrapper script and are supported on macOS and Linux only. On Windows the bootstrap exits with an explanation and writes nothing; configure the MCP client to start the installed `<venv>\Scripts\ir-search-mcp.exe` directly and set `IR_SEARCH_CREDENTIALS_FILE` (see [standalone deployment](standalone_deployment.md)).
+
 This document explains how to create a separate Cursor research workspace that uses `ir_search` as an MCP evidence engine.
 
 ## Why A Separate Workspace

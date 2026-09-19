@@ -98,6 +98,8 @@ def _fetch_bytes_with_redirects(
     max_redirects: int = 5,
 ) -> tuple[bytes, str, str, list[dict[str, str]]]:
     ensure_url_allowed(url, allow_private_network=allow_private_network)
+    from ir_search.context import RequestContext
+    context = RequestContext(timeout_seconds=timeout_sec, max_operations=max_redirects + 1)
     current_url = url
     redirect_chain: list[dict[str, str]] = []
     opener = urllib.request.build_opener(NoRedirectHandler)
@@ -107,6 +109,9 @@ def _fetch_bytes_with_redirects(
     }
     for _ in range(max_redirects + 1):
         req = urllib.request.Request(current_url, headers=headers)
+        req.allow_private_network = allow_private_network
+        req.context = context
+        context.begin_operation()
         try:
             with _open_once(opener, req, timeout_sec) as resp:
                 raw = resp.read(5_000_000)
@@ -131,7 +136,27 @@ def _fetch_bytes_with_redirects(
 
 
 def _open_once(opener, req: urllib.request.Request, timeout_sec: int):
-    return opener.open(req, timeout=timeout_sec)
+    if getattr(req, "allow_private_network", False):
+        # Explicit trusted SDK opt-in only. MCP does not grant this from tool arguments.
+        return opener.open(req, timeout=timeout_sec)
+    from io import BytesIO
+    from email.message import Message
+    from urllib.response import addinfourl
+    from ir_search.context import RequestContext
+    from ir_search.infrastructure.public_web import _request
+    from ir_search.registry import DataAdapterError
+    try:
+        reply = _request(req.full_url, context=getattr(req, "context", None) or
+                              RequestContext(timeout_seconds=timeout_sec), max_bytes=5_000_000)
+    except DataAdapterError as exc:
+        if exc.code == "blocked_url": raise UrlBlockedError("blocked public URL or address") from None
+        raise RuntimeError(exc.code) from None
+    headers = Message()
+    headers['content-type'] = reply.content_type
+    if reply.status in REDIRECT_STATUS_CODES:
+        headers['Location'] = reply.location
+        raise urllib.error.HTTPError(req.full_url, reply.status, "redirect", headers, None)
+    return addinfourl(BytesIO(reply.body), headers, req.full_url, reply.status)
 
 
 def document_from_hit(hit: Hit, *, max_chars: int = 20000, fetch_errors: Optional[list[str]] = None) -> Document:

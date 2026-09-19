@@ -1,11 +1,12 @@
 # 项目文档索引
 
-当前候选版本：0.2.0rc1。先读 [HANDOFF](../HANDOFF.md)。带日期的验收文档保留当时事实，旧报告中的测试数、默认配置和待办不自动代表当前版本。
+当前候选版本：0.2.0rc2。先读 [HANDOFF](../HANDOFF.md)。带日期的验收文档保留当时事实，旧报告中的测试数、默认配置和待办不自动代表当前版本。
 
 ## 当前使用与交接
 
 | 文档 | 用途 |
 |---|---|
+| [综合评审修复](review_resolution.md) / [Windows 复验](windows_review_handoff.md) | 四份评审与 PR #2 的逐项处理、复验边界 |
 | [跨电脑部署](standalone_deployment.md) | 新环境安装、凭证、后端、MCP |
 | [当前能力](current_capabilities.md) | 来源与操作范围、真实样本、已知未通过项 |
 | [来源选择](source_selection.md) | 用户明确选源，缺失选择零调用，迁移说明 |

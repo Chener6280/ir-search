@@ -16,6 +16,7 @@ import tempfile
 import time
 
 from .credentials import credentials_path, read_credentials
+from .private_files import _oldest_first, _stamp_written
 
 
 @dataclass
@@ -54,7 +55,7 @@ class _WechatCache:
                     raise OSError()
                 if os.name == 'nt':
                     import msvcrt
-                    if not info.st_size: os.write(fd, b'0')
+                    # Lock beyond EOF without a racy initialization write.
                 while not locked:
                     context.check_active()
                     try:
@@ -115,8 +116,9 @@ class _WechatCache:
             with os.fdopen(fd, 'wb') as stream:
                 stream.write(raw)
             os.replace(temporary, self._path(kind, key))
+            _stamp_written(self._path(kind, key))
             # Bound local storage. Missing old entries simply cause normal fresh reads.
-            entries = sorted(self.root.glob('*.json'), key=lambda p: p.lstat().st_mtime)
+            entries = _oldest_first(self.root.glob('*.json'))
             sizes = [path.lstat().st_size for path in entries]
             total = sum(sizes)
             for index, path in enumerate(entries):

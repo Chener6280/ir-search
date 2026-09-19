@@ -16,8 +16,8 @@ import re
 import socket
 from urllib.parse import urlsplit
 
-from .credentials import SourceConfigError, credentials_path, read_credentials
-from .private_files import _private_dir, _private_read, _private_write, _directory_lock
+from .credentials import SourceConfigError, credentials_path, read_credentials, require_local_path
+from .private_files import _oldest_first, _private_dir, _private_read, _private_write, _directory_lock
 from ir_search.registry import DataAdapterError
 
 MAX_BYTES = 4 * 1024 * 1024
@@ -49,6 +49,7 @@ def xhs_profile(*, values=None, env_file=None):
     enabled = values.get('XHS_MATERIALS_ENABLED', 'false').lower()
     if enabled not in {'true', 'false'}: raise SourceConfigError()
     if enabled == 'false': return None
+    require_local_path(values, 'XHS_CACHE_DIR', allow_relative=True)
     root = Path(values.get('XHS_CACHE_DIR') or '.local/xhs-cache').expanduser()
     if not root.is_absolute(): root = credentials_path(env_file).parent / root
     return XhsProfile(values.get('XHS_BACKEND_URL', 'http://127.0.0.1:18060'),
@@ -132,7 +133,7 @@ class _Cache:
             record = {'key':key, 'fetched_at':reply.fetched_at.isoformat(), 'data':reply.data}
             raw = self._encode({'record':record, 'hmac':hmac.new(self.key,self._encode(record),hashlib.sha256).hexdigest()})
             if len(raw)>MAX_BYTES: raise ValueError()
-            entries = sorted((p for p in self.root.glob('*.json') if not p.is_symlink()), key=lambda p:p.stat().st_mtime)
+            entries = _oldest_first(p for p in self.root.glob('*.json') if not p.is_symlink())
             total = sum(p.stat().st_size for p in entries)
             while entries and (len(entries)>=256 or total+len(raw)>64*1024*1024):
                 p=entries.pop(0); total-=p.stat().st_size; p.unlink()

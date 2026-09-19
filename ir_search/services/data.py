@@ -23,9 +23,10 @@ def get_data(request: DataRequest, *, registry: Optional[DataRegistry] = None,
     if not isinstance(request, DataRequest):
         raise ValueError("get_data requires a DataRequest")
     context = context if context is not None else RequestContext()
+    default_registry = registry is None
     registry = registry if registry is not None else build_data_registry()
     result = DataResult(request, context.request_id, definition=_DATASETS.get(request.dataset))
-    result.diagnostics.extend(registry.diagnostics)
+    result.diagnostics.extend(d for d in registry.diagnostics if not d.datasets or request.dataset in d.datasets)
     route = _route_for(request) if registry.use_source_policy else None
     if route and route.horizon == "recent_only":
         today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
@@ -65,9 +66,14 @@ def get_data(request: DataRequest, *, registry: Optional[DataRegistry] = None,
     if not entries:
         if not result.diagnostics:
             result.diagnostics.append(_diag("no_data_provider_registered", FailureKind.UNIMPLEMENTED))
+        if default_registry and not registry.entries():
+            # Nothing is enabled on this computer: this is configuration, not a missing feature.
+            from ir_search.infrastructure.credentials import setup_hint
+            result.diagnostics.append(Diagnostic(code="no_data_source_enabled", operation="query_data",
+                                                 failure_kind=FailureKind.NO_CREDENTIAL, message=setup_hint()))
         return result
     can_fallback = bool(route and not request.provider and not request.cursor)
-    if can_fallback and any(d.operation == "configure" and d.provider == route.providers[0] for d in registry.diagnostics):
+    if can_fallback and any(d.operation == "configure" and d.provider == route.providers[0] for d in result.diagnostics):
         # Missing coverage and a broken enabled source are different situations.
         result.status = Status.ERROR
         result.diagnostics.append(_diag("primary_source_configuration_error", FailureKind.BLOCKED_BY_POLICY))

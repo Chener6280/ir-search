@@ -1,10 +1,11 @@
 # ir-search
 
-面向投研 skills 和 agents 的确定性数据、素材搜索与证据服务。当前版本为 **0.2.0rc1**，是供其他电脑及 Agent 测试的候选版本，尚未完成长期稳定性验证。
+面向投研 skills 和 agents 的确定性数据、素材搜索与证据服务。当前版本为 **0.2.0rc2**，是供其他电脑及 Agent 测试的候选版本，尚未完成长期稳定性验证。
 
 ## 从这里开始
 
 - 接手测试：[HANDOFF.md](HANDOFF.md)
+- 综合评审修复：[处理对照](docs/review_resolution.md)与 [Windows 复验](docs/windows_review_handoff.md)
 - 全部当前文档：[文档索引](docs/README.md)
 - 安装、凭证和 MCP：[跨电脑部署](docs/standalone_deployment.md)
 - 来源与已知限制：[当前能力清单](docs/current_capabilities.md)

@@ -41,7 +41,7 @@ class JYDBMaterialAdapter:
             text, scope = "", TextScope.METADATA
             warnings = ["vendor_text_not_original_file", "publication_time_precision_unverified", "business_period_unknown"]
             provenance = Provenance(self.name, "unknown", fetched, authority=SourceAuthority.DATA_VENDOR,
-                source_tier=SourceTier.COMPANY, evidence_type=EvidenceType.ANNOUNCEMENT, adapter_mode=AdapterMode.LIVE)
+                source_tier=None, evidence_type=EvidenceType.ANNOUNCEMENT, adapter_mode=AdapterMode.LIVE)
             if index < request.text_reads_per_source:
                 try:
                     document = self._client.fetch_document(item["source_ref"], max_chars=request.max_chars, context=context)
@@ -64,7 +64,9 @@ class JYDBMaterialAdapter:
                 warnings.append("text_not_read_within_budget")
             candidates.append(MaterialCandidate(item["source_ref"], item["title"], MaterialKind.ANNOUNCEMENT,
                 "database", provenance, text=text, text_scope=scope, symbols=request.symbols,
-                published_on=published, warnings=tuple(dict.fromkeys(warnings))))
+                published_on=published, warnings=tuple(dict.fromkeys(warnings + ["original_publisher_unverified"])),
+                read_details={"transmission": "vendor_transcription", "publisher_verification": "vendor_claim_unverified",
+                              "original_file_verified": False}))
         if len(listing["items"]) > request.text_reads_per_source:
             diagnostics.append(Diagnostic("text_read_budget_exhausted", "search_materials", self.name, adapter_mode=AdapterMode.LIVE))
         # A first-page scan cannot guarantee complete topic or business-period coverage.

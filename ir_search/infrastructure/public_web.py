@@ -8,9 +8,10 @@ import ipaddress
 import re
 import socket
 import ssl
-from threading import Event, Thread
+from threading import BoundedSemaphore, Event, Thread
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
+from ._interrupt import wake_blocked_socket
 from ir_search.context import RequestStopped
 from ir_search.contracts.materials import _reference
 from ir_search.documents.html import extract_html_document
@@ -76,13 +77,38 @@ def _allowed_domain(host, domains):
     return not domains or any(host == domain or host.endswith("." + domain) for domain in domains)
 
 
+_DNS_SLOTS = BoundedSemaphore(8)
+
+
 def _resolve(host, port, context):
+    # OS resolvers have no portable timeout. Bound the caller's wait and the number
+    # of outstanding resolver workers; never resolve the host again when connecting.
     context.check_active()
-    rows = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    if not _DNS_SLOTS.acquire(blocking=False):
+        raise DataAdapterError("dns_busy")
+    done, answer = Event(), {}
+    def lookup():
+        try:
+            answer["rows"] = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except Exception:
+            answer["failed"] = True
+        finally:
+            _DNS_SLOTS.release()
+            done.set()
+    worker = Thread(target=lookup, daemon=True)
+    try:
+        worker.start()
+    except Exception:
+        _DNS_SLOTS.release()
+        raise DataAdapterError("network") from None
+    while not done.wait(min(.05, context.remaining_seconds())):
+        context.check_active()
     context.check_active()
+    if answer.get("failed"):
+        raise DataAdapterError("network")
+    rows = answer["rows"]
     if not rows or any(not ipaddress.ip_address(row[4][0].split("%", 1)[0]).is_global for row in rows):
         raise DataAdapterError("blocked_url")
-    # Connect to the checked numeric address without a second hostname resolution.
     return rows[0]
 
 
@@ -165,11 +191,7 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
                     context.check_active()
                 except RequestStopped:
                     sock = active_socket or connection.sock
-                    if sock is not None:
-                        try:
-                            sock.shutdown(socket.SHUT_RDWR)
-                        except OSError:
-                            pass
+                    wake_blocked_socket(sock)
                     return
 
         watcher = Thread(target=stop_socket, daemon=True)
