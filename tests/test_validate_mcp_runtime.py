@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+from _platform import requires_posix_workspace
 from scripts.bootstrap_cursor_research_workspace import main as bootstrap_main
 
 
@@ -11,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_ROOT = REPO_ROOT / "templates" / "cursor-research-workspace"
 
 
+@requires_posix_workspace
 def test_generated_mode_fails_if_selected_python_lacks_mcp(tmp_path):
     target = tmp_path / "research"
     ok_python, ir_search_path = _fake_runtime(tmp_path, mode="ok")
@@ -28,6 +30,7 @@ def test_generated_mode_fails_if_selected_python_lacks_mcp(tmp_path):
     assert any(f'{missing_mcp_python} -m pip install -e "{ir_search_path}[mcp]"' in error for error in errors)
 
 
+@requires_posix_workspace
 def test_generated_mode_skip_mcp_runtime_check_warns(tmp_path):
     target = tmp_path / "research"
     missing_mcp_python, ir_search_path = _fake_runtime(tmp_path, mode="missing_mcp")
@@ -64,6 +67,7 @@ def test_template_mode_skips_mcp_runtime_check(capsys):
     assert "MCP runtime check skipped in template mode" in output
 
 
+@requires_posix_workspace
 def test_generated_mode_can_require_live_source_env(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_runtime(tmp_path, mode="ok")

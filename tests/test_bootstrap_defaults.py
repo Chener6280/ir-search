@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from _platform import requires_posix_workspace
 from scripts.bootstrap_cursor_research_workspace import main as bootstrap_main
+
+
+pytestmark = requires_posix_workspace
 
 
 def test_bootstrap_defaults_to_mock_safe_live_mode(tmp_path):

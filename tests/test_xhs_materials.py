@@ -7,6 +7,7 @@ import os
 
 import pytest
 
+from _platform import POSIX_PERMISSIONS
 from ir_search import MaterialRequest, MaterialSearchRequest, RequestContext, retrieve, search_materials
 from ir_search.material_registry import MaterialRegistry, build_material_registry
 from ir_search.infrastructure.credentials import SourceConfigError, source_configuration_status
@@ -186,12 +187,12 @@ def test_detail_cache_freshness_refresh_permissions_and_tamper(tmp_path):
     first=c.detail(ID,context=ctx);second=c.detail(ID,context=ctx)
     assert second.cache_state=='hit' and first.fetched_at==second.fetched_at
     assert c.detail(ID,context=ctx,refresh=True).cache_state=='fresh'
-    if os.name=='posix':
+    if POSIX_PERMISSIONS:
         assert c.cache.root.stat().st_mode&0o077==0
         assert all(path.stat().st_mode&0o077==0 for path in c.cache.root.glob('*.json'))
     path=c.cache._path('detail:'+ID+':0')
-    data=json.loads(path.read_text());data['record']['data']['note']['desc']='tampered'
-    path.write_text(json.dumps(data))
+    data=json.loads(path.read_text(encoding='utf-8'));data['record']['data']['note']['desc']='tampered'
+    path.write_text(json.dumps(data),encoding='utf-8')
     with pytest.raises(DataAdapterError,match='xhs_cache_invalid'):c.detail(ID,context=ctx)
 
 

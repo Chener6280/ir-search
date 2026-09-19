@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from _platform import POSIX_PERMISSIONS, symlinks_supported
 from ir_search import MaterialRequest, MaterialSearchRequest, RequestContext, retrieve, search_materials
 from ir_search import mcp_server
 from ir_search.context import RequestStopped
@@ -279,22 +280,26 @@ def test_cache_credentials_isolation_tamper_expiration_and_permissions(tmp_path)
     cache=_DetailCache(profile);response=AlphapaiResponse(row(),NOW);cache.put(ID,response)
     assert cache.get(ID).data==row()
     file=next((tmp_path/'cache').glob('*.json'))
-    assert file.stat().st_mode & 0o077==0
-    assert PROFILE.phone not in file.read_text() and PROFILE.password not in file.read_text()
+    if POSIX_PERMISSIONS: assert file.stat().st_mode & 0o077==0
+    raw=file.read_text(encoding='utf-8')
+    assert PROFILE.phone not in raw and PROFILE.password not in raw
     assert _DetailCache(replace(profile,password='different_password')).get(ID) is None
     cache.put(ID,AlphapaiResponse(row(),NOW-timedelta(hours=2)));assert cache.get(ID) is None
-    cache.put(ID,response);data=json.loads(file.read_text());data['record']['data']['title']='tampered';file.write_text(json.dumps(data))
+    cache.put(ID,response);data=json.loads(file.read_text(encoding='utf-8'));data['record']['data']['title']='tampered'
+    file.write_text(json.dumps(data),encoding='utf-8')
     with pytest.raises(DataAdapterError,match='alphapai_cache_invalid'):cache.get(ID)
-    file.unlink();target=tmp_path/'outside';target.write_text('{}');file.symlink_to(target)
-    with pytest.raises(DataAdapterError):cache.get(ID)
+    if symlinks_supported():
+        file.unlink();target=tmp_path/'outside';target.write_text('{}',encoding='utf-8');file.symlink_to(target)
+        with pytest.raises(DataAdapterError):cache.get(ID)
 
 
 def test_cache_unsafe_directory_and_capacity_bound(tmp_path):
     root=tmp_path/'cache';root.mkdir(mode=0o755)
     cache=_DetailCache(replace(PROFILE,cache_ttl_seconds=3600,cache_dir=str(root)))
-    with pytest.raises(DataAdapterError,match='alphapai_cache_unavailable'):cache.get(ID)
+    if POSIX_PERMISSIONS:
+        with pytest.raises(DataAdapterError,match='alphapai_cache_unavailable'):cache.get(ID)
     root.chmod(0o700)
-    for i in range(202):(root/f'{i:064x}.json').write_text('{}')
+    for i in range(202):(root/f'{i:064x}.json').write_text('{}',encoding='utf-8')
     cache.put(ID,AlphapaiResponse(row(),NOW))
     assert len(list(root.glob('*.json')))==200
 

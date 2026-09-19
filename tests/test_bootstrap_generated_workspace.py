@@ -4,7 +4,11 @@ import importlib.util
 import json
 from pathlib import Path
 
+from _platform import requires_posix_workspace
 from scripts.bootstrap_cursor_research_workspace import main as bootstrap_main
+
+
+pytestmark = requires_posix_workspace
 
 
 def test_bootstrap_supports_ir_search_path_and_generated_validation(tmp_path):
