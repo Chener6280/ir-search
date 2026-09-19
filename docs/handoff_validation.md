@@ -23,3 +23,5 @@
 远端跨系统检查见 [GitHub Actions](https://github.com/Chener6280/ir-search/actions/workflows/standalone.yml)，必须核对实际提交的运行结果。不能由本机通过推断远端通过。
 
 首次远端检查（`59154bf`）发现：Linux 缺少旧 Cursor 模板所需的 zsh；Windows 的 asyncio 内部回环通信被测试的零网络保护误拦；提交前空白清理触发了既有多行格式检查。修复保留了旧模板的明确 zsh 依赖和应用外连阻断；并补入模板输出目录的空 `.gitkeep` 文件，实际输出仍被忽略。修复版本须以其远端检查结果验收。
+
+第二轮（`041f01a`）Linux 两个 Python 版本和 macOS 均已通过；Windows 的安装探针增长后超过了系统命令行长度上限，改为在独立目录运行 UTF-8 探针文件，并在所有 MCP 检查中复用预先创建的事件循环。另排除同步客户端生成的临时上传配置，防止凭证文件的旁文件被误纳入 Git。

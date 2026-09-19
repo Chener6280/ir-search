@@ -247,13 +247,8 @@ if importlib.util.find_spec("mcp"):
         assert json.loads(response[0].text)['audit']['status'] == 'recorded'
         response = await server.call_tool("get_data", {"dataset":"securities"})
         assert json.loads(response[0].text)["status"] == "unavailable"
-    try:
-        event_loop.run_until_complete(check())
-    finally:
-        event_loop.close()
+    event_loop.run_until_complete(check())
     mcp_checked = True
-else:
-    event_loop.close()
 Path(os.environ['IR_SEARCH_CREDENTIALS_FILE']).write_text('FMP_ENABLED=true\nFMP_API_KEY=package_test_fmp_key\n')
 catalog = ir_search.list_capabilities()
 assert len(catalog['capabilities']) == 3 and all(c['provider']=='fmp' for c in catalog['capabilities'])
@@ -315,7 +310,7 @@ if mcp_checked:
         result = json.loads(response[0].text)
         assert result['materials'][0]['text_hash'] == web_material['text_hash']
         assert result['reads'][0]['backend'] == 'http'
-    asyncio.run(check_web_reader())
+    event_loop.run_until_complete(check_web_reader())
 Path(os.environ['IR_SEARCH_CREDENTIALS_FILE']).write_text('WEB_MATERIALS_ENABLED=true\nWEB_SEARCH_PROVIDER=regional\nBOCHA_API_KEY=package_bocha_key\nANYSEARCH_API_KEY=package_anysearch_key\n')
 regional_registry=ir_search.build_material_registry()
 regional_adapter=regional_registry.entries()[0]
@@ -338,7 +333,7 @@ if mcp_checked:
     async def check_regional():
         response=await server.call_tool('search_materials',regional_request.to_dict())
         assert json.loads(response[0].text)['items'][0]['versions'][0]['discovery_provider']=='bocha'
-    asyncio.run(check_regional())
+    event_loop.run_until_complete(check_regional())
 Path(os.environ['IR_SEARCH_CREDENTIALS_FILE']).write_text('ZSXQ_MATERIALS_ENABLED=true\nZSXQ_KEY=package_test_zsxq_key\nZSXQ_GROUP_IDS=100\n')
 zsxq_registry=ir_search.build_material_registry()
 assert [a.name for a in zsxq_registry.entries()]==['zsxq']
@@ -375,7 +370,7 @@ if mcp_checked:
             'published_start':'2026-09-01','published_end':'2026-09-15'})
         result=json.loads(response[0].text)
         assert result['items'][0]['versions'][0]['source_ref']=='zsxq://topic/100/101'
-    asyncio.run(check_zsxq())
+    event_loop.run_until_complete(check_zsxq())
 private_accounts=Path('wechat_accounts.json')
 private_accounts.write_text('[{"name":"Synthetic research","ghid":"gh_synthetic"}]')
 private_accounts.chmod(0o600)
@@ -424,7 +419,7 @@ if mcp_checked:
         assert cached['read_details']['cache_state']=='hit' and cached['text_provider']=='dajiala'
         assert cached['article']['blocks'] and cached['archive']['status']=='ok'
         assert Path(cached['archive']['directory'],'material.json').is_file()
-    asyncio.run(check_wechat())
+    event_loop.run_until_complete(check_wechat())
 Path(os.environ['IR_SEARCH_CREDENTIALS_FILE']).write_text('IMA_MATERIALS_ENABLED=true\nIMA_API_KEY=package_ima_key\nIMA_CLIENT_ID=package_ima_client\nIMA_KNOWLEDGE_BASE_IDS=kb1\n')
 ima_registry=ir_search.build_material_registry()
 assert [a.name for a in ima_registry.entries()]==['ima']
@@ -460,7 +455,7 @@ if mcp_checked:
         assert json.loads(response[0].text)['items'][0]['versions'][0]['source_ref']=='ima://media/m1'
         response=await server.call_tool('retrieve',{'question':'demand','urls':['ima://media/m1']})
         assert json.loads(response[0].text)['materials'][0]['text_provider']=='ima'
-    asyncio.run(check_ima())
+    event_loop.run_until_complete(check_ima())
 Path(os.environ['IR_SEARCH_CREDENTIALS_FILE']).write_text('WISBURG_MATERIALS_ENABLED=true\nWISBURG_API_KEY=package_wisburg_key\n')
 wisburg_registry=ir_search.build_material_registry()
 assert [a.name for a in wisburg_registry.entries()]==['wisburg']
@@ -495,7 +490,7 @@ if mcp_checked:
         m=json.loads(response[0].text)['materials'][0]
         assert m['text_origin']=='provider_summary' and m['archive']['status']=='ok'
         assert all(s['text']==m['text'][s['start_char']:s['end_char']] for s in m['evidence_spans'])
-    asyncio.run(check_wisburg())
+    event_loop.run_until_complete(check_wisburg())
 # New feed discovery must work entirely from the installed wheel, including MCP.
 from ir_search.infrastructure import rss
 from ir_search.infrastructure.web_toolkit import web_toolkit_status
@@ -520,7 +515,7 @@ if mcp_checked:
         response=await server.call_tool('search_materials',rss_request.to_dict())
         v=json.loads(response[0].text)['items'][0]['versions'][0]
         assert v['channel']=='feed' and v['text_provider']=='rss'
-    asyncio.run(check_rss())
+    event_loop.run_until_complete(check_rss())
 # Expanded datasets, catalogs and MCP must load from the wheel with no source checkout.
 from ir_search.adapters.funds import FundAdapter
 from ir_search.adapters.global_macro import GlobalMacroAdapter
@@ -549,11 +544,15 @@ if mcp_checked:
         assert json.loads(response[0].text)['records'][0]['value']=='300'
         response=await server.call_tool('search_materials',{'question':'Tencent','symbols':['00700.HK'],'providers':['hkex'],'dry_run':True})
         assert json.loads(response[0].text)['plan']['selected_providers']==['hkex']
-    asyncio.run(check_expanded())
+    event_loop.run_until_complete(check_expanded())
 assert not any(name == 'ir_search.research' or name.startswith('ir_search.research.') for name in sys.modules)
+event_loop.close()
 print(json.dumps({"installed_only":True, "mcp_checked":mcp_checked}))
 '''
-    result = subprocess.run([sys.executable, "-c", script], cwd=unrelated, env=clean_env,
+    # A file avoids Windows' command-line length limit as this probe grows.
+    script_path = unrelated / "installed_package_probe.py"
+    script_path.write_text(script, encoding="utf-8")
+    result = subprocess.run([sys.executable, str(script_path)], cwd=unrelated, env=clean_env,
                             text=True, encoding="utf-8", capture_output=True, timeout=40)
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout)["installed_only"]

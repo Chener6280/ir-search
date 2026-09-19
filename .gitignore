@@ -16,6 +16,7 @@ templates/cursor-research-workspace/outputs/**/*
 !templates/cursor-research-workspace/outputs/**/
 !templates/cursor-research-workspace/outputs/**/.gitkeep
 .DS_Store
+*.uploading.cfg
 docs/chat_backup_*.md
 .venv/
 .venv-*/
