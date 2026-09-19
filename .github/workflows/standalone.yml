@@ -53,4 +53,21 @@ jobs:
       # Tests that need POSIX mode bits, symlink privilege or the zsh wrapper skip themselves
       # with a stated reason; nothing is left unrun because of the operating system.
       - name: Full offline suite
-        run: python -m pytest -m "not live" -q
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -m "not live" -q -rfE 2>&1 | tee pytest-report.log
+      # Job logs need a signed-in reader; annotations do not. Put the failing test ids and
+      # their one-line reasons where anyone looking at the run can see them.
+      - name: Publish failing tests as annotations
+        if: failure()
+        shell: bash
+        run: |
+          grep -aE '^(FAILED|ERROR) ' pytest-report.log | cut -c1-300 > failures.txt || true
+          echo "failing tests: $(wc -l < failures.txt)"
+          split -l 12 failures.txt failures_part_ || true
+          for part in failures_part_*; do
+            [ -f "$part" ] || continue
+            message=$(sed -e 's/%/%25/g' "$part" | tr '\n' '\r' | sed -e 's/\r/%0A/g')
+            echo "::error title=pytest failures (${{ matrix.os }}, utf8=${{ matrix.utf8 }})::${message}"
+          done
