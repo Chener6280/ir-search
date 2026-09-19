@@ -56,7 +56,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m pytest -m "not live" -q -rfE 2>&1 | tee pytest-report.log
+          python -m pytest -m "not live" -q -rfEs 2>&1 | tee pytest-report.log
       # Job logs need a signed-in reader; annotations do not. Put the failing test ids and
       # their one-line reasons where anyone looking at the run can see them.
       - name: Publish failing tests as annotations

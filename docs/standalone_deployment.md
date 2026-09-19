@@ -79,7 +79,7 @@ $env:IR_SEARCH_CREDENTIALS_FILE = "$env:LOCALAPPDATA\ir-search\credentials.env"
 
 密钥可以原样带到另一台电脑，**路径不行**。`*_CACHE_DIR`、`*_STATE_DIR`、`*_BROWSER_EXECUTABLE`、`*_SSL_CA`、`WECHAT_ACCOUNTS_FILE` 这类键：
 
-- 可选缓存/状态路径留空采用各 adapter 的默认值，多数位于凭证目录旁 `.local/...`，AlphaPai 使用用户缓存目录；微信账号列表不能省略，TLS CA 是否可省略取决于模式。`~/...` 可表示当前用户目录；不要复制另一台电脑的绝对路径；
+- 可选缓存/状态路径留空采用各 adapter 的默认值，多数位于凭证目录旁 `.local/...`，AlphaPai 使用用户缓存目录；微信账号列表不能省略，TLS CA 是否可省略取决于模式。`~/...` 可表示当前用户目录；Windows 不接受 `~其他用户名/...`；不要复制另一台电脑的绝对路径；
 - 写了另一种操作系统的绝对路径（Windows 上的 `/Users/...`，或 macOS/Linux 上的 `C:\...`）时，来源会报 `path_not_absolute_on_this_platform`，并在 `key` 字段指出是哪个键；
 - 配置了 `*_SSL_CA` 但证书文件不在本机时，体检直接报 `ssl_ca_file_missing`，不必等到第一次查询才以 `tls_error` 失败。
 

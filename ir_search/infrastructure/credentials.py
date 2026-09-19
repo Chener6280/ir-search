@@ -39,8 +39,11 @@ def require_local_path(values, *keys, allow_relative=False):
             continue
         try:
             foreign = _absolute_elsewhere(value)
-            if os.name == "nt" and re.match(r"[A-Za-z]:(?![/\\])", value):
-                foreign = True  # Drive-relative paths depend on hidden per-drive cwd.
+            if os.name == "nt" and (re.match(r"[A-Za-z]:(?![/\\])", value)
+                                    or re.match(r"~[^/\\]", value)):
+                # Windows expanduser invents sibling home paths without checking the user.
+                # Only the current user's ~ is portable; drive-relative paths depend on cwd.
+                foreign = True
             expanded = Path(value).expanduser()
             if foreign or not (allow_relative or expanded.is_absolute()):
                 raise ValueError()

@@ -65,7 +65,7 @@ print(p._cursor_key().hex(), flush=True)
         assert creator.returncode == 0, errors
         other, errors = reader.communicate(timeout=10)
         assert reader.returncode == 0, errors
-        disk = (tmp_path / '.local/state/cursor.key').read_text()
+        disk = (tmp_path / '.local/state/cursor.key').read_text(encoding="utf-8")
         assert output.strip() == other.strip() == disk
     finally:
         for process in (creator, reader):
@@ -176,7 +176,7 @@ def test_old_64_hex_image_manifest_is_still_reused(tmp_path, monkeypatch):
     result = export_material(material, tmp_path / 'archive', download_images=True)
     root = Path(result['directory'])
     path = root / 'manifest.json'
-    manifest = json.loads(path.read_text())
+    manifest = json.loads(path.read_text(encoding="utf-8"))
     for image in manifest['images']:
         if image['status'] != 'downloaded':
             continue
@@ -185,9 +185,9 @@ def test_old_64_hex_image_manifest_is_still_reused(tmp_path, monkeypatch):
         image['path'] = full
         manifest['files'][full] = manifest['files'].pop(old)
         markdown = root / 'article.md'
-        markdown.write_text(markdown.read_text().replace(old, full))
+        markdown.write_text(markdown.read_text(encoding="utf-8").replace(old, full), encoding="utf-8")
         manifest['files']['article.md'] = hashlib.sha256(markdown.read_bytes()).hexdigest()
-    path.write_text(json.dumps(manifest))
+    path.write_text(json.dumps(manifest), encoding="utf-8")
     assert export_material(material, tmp_path / 'archive', download_images=True)['status'] == 'reused'
 
 
@@ -215,7 +215,7 @@ def test_ci_annotation_replay(tmp_path):
     import yaml
     if os.name == 'nt': pytest.skip('Shell annotation is exercised by GitHub bash on Windows')
     workflow = Path(fixtures.__file__).resolve().parents[1] / '.github/workflows/standalone.yml'
-    steps = yaml.safe_load(workflow.read_text())['jobs']['package']['steps']
+    steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))['jobs']['package']['steps']
     script = next(step['run'] for step in steps if step.get('name') == 'Publish failing tests as annotations')
     script = script.replace('${{ matrix.os }}', 'macos-latest').replace('${{ matrix.utf8 }}', '1')
     (tmp_path / 'pytest-report.log').write_bytes(b'FAILED tests/test_x.py::test_percent - 20% failure\nERROR tests/test_y.py::test_read\n')
@@ -277,7 +277,7 @@ def test_ci_crash_before_summary_produces_an_annotation(tmp_path):
     import yaml
     if os.name == 'nt': pytest.skip('Shell annotation is exercised by GitHub bash on Windows')
     workflow = Path(fixtures.__file__).resolve().parents[1] / '.github/workflows/standalone.yml'
-    steps = yaml.safe_load(workflow.read_text())['jobs']['package']['steps']
+    steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))['jobs']['package']['steps']
     script = next(step['run'] for step in steps if step.get('name') == 'Publish failing tests as annotations')
     script = script.replace('${{ matrix.os }}', 'macos-latest').replace('${{ matrix.utf8 }}', '1')
     (tmp_path / 'pytest-report.log').write_text('Fatal Python error: Aborted\n')

@@ -52,3 +52,5 @@
 - Windows UTF-8 与默认编码、Linux、基础安装结果以当前提交的 [Actions](https://github.com/Chener6280/ir-search/actions/workflows/standalone.yml) 为准，不沿用 PR #2 的通过数。
 
 未宣称验证：真实 Windows 11 中文系统的 Agent 宿主/浏览器/供应商登录，网络盘锁，真实 DNS rebinding 攻击，长期并发压力，实际数据口径/额度、全市场覆盖。Windows 路径与缓冲读取会在 CI 原生任务执行，Claude 应在物理电脑复测并补交接报告。
+
+首轮原生 Windows CI 发现 `~其他用户名` 会被 Python 拼成未经确认的目录，现明确拒绝 Windows 命名用户简写；同时修复新增旧 manifest 回归测试遗漏 UTF-8 的问题。没有跳过失败用例。新 buffered HTTP/TLS/PyMySQL 取消、文件锁与其他路径检查在首轮已执行通过，最终全套结果仍须看最新提交。
