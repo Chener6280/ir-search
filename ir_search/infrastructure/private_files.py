@@ -20,7 +20,12 @@ def _stamp_written(path):
     """
     with _STAMP_LOCK:
         _LAST_STAMP[0] = stamp = max(time.time_ns(), _LAST_STAMP[0] + 1_000_000)
-    os.utime(path, ns=(stamp, stamp))
+    try:
+        os.utime(path, ns=(stamp, stamp))
+    except OSError:
+        # Ordering is an eviction nicety. A scanner briefly holding the new file on Windows
+        # must not turn a write that already succeeded into a failure.
+        pass
 
 
 def _oldest_first(paths):

@@ -22,3 +22,15 @@ def test_equal_timestamps_fall_back_to_a_stable_name_order(tmp_path):
     assert [p.name for p in _oldest_first(tmp_path.glob("*.json"))] == ["a.json", "b.json", "c.json"]
     _stamp_written(tmp_path / "a.json")
     assert [p.name for p in _oldest_first(tmp_path.glob("*.json"))][-1] == "a.json"
+
+
+def test_a_refused_timestamp_update_does_not_fail_a_completed_write(tmp_path, monkeypatch):
+    from ir_search.infrastructure import private_files
+
+    def refuse(*args, **kwargs):
+        raise PermissionError(13, "file is held by another process")
+
+    monkeypatch.setattr(private_files.os, "utime", refuse)
+    _private_write(tmp_path / "kept.json", b'{"ok": true}')
+    assert (tmp_path / "kept.json").read_bytes() == b'{"ok": true}'
+    assert not list(tmp_path.glob(".write-*"))  # no temporary file is left behind either
