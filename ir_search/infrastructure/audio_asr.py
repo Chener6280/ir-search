@@ -20,9 +20,10 @@ import time
 import uuid
 import zlib
 
+from ._interrupt import wake_blocked_socket
 from ir_search.context import RequestStopped
 from ir_search.registry import DataAdapterError
-from .credentials import SourceConfigError, credentials_path, read_credentials
+from .credentials import SourceConfigError, credentials_path, read_credentials, require_local_path
 from .public_web import _resolve
 
 ENDPOINT = 'wss://openspeech.bytedance.com/api/v3/plan/sauc/bigmodel_nostream'
@@ -55,6 +56,7 @@ def audio_profile(*, values=None, env_file=None):
     if values.get('VOLC_ASR_PLAN', 'agent_plan') != 'agent_plan': raise SourceConfigError()
     key = values.get('VOLC_ASR_API_KEY', '')
     if not key: raise SourceConfigError('source_credentials_missing')
+    require_local_path(values, 'AUDIO_CACHE_DIR', allow_relative=True)
     root = Path(values.get('AUDIO_CACHE_DIR', '.local/audio-cache')).expanduser()
     if not root.is_absolute(): root = credentials_path(env_file).absolute().parent / root
     return AudioProfile(key, root, values.get('VOLC_ASR_MODEL', MODEL),
@@ -141,8 +143,7 @@ def _stream(pcm, profile, context):
             while not done.wait(.05):
                 try: context.check_active()
                 except RequestStopped:
-                    try: ws.socket.shutdown(socket.SHUT_RDWR)
-                    except OSError: pass
+                    wake_blocked_socket(getattr(ws, 'socket', None))
                     return
         watcher = threading.Thread(target=watch, daemon=True); watcher.start()
         config = {'user': {'uid': 'ir-search'},
