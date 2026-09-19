@@ -190,7 +190,7 @@ class MaterialSearchRequest(JsonModel):
                                 ("text_reads_per_source", 0, 10), ("max_chars", 1, 50000), ("web_read_workers", 1, 4)):
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:
-                raise ValueError("Search budget out of range")
+                raise ValueError(f"Search budget out of range: {name} must be an integer between {low} and {high}")
 
 
 @dataclass(frozen=True)
@@ -469,3 +469,6 @@ class MaterialSearchResult(JsonModel):
     source_text_trust: str = "untrusted"
     audit: dict = field(default_factory=dict)
     fallback_requests: list[WebSearchFallback] = field(default_factory=list)
+    # Wall-clock observations. Like request_id they differ between identical requests, so they
+    # live apart from items/coverage, which stay comparable across runs.
+    timing: dict = field(default_factory=dict)
