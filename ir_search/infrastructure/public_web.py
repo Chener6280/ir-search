@@ -81,7 +81,7 @@ _DNS_SLOTS = BoundedSemaphore(8)
 
 # A local proxy running in "fake-ip" mode answers every DNS question with a placeholder from this
 # block (RFC 2544 benchmarking space) and resolves the real name itself, so on such a computer no
-# public name can pass the public-address check in _resolve. The block is a constant on purpose:
+# public name can pass the public-address check in _checked_lookup. The block is a constant on purpose:
 # nothing configurable can widen it to loopback, LAN or metadata addresses.
 _FAKE_IP_BLOCK = ipaddress.ip_network("198.18.0.0/15")
 
@@ -102,7 +102,36 @@ def _fake_ip_https_enabled():
     return value == "true"
 
 
+# The fixed origins the Xueqiu browser gate may tunnel to. Defined once: the gate's CONNECT
+# allow-list, the worker's request filter and the placeholder waiver of _resolve_browser_tunnel
+# are this one set, so they cannot drift apart. Matching is exact: no suffix, no case folding.
+_BROWSER_TUNNEL_HOSTS = frozenset({'xueqiu.com', 'assets.imedao.com', 'xqdoc.imedao.com',
+                                   'g.alicdn.com', 'o.alicdn.com'})
+
+
 def _resolve(host, port, context, scheme=None):
+    # A placeholder may pass only where a certificate check replaces the address check: the caller
+    # states a scheme that means "this process performs TLS with hostname verification on this
+    # very connection". The set is closed and spelled out here, in one place, on purpose. Plain
+    # http and ws, any other spelling, and callers that state no scheme stay blocked.
+    return _checked_lookup(host, port, context, peer_verified=scheme in {"https", "wss"})
+
+
+def _resolve_browser_tunnel(host, port, context, bundled_chromium=False):
+    """DNS door of the Xueqiu CONNECT gate; the only door that gate may use.
+
+    This process performs no TLS on a tunnelled connection, so no scheme describes it. What
+    replaces the address check here is the browser: it verifies the origin certificate and name
+    end to end while the gate only relays bytes. That premise is pinned in code for the Chromium
+    build Playwright ships and for nothing else, so only that build, only the fixed origins and
+    only port 443 can pass a placeholder. Every other rule is the shared one below.
+    """
+    if host not in _BROWSER_TUNNEL_HOSTS or port != 443:
+        raise DataAdapterError("blocked_url")
+    return _checked_lookup(host, port, context, peer_verified=bundled_chromium is True)
+
+
+def _checked_lookup(host, port, context, *, peer_verified):
     # OS resolvers have no portable timeout. Bound the caller's wait and the number
     # of outstanding resolver workers; never resolve the host again when connecting.
     context.check_active()
@@ -136,12 +165,10 @@ def _resolve(host, port, context, scheme=None):
         raise DataAdapterError("blocked_url")
     if any(address in _FAKE_IP_BLOCK for address in addresses):
         # A placeholder says nothing about where the proxy will connect, so its address check is
-        # waived only where a certificate check replaces it: the opt-in is on and the caller states
-        # a scheme that means "this process performs TLS with hostname verification on this very
-        # connection", so the peer must hold a publicly trusted certificate for this exact name.
-        # The set is closed and spelled out here, in one place, on purpose. Plain http and ws, any
-        # other spelling, and callers that state no scheme stay blocked.
-        if scheme not in {"https", "wss"} or not _fake_ip_https_enabled():
+        # waived only where a certificate check replaces it, so that the peer must hold a publicly
+        # trusted certificate for this exact name, and only when the opt-in is on. Which
+        # connections qualify is decided by the two doors above, never here.
+        if not peer_verified or not _fake_ip_https_enabled():
             raise DataAdapterError("fake_ip_blocked")
     return rows[0]
 

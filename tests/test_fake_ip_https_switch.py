@@ -234,9 +234,10 @@ def test_guidance_says_what_the_switch_covers_and_names_what_it_does_not():
     text = _recovery("fake_ip_blocked")["next_action"]
     covered, _, not_covered = text.partition("不适用该开关")
     assert not_covered, "the text must separate what the switch cannot help with"
-    for expected in ("HTTPS/WSS", "证书与主机名校验", "浏览器模式", "语音转写", "Firecrawl"):
+    for expected in ("HTTPS/WSS", "证书与主机名校验", "浏览器模式", "语音转写", "Firecrawl",
+                     "雪球浏览器读取", "5 个固定域名", "443", "Playwright 自带的 Chromium", "端到端"):
         assert expected in covered
-    for expected in ("明文 http", "雪球", "仍报本错误码"):
+    for expected in ("明文 http", "系统 Chrome", "仍报本错误码"):
         assert expected in not_covered
     # The remedy stays inside ir-search: one key in the private credentials file, nothing else.
     assert text.count(KEY) == 1 and "credentials.env" in covered
@@ -246,5 +247,6 @@ def test_example_file_documents_the_switch_and_ships_it_off():
     text = (Path(__file__).resolve().parents[1] / "credentials.env.example").read_text(encoding="utf-8")
     assert f"\n{KEY}=false\n" in text and f"{KEY}=true" not in text
     comment = text[:text.index(f"\n{KEY}=false")].rsplit("WEB_ALLOWED_DOMAINS=", 1)[1]
-    for expected in ("fake-ip", "198.18.0.0/15", "HTTPS", "Plain http", "fake_ip_blocked"):
+    for expected in ("fake-ip", "198.18.0.0/15", "HTTPS", "Plain http", "fake_ip_blocked", "WSS", "speech",
+                     "Firecrawl", "Xueqiu", "five fixed hosts", "port 443", "Chromium", "XUEQIU_BROWSER_CHANNEL=chrome"):
         assert expected in comment

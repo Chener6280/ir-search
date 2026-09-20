@@ -180,7 +180,7 @@ def test_tunnel_has_per_worker_auth_and_fixed_authorities(monkeypatch):
     auth = 'Basic '+base64.b64encode(('ir-search:'+gate.password).encode()).decode()
     assert gate.authenticate(auth) and not gate.authenticate('Basic wrong') and not gate.authenticate('坏')
     assert gate.password not in repr(gate)
-    monkeypatch.setattr(tunnel, '_resolve', lambda *a: pytest.fail('unexpected DNS'))
+    monkeypatch.setattr(tunnel, '_resolve_browser_tunnel', lambda *a: pytest.fail('unexpected DNS'))
     for authority in ('127.0.0.1:443','xueqiu.com:80','xueqiu.com.attacker.test:443','xueqiu.com:443@evil.test'):
         with pytest.raises(DataAdapterError, match='blocked_url'): gate.connect(authority)
 
@@ -193,7 +193,7 @@ def test_tunnel_pins_public_address_and_does_not_resolve_twice(monkeypatch):
         def connect(self, value): calls.append(value)
         def shutdown(self, value): pass
         def close(self): calls.append('closed')
-    monkeypatch.setattr(tunnel, '_resolve', lambda *a: address)
+    monkeypatch.setattr(tunnel, '_resolve_browser_tunnel', lambda *a: address)
     monkeypatch.setattr(socket, 'socket', lambda *a: Sock())
     monkeypatch.setattr(socket, 'getaddrinfo', lambda *a, **k: pytest.fail('second resolution'))
     gate=tunnel._Gate(RequestContext()); gate.connect('xueqiu.com:443'); gate.close()

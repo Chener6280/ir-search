@@ -30,9 +30,10 @@ _rule('tls_error tls_not_supported blocked_url browser_robots_denied', 'transpor
 _rule('fake_ip_blocked', 'transport_policy',
       '本机 DNS 返回的是代理 fake-ip 模式的占位地址（198.18.0.0/15），公网地址校验因此拦截了本次连接；'
       '这是本机网络环境所致，不是目标站点的问题。由本人在私有 credentials.env 中设置 PUBLIC_WEB_FAKE_IP_HTTPS=true 后，'
-      '只有 ir-search 进程自己直接发出、并做证书与主机名校验的 HTTPS/WSS 连接可以放行：网页与接口读取、浏览器模式网页读取、'
-      '语音转写，以及 Firecrawl 读取对 https 目标的本地核对。以下情形不适用该开关，开启后仍报本错误码：'
-      '明文 http 目标（含交给 Firecrawl 的 http 目标及其报告的 http 最终地址）；雪球浏览器读取（隧道连接不由本进程做 TLS，尚未接入）。', True)
+      '只有对端身份由证书与主机名校验确认的连接可以放行：ir-search 进程自己直接发出的 HTTPS/WSS 连接（网页与接口读取、'
+      '浏览器模式网页读取、语音转写，以及 Firecrawl 读取对 https 目标的本地核对）；雪球浏览器读取（仅限 5 个固定域名的 443 端口，'
+      '且仅限 Playwright 自带的 Chromium，由浏览器端到端校验证书）。以下情形不适用该开关，开启后仍报本错误码：'
+      '明文 http 目标（含交给 Firecrawl 的 http 目标及其报告的 http 最终地址）；雪球浏览器读取改用系统 Chrome 时。', True)
 _rule('timeout network xhs_backend_unavailable browser_unavailable', 'availability',
       '检查服务是否运行及网络状况；保留已得结果，按诊断决定下一次有界请求。', True)
 _rule('cancelled deadline_exceeded operation_budget_exhausted browser_budget_exhausted', 'budget',

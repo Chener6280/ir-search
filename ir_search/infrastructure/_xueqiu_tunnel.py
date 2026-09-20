@@ -2,6 +2,9 @@
 
 Chromium owns TLS and verifies the origin certificate. This gate resolves and
 pins only fixed public origin addresses; it does not decrypt HTTPS or log URLs.
+
+It must stay a byte relay with no TLS code of its own: the fake-ip waiver of its DNS
+door (public_web._resolve_browser_tunnel) rests on the browser's end-to-end check.
 """
 from __future__ import annotations
 
@@ -16,10 +19,9 @@ from threading import Lock
 
 from ir_search.context import RequestStopped
 from ir_search.registry import DataAdapterError
-from .public_web import _resolve
+from .public_web import _BROWSER_TUNNEL_HOSTS, _resolve_browser_tunnel
 
-HOSTS = frozenset({'xueqiu.com', 'assets.imedao.com', 'xqdoc.imedao.com',
-                   'g.alicdn.com', 'o.alicdn.com'})
+HOSTS = _BROWSER_TUNNEL_HOSTS  # one definition, shared with the DNS door; never a second list
 
 
 @dataclass
@@ -32,6 +34,9 @@ class _Gate:
     failure: str = ''
     lock: object = field(default_factory=Lock, repr=False)
     sockets: set = field(default_factory=set, repr=False)
+    # True only when the browser behind this gate is the Chromium build Playwright ships. Only then
+    # may the DNS door pass a fake-ip placeholder; a system Chrome or Edge never gets that waiver.
+    bundled_chromium: bool = False
 
     def authenticate(self, header):
         expected = 'Basic ' + base64.b64encode(('ir-search:' + self.password).encode()).decode()
@@ -44,7 +49,7 @@ class _Gate:
         with self.lock:
             if self.connections >= 40: raise DataAdapterError('browser_budget_exhausted')
             self.connections += 1
-        address = _resolve(authority[:-4], 443, self.context)
+        address = _resolve_browser_tunnel(authority[:-4], 443, self.context, self.bundled_chromium)
         family, kind, protocol, _, sockaddr = address
         sock = socket.socket(family, kind, protocol)
         try:
