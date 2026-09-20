@@ -87,6 +87,26 @@ def test_fatal_error_is_sanitized_and_circuit_stops_further_connections(monkeypa
     assert "must_not_escape" not in json.dumps(run_data_acceptance([probe()], live=True))
 
 
+@pytest.mark.parametrize("code", ["tls_handshake_interrupted", "anonymous_access_refused"])
+def test_the_two_transport_refusals_open_the_circuit_on_their_first_occurrence(monkeypatch, code):
+    if code not in DataAdapterError.KINDS:
+        pytest.skip("the commit that introduces this code is not part of this tree")
+    source, _ = setup(monkeypatch)
+    source.error = DataAdapterError(code)
+    report = run_data_acceptance([probe(), replace(probe(), name="second_query")], live=True)
+    assert len(source.calls) == 1  # a failed attempt is never repeated, and the second probe is skipped
+    assert code in report["probes"][0]["attempts"][0]["diagnostics"]
+    assert report["probes"][1]["attempts"][0]["diagnostics"] == ["provider_circuit_open", code]
+
+
+def test_a_plain_network_failure_still_leaves_the_circuit_closed(monkeypatch):
+    source, _ = setup(monkeypatch)
+    source.error = DataAdapterError("network")
+    report = run_data_acceptance([probe(), replace(probe(), name="second_query")], live=True)
+    assert len(source.calls) == 2
+    assert "provider_circuit_open" not in json.dumps(report)
+
+
 def test_quality_reports_unseen_symbols_nulls_dates_and_only_observed_coverage():
     source = Upstream()
     registry = DataRegistry()
