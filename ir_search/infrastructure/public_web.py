@@ -173,6 +173,10 @@ def _checked_lookup(host, port, context, *, peer_verified):
     return rows[0]
 
 
+class _HandshakeInterrupted(Exception):
+    """TCP was connected and the connection ended inside the TLS handshake, before any TLS answer."""
+
+
 class _Connection(http.client.HTTPConnection):
     def __init__(self, host, port, *, address, tls, timeout):
         # HTTPConnection defaults to port 80 even when its socket is wrapped in
@@ -188,7 +192,19 @@ class _Connection(http.client.HTTPConnection):
         self.sock.settimeout(self.timeout)
         self.sock.connect(sockaddr)
         if self._tls is not None:
-            self.sock = self._tls.wrap_socket(self.sock, server_hostname=self.host)
+            try:
+                self.sock = self._tls.wrap_socket(self.sock, server_hostname=self.host)
+            except ssl.SSLCertVerificationError:
+                raise  # the peer answered and its identity was not accepted: tls_error
+            except (ConnectionError, ssl.SSLEOFError, ssl.SSLZeroReturnError):
+                # Decided by where it happened, not by the exception class: the same event is a
+                # reset or an abort on Windows and an SSL end-of-file elsewhere. Caught here, ahead
+                # of the general ssl.SSLError mapping in _request, which would call it tls_error.
+                raise _HandshakeInterrupted() from None
+            except ssl.SSLError as exc:
+                if getattr(exc, "reason", None) == "UNEXPECTED_EOF_WHILE_READING":
+                    raise _HandshakeInterrupted() from None
+                raise  # an alert or a protocol mismatch is a TLS answer: tls_error
 
 
 def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_MAX_BYTES, signed_download=False,
@@ -306,6 +322,9 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
         return _Reply(response.status, response.getheader("Content-Type", ""), "", bytes(raw), datetime.now(timezone.utc), safe_headers)
     except (DataAdapterError, RequestStopped):
         raise
+    except _HandshakeInterrupted:
+        context.check_active()  # a stop that closed the socket mid-handshake stays a stop
+        raise DataAdapterError("tls_handshake_interrupted") from None
     except ssl.SSLError:
         context.check_active()
         raise DataAdapterError("tls_error") from None

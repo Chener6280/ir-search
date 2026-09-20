@@ -34,6 +34,10 @@ _rule('fake_ip_blocked', 'transport_policy',
       '浏览器模式网页读取、语音转写，以及 Firecrawl 读取对 https 目标的本地核对）；雪球浏览器读取（仅限 5 个固定域名的 443 端口，'
       '且仅限 Playwright 自带的 Chromium，由浏览器端到端校验证书）。以下情形不适用该开关，开启后仍报本错误码：'
       '明文 http 目标（含交给 Firecrawl 的 http 目标及其报告的 http 最终地址）；雪球浏览器读取改用系统 Chrome 时。', True)
+_rule('tls_handshake_interrupted', 'availability',
+      'TCP 已连通，但 TLS 握手在收到服务器任何应答之前连接就结束了。这不是证书问题，也不是一般的网络抖动：'
+      '同一主机、同一出口下通常会重复出现，重试无益。本次请求内停止该来源并如实记录缺口；'
+      '需要该数据时改用已声明的其他来源。', True)
 _rule('timeout network xhs_backend_unavailable browser_unavailable', 'availability',
       '检查服务是否运行及网络状况；保留已得结果，按诊断决定下一次有界请求。', True)
 _rule('cancelled deadline_exceeded operation_budget_exhausted browser_budget_exhausted', 'budget',

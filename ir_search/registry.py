@@ -95,6 +95,7 @@ class DataAdapterError(Exception):
         "no_extracted_text": FailureKind.UPSTREAM_SCHEMA,
         "dependency_missing": FailureKind.UNIMPLEMENTED,
         "tls_error": FailureKind.BLOCKED_BY_POLICY,
+        "tls_handshake_interrupted": FailureKind.NETWORK,
         "tls_not_supported": FailureKind.BLOCKED_BY_POLICY,
         "units_not_configured": FailureKind.BLOCKED_BY_POLICY,
         "invalid_cursor": FailureKind.BLOCKED_BY_POLICY,
