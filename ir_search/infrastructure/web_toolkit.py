@@ -131,9 +131,11 @@ def fetch_firecrawl_document(url, *, context, max_chars=20000, allowed_domains=(
         raise DataAdapterError('source_config_error') from None
     if profile is None:
         raise DataAdapterError('source_disabled')
-    # This does not assert that remote DNS resolves identically to local DNS.
+    # This does not assert that remote DNS resolves identically to local DNS. The URL's own scheme
+    # is stated so that an https target may pass a fake-ip placeholder when the opt-in is on; this
+    # process never connects to the target, the remote provider does (skipTlsVerification: False).
     try:
-        _resolve(host, port, context)
+        _resolve(host, port, context, parsed.scheme)
     except OSError:
         raise DataAdapterError('network') from None
     payload = {'url': url, 'formats': ['rawHtml'], 'onlyMainContent': False,
@@ -167,7 +169,7 @@ def fetch_firecrawl_document(url, *, context, max_chars=20000, allowed_domains=(
     if not _allowed_domain(final_host, allowed_domains) or (parsed.scheme == 'https' and final.scheme != 'https'):
         raise DataAdapterError('blocked_url')
     try:
-        _resolve(final_host, final_port, context)
+        _resolve(final_host, final_port, context, final.scheme)  # the reported URL's own scheme
     except OSError:
         raise DataAdapterError('network') from None
     context.check_active()

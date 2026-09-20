@@ -136,10 +136,12 @@ def _resolve(host, port, context, scheme=None):
         raise DataAdapterError("blocked_url")
     if any(address in _FAKE_IP_BLOCK for address in addresses):
         # A placeholder says nothing about where the proxy will connect, so its address check is
-        # waived only where the certificate check replaces it: the opt-in is on and the caller
-        # states https, where the peer must hold a publicly trusted certificate for this exact
-        # name. Plain http, and callers that state no scheme, stay blocked.
-        if scheme != "https" or not _fake_ip_https_enabled():
+        # waived only where a certificate check replaces it: the opt-in is on and the caller states
+        # a scheme that means "this process performs TLS with hostname verification on this very
+        # connection", so the peer must hold a publicly trusted certificate for this exact name.
+        # The set is closed and spelled out here, in one place, on purpose. Plain http and ws, any
+        # other spelling, and callers that state no scheme stay blocked.
+        if scheme not in {"https", "wss"} or not _fake_ip_https_enabled():
             raise DataAdapterError("fake_ip_blocked")
     return rows[0]
 

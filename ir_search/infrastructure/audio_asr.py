@@ -122,7 +122,10 @@ def _stream(pcm, profile, context):
     except ImportError: raise DataAdapterError('audio_dependency_missing') from None
     context.begin_operation()
     host = 'openspeech.bytedance.com'
-    family, kind, protocol, _, sockaddr = _resolve(host, 443, context)
+    # "wss" is a statement about this very connection: host and endpoint are constants
+    # (AudioProfile refuses any other endpoint) and the socket below is wrapped with certificate
+    # and hostname verification for that host. Review it if the endpoint ever becomes configurable.
+    family, kind, protocol, _, sockaddr = _resolve(host, 443, context, 'wss')
     raw = socket.socket(family, kind, protocol)
     ws, watcher = None, None
     done = threading.Event()
@@ -132,7 +135,9 @@ def _stream(pcm, profile, context):
     try:
         raw.settimeout(min(10, context.remaining_seconds()))
         raw.connect(sockaddr)
-        ws = connect(profile.endpoint, sock=raw, ssl=ssl.create_default_context(), server_hostname=host,
+        tls = ssl.create_default_context()
+        tls.minimum_version = ssl.TLSVersion.TLSv1_2  # explicit: do not rely on the interpreter's default
+        ws = connect(profile.endpoint, sock=raw, ssl=tls, server_hostname=host,
             proxy=None, compression=None, additional_headers={
                 'X-Api-Key': profile.api_key, 'X-Api-Resource-Id': profile.resource,
                 'X-Api-Connect-Id': str(uuid.uuid4()), 'X-Api-Request-Id': str(uuid.uuid4())},
