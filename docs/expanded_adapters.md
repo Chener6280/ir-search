@@ -69,6 +69,7 @@ MCP 使用相同数据集和字段。新宏观数据默认 `frequency="native"`�
 ## 必须保留的口径
 
 - 宏观日期是观察期首日，月度/年度不是发布日期。年度日期范围若不包含当年 1 月 1 日，就不会包含该年观测。返回最新修订快照，不支持 `as_of`，不伪装 ALFRED 或历史版本。缺失标记保留 null；不填零、不前向填充。每次最多 5 个序列、每序列最多 5,000 个观测。世界银行与 ECB 的序列身份/币种字段要与请求匹配；FRED 请求头采用标准 Python HTTP 客户端标识以兼容其 CSV 服务。
+- 宏观结果带 `series_coverage`：每个请求的 symbol 一行、按请求顺序，描述"源站对所请求窗口的应答"，在本地 `limit` 截断之前计算，不受 `fields` 选择影响。字段：`symbol`、`provider`、`source_series_id`、`frequency`、`date_field`、`requested_start`、`requested_end`、`status`、`first_date`、`last_date`、`n_obs`、`n_missing`、`n_returned`，失败时另有 `code`。`first_date`/`last_date`/`n_obs` 只计有值观测，源站返回但无值的行计入 `n_missing`；`n_returned` 是本次 `records` 里该序列的行数，与 `n_obs + n_missing` 不等说明被 `limit` 截断或被 `allow_partial=false` 扣留（此时覆盖行照常返回）。`status` 只由确定事实决定：`failed`（读取出错）、`truncated`（源站自己报告还有未读到的行）、`empty`（窗口内没有有值观测）、`ok`（其余）。这里只给事实：不设阈值，不判断"过期"或"不完整"，预期跨度由调用方自己比对。整次调用全部序列失败时没有覆盖行；其他数据集暂时返回空列表。
 - 单位净值、累计净值、复权净值是不同字段。净值日期、公告日期分开；JYDB 当前映射缺币种、复权净值和合并标记，返回 null 和 partial。不能靠名称将 A/C、场内与场外份额自动合并。
 - 基金份额源表以万份计，本接口转为份。`share_class_shares` 对应 `FUNDSHARE`；`total_shares` 对应 `F_UNIT_TOTAL`，可能涉及分级基金总份额；`combined_shares` 对应 `FUNDSHARE_TOTAL`。保留合并标记、流通份额和变化原因，不把份额变化自动视为净申购或资金流入。
 - 基金持仓日期是报告期末，公告日期另外提供。金额为源币种元、数量为股，占净值百分比除以 100 返回 ratio；季度披露可能仅十大持仓，不作全仓重建。没有自动用披露后的持仓回填历史。

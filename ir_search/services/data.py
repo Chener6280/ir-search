@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import copy
 import math
+from collections import Counter
 from decimal import Decimal
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Optional
 
@@ -95,6 +96,7 @@ def get_data(request: DataRequest, *, registry: Optional[DataRegistry] = None,
             page = adapter.query_data(request, context=context)
             context.check_active()
             _validate_page(page, request, cap, result.definition)
+            _validate_series_coverage(page, request, cap, result.definition)
             result.diagnostics.extend(Diagnostic(
                 d.code, "query_data", provider=cap.provider, failure_kind=d.failure_kind,
                 adapter_mode=cap.adapter_mode, message="provider_reported",
@@ -119,6 +121,8 @@ def get_data(request: DataRequest, *, registry: Optional[DataRegistry] = None,
                     result.next_cursor = None
                     result.status = Status.UNAVAILABLE
                     result.diagnostics.append(_diag("partial_data_not_allowed", FailureKind.BLOCKED_BY_POLICY, cap))
+            # After the records are final: withheld records still leave the facts about each series.
+            result.series_coverage = _series_coverage(page, result.records)
             return result
         except RequestStopped as exc:
             result.diagnostics.append(_diag(exc.code, exc.failure_kind, cap))
@@ -139,6 +143,56 @@ def get_data(request: DataRequest, *, registry: Optional[DataRegistry] = None,
             result.diagnostics.append(_diag("provider_call_failed", FailureKind.UNKNOWN, cap))
             return result
     return result
+
+
+_COVERAGE_KEYS = ("symbol", "provider", "source_series_id", "frequency", "date_field", "requested_start",
+                  "requested_end", "status", "first_date", "last_date", "n_obs", "n_missing")
+
+
+def _validate_series_coverage(page, request, cap, definition):
+    """Facts about series are a closed shape: nothing that could carry an observation may ride along."""
+    rows = page.series_coverage
+    if not isinstance(rows, list):
+        raise ValueError("Series coverage must be a list")
+    if not rows:
+        return
+    if [row.get("symbol") if isinstance(row, dict) else None for row in rows] != list(request.symbols):
+        raise ValueError("Expected one coverage row per requested symbol, in request order")
+    for row in rows:
+        failed = row.get("status") == "failed"
+        if set(row) != set(_COVERAGE_KEYS) | ({"code"} if failed else set()):
+            raise ValueError("Unexpected series coverage fields")
+        if (row["provider"] != cap.provider or row["date_field"] != definition.date_field or not definition.date_field
+                or row["requested_start"] != request.start or row["requested_end"] != request.end
+                or any(not isinstance(row[name], str) or not row[name] for name in ("source_series_id", "frequency"))
+                or row["status"] not in {"ok", "empty", "truncated", "failed"}):
+            raise ValueError("Series coverage does not describe this request")
+        first, last, n_obs, n_missing = (row[name] for name in ("first_date", "last_date", "n_obs", "n_missing"))
+        if failed:
+            if row["code"] not in DataAdapterError.KINDS or any(v is not None for v in (first, last, n_obs, n_missing)):
+                raise ValueError("A failed series has a code and no facts")
+            continue
+        if any(type(v) is not int or v < 0 for v in (n_obs, n_missing)):
+            raise ValueError("Invalid series coverage counts")
+        if n_obs == 0:
+            if first is not None or last is not None or row["status"] == "ok":
+                raise ValueError("A series without observations has no dates")
+        elif (any(not isinstance(v, date) or isinstance(v, datetime) for v in (first, last)) or row["status"] == "empty"
+              or not request.start <= first <= last <= request.end):
+            raise ValueError("Series coverage dates fall outside the requested window")
+
+
+def _series_coverage(page, records):
+    """Copy the adapter's facts and add the one only this layer knows: what is really returned."""
+    returned = Counter(row.get("symbol") for row in records)
+    rows = []
+    for source in page.series_coverage:
+        row = {name: source[name] for name in _COVERAGE_KEYS}
+        row["n_returned"] = returned.get(source["symbol"], 0)
+        if "code" in source:
+            row["code"] = source["code"]
+        rows.append(row)
+    return rows
 
 
 def _diag(code, failure_kind, cap=None):

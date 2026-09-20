@@ -287,6 +287,10 @@ class DataPage(JsonModel):
     complete: bool = False
     next_cursor: Optional[str] = None
     diagnostics: list[Diagnostic] = field(default_factory=list)
+    # One row of facts per requested symbol about the source's answer for the requested window,
+    # taken before any local cut. Facts only: no threshold, no judgement, no observation value.
+    # An adapter that does not report them leaves the list empty. The service adds n_returned.
+    series_coverage: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -300,6 +304,9 @@ class DataResult(JsonModel):
     complete: bool = False
     next_cursor: Optional[str] = None
     diagnostics: list[Diagnostic] = field(default_factory=list)
+    # See DataPage.series_coverage. Kept even when records are withheld by allow_partial=False:
+    # these are facts about series, never observations.
+    series_coverage: list[dict[str, Any]] = field(default_factory=list)
     schema_version: str = SCHEMA_VERSION
 
 

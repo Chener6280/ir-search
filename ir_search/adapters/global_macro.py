@@ -50,8 +50,13 @@ class GlobalMacroAdapter:
         complete=True
         failures=[]
         successful=0
+        coverage=[]
         for symbol,spec in zip(request.symbols,specs):
             context.check_active()
+            # Facts about the source's answer for this window, taken here: before the limit cut
+            # below and whatever fields were selected. No threshold and no judgement.
+            facts=dict(symbol=symbol,provider=self.name,source_series_id=spec['series_id'],frequency=spec['frequency'],
+                date_field='observation_date',requested_start=request.start,requested_end=request.end)
             try:
                 rows,partial=self._read(symbol,spec,request,context)
                 successful+=1
@@ -59,9 +64,15 @@ class GlobalMacroAdapter:
                 if partial:diagnostics.append(Diagnostic('macro_source_truncated','query_data',self.name,failure_kind=FailureKind.UPSTREAM_SCHEMA))
                 if not rows:complete=False;diagnostics.append(Diagnostic('macro_series_no_observations','query_data',self.name,message=symbol))
                 records.extend(rows)
+                valued=[r['observation_date'] for r in rows if r['value'] is not None] # FRED "." rows are not observations
+                # truncated wins over empty: the source said it holds more than was read.
+                facts.update(status='truncated' if partial else 'ok' if valued else 'empty',first_date=min(valued,default=None),
+                    last_date=max(valued,default=None),n_obs=len(valued),n_missing=len(rows)-len(valued))
             except DataAdapterError as exc:
                 failures.append(exc)
                 complete=False;diagnostics.append(Diagnostic(exc.code,'query_data',self.name,failure_kind=exc.failure_kind,message=symbol))
+                facts.update(status='failed',first_date=None,last_date=None,n_obs=None,n_missing=None,code=exc.code)
+            coverage.append(facts)
         if failures and successful==0:raise failures[0]
         records.sort(key=lambda r:(r['symbol'],r['observation_date']))
         if len({(r['symbol'],r['observation_date']) for r in records})!=len(records):raise DataAdapterError('upstream_schema')
@@ -69,7 +80,8 @@ class GlobalMacroAdapter:
         selected=_selected(request)
         return DataPage([{k:v for k,v in r.items() if k in selected} for r in records[:request.limit]],
             Provenance(self.name,'Official FRED / World Bank / ECB observations; row source_url identifies publisher',datetime.now(timezone.utc),
-                authority=SourceAuthority.PUBLIC_MARKET_DATA,adapter_mode=AdapterMode.LIVE),complete=complete,diagnostics=diagnostics)
+                authority=SourceAuthority.PUBLIC_MARKET_DATA,adapter_mode=AdapterMode.LIVE),complete=complete,diagnostics=diagnostics,
+            series_coverage=coverage)
 
     def _read(self,symbol,spec,request,context):
         source,series=spec['source'],spec['series_id'];start,end=request.start,request.end
