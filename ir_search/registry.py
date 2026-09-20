@@ -75,6 +75,7 @@ class DataAdapterError(Exception):
         "wechat_article_mismatch": FailureKind.UPSTREAM_SCHEMA,
         "wechat_origin_unavailable": FailureKind.BLOCKED_BY_POLICY,
         "entitlement_denied": FailureKind.BLOCKED_BY_POLICY,
+        "anonymous_access_refused": FailureKind.BLOCKED_BY_POLICY,
         "authentication_failed": FailureKind.BLOCKED_BY_POLICY,
         "fmp_request_budget_exceeded": FailureKind.BUDGET_EXHAUSTED,
         "tushare_call_budget_exhausted": FailureKind.BUDGET_EXHAUSTED,

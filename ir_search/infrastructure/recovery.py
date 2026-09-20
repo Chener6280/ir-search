@@ -25,6 +25,10 @@ _rule('quota rate_limit', 'access_or_limit',
       '检查访问权限或供应商限额；限流后等待恢复再发起新请求。', True)
 _rule('entitlement_denied', 'scope_permission',
       '当前资源权限不足；保留缺口，仅继续调用方已选择且独立授权的其他资源。')
+_rule('anonymous_access_refused', 'access_or_limit',
+      '站点拒绝了这次不带任何凭证的公开访问（HTTP 403）。这里没有账户或套餐可言，不是权限不足；'
+      '站点为何拒绝，这里并不知道，也不作推测。本次请求内停止该来源，不重试，不尝试任何绕过，如实记录缺口；'
+      '需要该内容时由本人在浏览器中阅读，或改用已声明的其他来源。', True)
 _rule('tls_error tls_not_supported blocked_url browser_robots_denied', 'transport_policy',
       '检查目标、传输配置和平台访问条件，保持现有安全边界。', True)
 _rule('fake_ip_blocked', 'transport_policy',

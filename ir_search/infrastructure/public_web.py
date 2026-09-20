@@ -209,8 +209,17 @@ class _Connection(http.client.HTTPConnection):
 
 def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_MAX_BYTES, signed_download=False,
              scoped_download_headers=None, public_feed=False, preserve_headers=False, dns_mode='system',
-             search_api_errors=False):
+             search_api_errors=False, anonymous=False):
     parsed, host, port = _url(url, signed_download=signed_download or public_feed)
+    # anonymous=True is the caller's statement that this request carries no credential of any
+    # kind. It only changes how a 403 is reported. A statement the transport can see to be false is
+    # refused before any connection: a plain GET with nothing but these headers is all it may be.
+    if type(anonymous) is not bool or (anonymous and (
+            method != "GET" or body is not None or signed_download or public_feed
+            or scoped_download_headers is not None
+            or any(not isinstance(name, str) or name.lower() not in {"accept", "accept-language", "user-agent"}
+                   for name in (headers or {})))):
+        raise DataAdapterError("blocked_url")
     # Only fixed search APIs may return a bounded error body to their own parser.
     # Generic page readers retain strict non-200 rejection; no error body is evidence.
     if type(search_api_errors) is not bool or (search_api_errors and (
@@ -291,6 +300,10 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
         if response.status != 200 and not error_reply:
             code = {401: "authentication_failed", 402: "entitlement_denied", 403: "entitlement_denied",
                     404: "not_found", 429: "rate_limit"}.get(response.status, "network")
+            if response.status == 403 and anonymous:
+                # No account is involved, so this is not an entitlement: the site refused this
+                # anonymous client. Why it did is not known here and is not guessed.
+                code = "anonymous_access_refused"
             error = DataAdapterError(code)
             error.http_status = response.status  # Safe numeric context, never response bodies or credentials.
             raise error
@@ -363,7 +376,7 @@ def fetch_public_document(url: str, *, context, max_chars: int = 20000, allowed_
         if current in visited:
             raise DataAdapterError("web_redirect_limit")
         visited.add(current)
-        reply = _request(current, context=context)
+        reply = _request(current, context=context, anonymous=True)  # a public page, read with no credential
         if reply.status != 200:
             if not reply.location or hops >= 3:
                 raise DataAdapterError("web_redirect_limit")

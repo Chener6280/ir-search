@@ -92,7 +92,7 @@ class GlobalMacroAdapter:
         if source=='FRED':
             # FRED's CSV edge accepts the standard Python client identifier; a custom UA timed out in live acceptance.
             headers['User-Agent']=f'Python-urllib/{sys.version_info.major}.{sys.version_info.minor}'
-        reply=self._transport(url,context=context,max_bytes=4*1024*1024,headers=headers)
+        reply=self._transport(url,context=context,max_bytes=4*1024*1024,headers=headers,anonymous=True) # public series, no credential
         if reply.status!=200:raise DataAdapterError('network') # No redirect to a different data origin.
         try:
             text=reply.body.decode('utf-8-sig');rows=[];updated=None;partial=False
