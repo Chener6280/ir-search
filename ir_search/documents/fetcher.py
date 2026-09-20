@@ -150,6 +150,9 @@ def _open_once(opener, req: urllib.request.Request, timeout_sec: int):
                               RequestContext(timeout_seconds=timeout_sec), max_bytes=5_000_000)
     except DataAdapterError as exc:
         if exc.code == "blocked_url": raise UrlBlockedError("blocked public URL or address") from None
+        if exc.code == "fake_ip_blocked":
+            # The same policy block, with its cause kept readable: the target was never judged.
+            raise UrlBlockedError("fake_ip_blocked: local DNS answered with a fake-ip placeholder address") from None
         raise RuntimeError(exc.code) from None
     headers = Message()
     headers['content-type'] = reply.content_type
