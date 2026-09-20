@@ -230,6 +230,18 @@ def test_new_code_is_a_policy_block_with_guidance_of_its_own():
     assert _stop_source("fake_ip_blocked") and _stop_source("blocked_url")
 
 
+def test_guidance_says_what_the_switch_covers_and_names_what_it_does_not():
+    text = _recovery("fake_ip_blocked")["next_action"]
+    covered, _, not_covered = text.partition("不适用该开关")
+    assert not_covered, "the text must separate what the switch cannot help with"
+    for expected in ("HTTPS/WSS", "证书与主机名校验", "浏览器模式", "语音转写", "Firecrawl"):
+        assert expected in covered
+    for expected in ("明文 http", "雪球", "仍报本错误码"):
+        assert expected in not_covered
+    # The remedy stays inside ir-search: one key in the private credentials file, nothing else.
+    assert text.count(KEY) == 1 and "credentials.env" in covered
+
+
 def test_example_file_documents_the_switch_and_ships_it_off():
     text = (Path(__file__).resolve().parents[1] / "credentials.env.example").read_text(encoding="utf-8")
     assert f"\n{KEY}=false\n" in text and f"{KEY}=true" not in text
