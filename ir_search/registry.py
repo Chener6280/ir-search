@@ -89,6 +89,7 @@ class DataAdapterError(Exception):
         "upstream_schema": FailureKind.UPSTREAM_SCHEMA,
         "response_too_large": FailureKind.UPSTREAM_SCHEMA,
         "blocked_url": FailureKind.BLOCKED_BY_POLICY,
+        "fake_ip_blocked": FailureKind.BLOCKED_BY_POLICY,
         "web_redirect_limit": FailureKind.BLOCKED_BY_POLICY,
         "web_content_unsupported": FailureKind.UNIMPLEMENTED,
         "no_extracted_text": FailureKind.UPSTREAM_SCHEMA,

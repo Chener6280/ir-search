@@ -79,8 +79,30 @@ def _allowed_domain(host, domains):
 
 _DNS_SLOTS = BoundedSemaphore(8)
 
+# A local proxy running in "fake-ip" mode answers every DNS question with a placeholder from this
+# block (RFC 2544 benchmarking space) and resolves the real name itself, so on such a computer no
+# public name can pass the public-address check in _resolve. The block is a constant on purpose:
+# nothing configurable can widen it to loopback, LAN or metadata addresses.
+_FAKE_IP_BLOCK = ipaddress.ip_network("198.18.0.0/15")
 
-def _resolve(host, port, context):
+
+def _fake_ip_https_enabled():
+    """Read the opt-in from the private credentials file only.
+
+    It takes no argument and reads no environment variable, so a request, a tool argument or a
+    URL cannot turn it on.
+    """
+    from .credentials import read_credentials, SourceConfigError
+    try:
+        value = read_credentials().get("PUBLIC_WEB_FAKE_IP_HTTPS", "false")
+    except SourceConfigError:
+        raise DataAdapterError("source_config_error") from None
+    if value not in {"true", "false"}:
+        raise DataAdapterError("source_config_error")
+    return value == "true"
+
+
+def _resolve(host, port, context, scheme=None):
     # OS resolvers have no portable timeout. Bound the caller's wait and the number
     # of outstanding resolver workers; never resolve the host again when connecting.
     context.check_active()
@@ -107,8 +129,18 @@ def _resolve(host, port, context):
     if answer.get("failed"):
         raise DataAdapterError("network")
     rows = answer["rows"]
-    if not rows or any(not ipaddress.ip_address(row[4][0].split("%", 1)[0]).is_global for row in rows):
+    addresses = [ipaddress.ip_address(row[4][0].split("%", 1)[0]) for row in rows]
+    # Every address outside the placeholder block keeps the original rule: one non-public answer
+    # rejects the whole set, so a placeholder can never bring a private address in with it.
+    if not rows or any(not address.is_global for address in addresses if address not in _FAKE_IP_BLOCK):
         raise DataAdapterError("blocked_url")
+    if any(address in _FAKE_IP_BLOCK for address in addresses):
+        # A placeholder says nothing about where the proxy will connect, so its address check is
+        # waived only where the certificate check replaces it: the opt-in is on and the caller
+        # states https, where the peer must hold a publicly trusted certificate for this exact
+        # name. Plain http, and callers that state no scheme, stay blocked.
+        if scheme != "https" or not _fake_ip_https_enabled():
+            raise DataAdapterError("fake_ip_blocked")
     return rows[0]
 
 
@@ -178,7 +210,7 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
             from .public_dns import _google_public_address
             address = _google_public_address(host, port, context)
         else:
-            address = _resolve(host, port, context)
+            address = _resolve(host, port, context, parsed.scheme)
         tls = None
         if parsed.scheme == "https":
             tls = ssl.create_default_context()
