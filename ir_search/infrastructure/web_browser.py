@@ -24,8 +24,31 @@ def _browser_status():
 
 from ir_search.context import RequestStopped
 from ir_search.documents.html import extract_html_document
-from ir_search.infrastructure.public_web import _url, _allowed_domain
+from ir_search.infrastructure.public_web import _url, _allowed_domain, _fake_ip_https_enabled
 from ir_search.registry import DataAdapterError
+
+_SWITCH_SNAPSHOT = "switch_snapshot.env"
+
+
+def _switch_snapshot(directory):
+    """Freeze the one network opt-in a worker may need into the worker's own temporary directory.
+
+    A worker resolves names itself, so it has to know PUBLIC_WEB_FAKE_IP_HTTPS, but it is kept
+    away from the real credentials file. It gets a file holding that single boolean line and
+    nothing else. The value is read here, in the parent, the usual way, and is frozen when the
+    worker starts: a later edit of the real file reaches the next worker, never a running one.
+    Invalid or unreadable configuration is written as false. It must never waive anything, and a
+    worker on a computer that does not need the opt-in must not start failing because of it.
+    """
+    try:
+        enabled = _fake_ip_https_enabled()
+    except DataAdapterError:
+        enabled = False
+    path = os.path.join(directory, _SWITCH_SNAPSHOT)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # never follows or reuses an existing entry
+    with os.fdopen(fd, "w", encoding="ascii", newline="\n") as stream:
+        stream.write("PUBLIC_WEB_FAKE_IP_HTTPS=" + ("true" if enabled else "false") + "\n")
+    return path
 
 
 def _environment(directory):
@@ -33,7 +56,10 @@ def _environment(directory):
     keep = {"PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "LANG", "LC_ALL", "PLAYWRIGHT_BROWSERS_PATH"}
     env = {key: value for key, value in os.environ.items() if key.upper() in keep}
     env.update(PYTHON_DOTENV_DISABLED="1", LITELLM_LOCAL_MODEL_COST_MAP="True",
-               CRAWL4_AI_BASE_DIRECTORY=directory, PYTHONIOENCODING="utf-8")
+               CRAWL4_AI_BASE_DIRECTORY=directory, PYTHONIOENCODING="utf-8",
+               # Never the parent's value. An explicit path comes first in the worker's lookup, so the
+               # worker reads the snapshot whether the package runs from a checkout or an installed copy.
+               IR_SEARCH_CREDENTIALS_FILE=_switch_snapshot(directory))
     return env
 
 

@@ -381,7 +381,12 @@ def test_worker_environment_does_not_inherit_other_credentials(monkeypatch,tmp_p
     monkeypatch.setenv('OTHER_TOKEN','private-value')
     monkeypatch.setenv('PYTHONPATH','malicious-path')
     child=_environment(str(tmp_path))
-    assert not {'IR_SEARCH_CREDENTIALS_FILE','ALPHA_PIE_PWD','OTHER_TOKEN','PYTHONPATH'} & set(child)
+    assert not {'ALPHA_PIE_PWD','OTHER_TOKEN','PYTHONPATH'} & set(child)
+    # The parent's credentials path is still never inherited: the worker is pointed at a
+    # one-line snapshot inside its own directory instead.
+    assert not {'private-env-path','private-value','malicious-path',PROFILE.password} & set(child.values())
+    assert Path(child['IR_SEARCH_CREDENTIALS_FILE']).parent==tmp_path
+    assert Path(child['IR_SEARCH_CREDENTIALS_FILE']).read_text(encoding='ascii')=='PUBLIC_WEB_FAKE_IP_HTTPS=false\n'
 
 
 def test_factory_browser_is_closed_when_adapter_owns_it(monkeypatch):

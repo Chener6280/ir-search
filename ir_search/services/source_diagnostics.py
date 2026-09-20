@@ -67,6 +67,42 @@ def _private_file_protection(platform=None):
                            '需要时用 icacls <路径> /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F" 收紧访问。'}
 
 
+def _credentials_resolution():
+    """Read-only: which credentials file this process reads, and what a browser worker reads.
+
+    Paths and one boolean only, never file contents; nothing is created, changed or started.
+    A worker never gets the real file: its parent hands it a one-line snapshot of the fake-ip
+    opt-in through IR_SEARCH_CREDENTIALS_FILE, which is the first rule of the same lookup.
+    """
+    from pathlib import Path
+    from ir_search.infrastructure import credentials
+    from ir_search.infrastructure.public_web import _fake_ip_https_enabled
+    from ir_search.infrastructure.web_browser import _SWITCH_SNAPSHOT
+    try:
+        path = credentials.credentials_path()
+        checkout = Path(credentials.__file__).resolve().parents[2]
+        rule = ('IR_SEARCH_CREDENTIALS_FILE' if os.environ.get('IR_SEARCH_CREDENTIALS_FILE') else
+                'source_checkout' if (checkout / 'pyproject.toml').is_file() else 'working_directory')
+        this_process = {'path': str(path), 'selected_by': rule, 'exists': path.is_file()}
+    except (ValueError, OSError, RuntimeError):
+        this_process = {'code': 'invalid_credentials_path', 'key': 'IR_SEARCH_CREDENTIALS_FILE'}
+    worker = {'path': os.path.join('<worker temporary directory>', _SWITCH_SNAPSHOT),
+              'selected_by': 'IR_SEARCH_CREDENTIALS_FILE', 'set_by': 'parent_process_at_worker_start',
+              'reads_real_credentials_file': False, 'snapshot_keys': ['PUBLIC_WEB_FAKE_IP_HTTPS'],
+              'frozen_at': 'worker_start'}
+    try:
+        worker['snapshot_value_if_started_now'] = 'true' if _fake_ip_https_enabled() else 'false'
+    except DataAdapterError as exc:
+        # Same rule as the snapshot itself: configuration that cannot be read never waives anything.
+        worker.update(snapshot_value_if_started_now='false', code=exc.code)
+        try:
+            credentials.read_credentials()
+            worker['key'] = 'PUBLIC_WEB_FAKE_IP_HTTPS'  # the file reads fine, so it is this value
+        except SourceConfigError as unreadable:
+            worker['detail_code'] = unreadable.code  # the file itself, not this key
+    return {'this_process': this_process, 'browser_worker': worker}
+
+
 def _dependency(name):
     try: installed = find_spec(name) is not None
     except (ImportError, ValueError, AttributeError): installed = False
@@ -94,7 +130,8 @@ def diagnose_sources(providers=(), *, env_file=None, live=False, context=None):
     report = {'schema_version': '1.0', 'checked_at': datetime.now(timezone.utc).isoformat(),
         'verification_basis': 'explicit_live_probe_and_local_metadata' if live else 'local_metadata_only',
         'source_calls_started': 0, 'sources': [], 'diagnostics': configuration['diagnostics'],
-        'automatic_configuration_changes': False, 'private_file_protection': _private_file_protection()}
+        'automatic_configuration_changes': False, 'private_file_protection': _private_file_protection(),
+        'credentials_resolution': _credentials_resolution()}
     for provider in selected:
         spec = _SOURCES[provider]; configured = rows.get(provider, {})
         required = [_dependency(name) for name in spec.dependencies]
