@@ -110,7 +110,22 @@ def test_the_three_states_pass_through_and_unknown_is_not_false():
 def test_the_declared_lag_is_passed_on_and_everything_else_is_empty():
     result = rows("FRED.GDPC1", "FRED.CPIAUCSL", "FRED.FEDFUNDS", "WB.USA.NY.GDP.MKTP.KD.ZG")
     got = {r["symbol"]: r["release_lag_days"] for r in result.records}
-    assert got == {"FRED.GDPC1": 75, "FRED.CPIAUCSL": None, "FRED.FEDFUNDS": None, "WB.USA.NY.GDP.MKTP.KD.ZG": None}
+    assert got == {"FRED.GDPC1": 75, "FRED.CPIAUCSL": 15, "FRED.FEDFUNDS": None, "WB.USA.NY.GDP.MKTP.KD.ZG": None}
+
+
+def test_fifteen_days_after_any_month_end_is_the_fifteenth_of_the_next_month():
+    """The reviewed convention for CPI is a dating rule ("the 15th of the following month"). Counted from
+    period_end it is 15 days in every month, leap February included: an identity, not an approximation."""
+    from datetime import timedelta
+    for year in (2023, 2024, 2025):  # 2024 is a leap year
+        for month in range(1, 13):
+            month_end = _period_end(date(year, month, 1), dict(CALENDAR, frequency="monthly"))
+            following = date(year + month // 12, month % 12 + 1, 15)
+            assert month_end + timedelta(days=15) == following
+    cpi = _catalog()["FRED", "CPIAUCSL"]
+    assert cpi["release_lag_days"] == 15 and cpi["release_lag_source"] == "评审文档 2.2（旧系统反推的约定）"
+    for expected in ("记在参考月 15 日再滞后一个月", "自期末起算的天数", "恒等式"):
+        assert expected in cpi["semantics_note"]
 
 
 def test_the_lag_never_moves_a_date_and_never_serves_as_of(monkeypatch):
@@ -182,7 +197,7 @@ def test_a_catalog_column_that_is_missing_is_refused():
 # --- the reviewed declarations, pinned ---
 
 REVIEWED = {  # (is_period_average, average_of, period_calendar, release_lag_days)
-    ("FRED", "CPIAUCSL"): (False, "", "calendar", None),
+    ("FRED", "CPIAUCSL"): (False, "", "calendar", 15),
     ("FRED", "UNRATE"): (None, "", "calendar", None),
     ("FRED", "FEDFUNDS"): (True, "daily", "calendar", None),
     ("FRED", "DGS10"): (False, "", "calendar", None),
