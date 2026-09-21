@@ -1,12 +1,12 @@
-source,series_id,unit,frequency,seasonal_adjustment,source_url
-FRED,CPIAUCSL,index_1982_1984_100,monthly,seasonally_adjusted,https://fred.stlouisfed.org/series/CPIAUCSL
-FRED,UNRATE,percent,monthly,seasonally_adjusted,https://fred.stlouisfed.org/series/UNRATE
-FRED,FEDFUNDS,percent,monthly,not_seasonally_adjusted,https://fred.stlouisfed.org/series/FEDFUNDS
-FRED,DGS10,percent,daily,not_seasonally_adjusted,https://fred.stlouisfed.org/series/DGS10
-FRED,DGS2,percent,daily,not_seasonally_adjusted,https://fred.stlouisfed.org/series/DGS2
-FRED,GDPC1,billions_chained_2017_USD_annual_rate,quarterly,seasonally_adjusted,https://fred.stlouisfed.org/series/GDPC1
-WB,NY.GDP.MKTP.KD.ZG,annual_percent,annual,not_applicable,https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG
-WB,NY.GDP.MKTP.CD,current_USD,annual,not_applicable,https://data.worldbank.org/indicator/NY.GDP.MKTP.CD
-WB,FP.CPI.TOTL.ZG,annual_percent,annual,not_applicable,https://data.worldbank.org/indicator/FP.CPI.TOTL.ZG
-WB,SL.UEM.TOTL.ZS,percent_total_labor_force_ILO_modeled,annual,not_applicable,https://data.worldbank.org/indicator/SL.UEM.TOTL.ZS
-WB,NE.EXP.GNFS.ZS,percent_GDP,annual,not_applicable,https://data.worldbank.org/indicator/NE.EXP.GNFS.ZS
+source,series_id,unit,frequency,seasonal_adjustment,source_url,is_period_average,average_of,period_calendar,semantics_source,semantics_checked_on,release_lag_days,release_lag_source,release_lag_checked_on,semantics_note
+FRED,CPIAUCSL,index_1982_1984_100,monthly,seasonally_adjusted,https://fred.stlouisfed.org/series/CPIAUCSL,false,,calendar,https://fred.stlouisfed.org/series/CPIAUCSL,2026-09-20,,,,月度指数是对当月价格的一手测量；源站说明里的"平均"是按权重对各类价格变动求平均（跨品类），不是对更高频 CPI 做时间平均，不存在被平均的日度 CPI。按判据为 false；这个构造歧义记录在此，勿按字面重翻。评审文档 2.2 对 CPI 的约定原文是"记在参考月 15 日再滞后一个月"，不是天数，故 release_lag_days 留空。
+FRED,UNRATE,percent,monthly,seasonally_adjusted,https://fred.stlouisfed.org/series/UNRATE,,,calendar,https://fred.stlouisfed.org/series/UNRATE,2026-09-20,,,,是否期间平均未核实：FRED 序列页没有说明月度值如何构造；BLS 与 Census 的 CPS 方法页对抓取工具返回 403。预期为 false（按调查参考周测量），未经出处核实故留空。期间标签为日历月。
+FRED,FEDFUNDS,percent,monthly,not_seasonally_adjusted,https://fred.stlouisfed.org/series/FEDFUNDS,true,daily,calendar,https://fred.stlouisfed.org/series/FEDFUNDS,2026-09-20,,,,FRED 序列说明写明月度值是日度数值的平均。
+FRED,DGS10,percent,daily,not_seasonally_adjusted,https://fred.stlouisfed.org/series/DGS10,false,,calendar,https://fred.stlouisfed.org/series/DGS10 | https://home.treasury.gov/policy-issues/financing-the-government/interest-rate-statistics/treasury-yield-curve-methodology,2026-09-20,,,,日度观测。财政部方法说明：输入是每个交易日下午 3:30 前后取得的买方报价，不是日内平均。
+FRED,DGS2,percent,daily,not_seasonally_adjusted,https://fred.stlouisfed.org/series/DGS2,false,,calendar,https://fred.stlouisfed.org/series/DGS2 | https://home.treasury.gov/policy-issues/financing-the-government/interest-rate-statistics/treasury-yield-curve-methodology,2026-09-20,,,,日度观测。财政部方法说明：输入是每个交易日下午 3:30 前后取得的买方报价，不是日内平均。
+FRED,GDPC1,billions_chained_2017_USD_annual_rate,quarterly,seasonally_adjusted,https://fred.stlouisfed.org/series/GDPC1,false,,calendar,https://fred.stlouisfed.org/series/GDPC1 | https://www.bea.gov/data/gdp/gross-domestic-product,2026-09-20,75,评审文档 2.2（旧系统反推的约定）,2026-09-20,按季度估算、以年化率表示的流量（FRED 单位行为季调年化率；BEA 按日历季度发布），不是对更高频 GDP 的时间平均。75 天取自评审文档 2.2 原文"GDP 统一滞后 75 天"；文档未写明起算点，本字段定义为自期末起算。
+WB,NY.GDP.MKTP.KD.ZG,annual_percent,annual,not_applicable,https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG,,,unverified,,,,,,未核实：世界银行指标元数据（api.worldbank.org 与 databank.worldbank.org）在核对时无法读取。预期为 false（流量的增长率）。部分国家按财年报告，标注年份与财年的对应规则未查实，故期末留空。评审文档 2.2 的 75 天针对其季度 GDP，不类推到本年度序列。
+WB,NY.GDP.MKTP.CD,current_USD,annual,not_applicable,https://data.worldbank.org/indicator/NY.GDP.MKTP.CD,,,unverified,,,,,,未核实：世界银行指标元数据在核对时无法读取。预期为 false（流量总量）。财年对应规则未查实，故期末留空。评审文档 2.2 的 75 天不类推到本年度序列。
+WB,FP.CPI.TOTL.ZG,annual_percent,annual,not_applicable,https://data.worldbank.org/indicator/FP.CPI.TOTL.ZG,,,unverified,,,,,,未核实：世界银行指标元数据在核对时无法读取。是否基于年均指数需读元数据后按判据决定。财年对应规则未查实，故期末留空。
+WB,SL.UEM.TOTL.ZS,percent_total_labor_force_ILO_modeled,annual,not_applicable,https://data.worldbank.org/indicator/SL.UEM.TOTL.ZS,,,unverified,,,,,,未核实：世界银行指标元数据在核对时无法读取。是否为年内更高频估计的平均需读元数据后按判据决定。财年对应规则未查实，故期末留空。
+WB,NE.EXP.GNFS.ZS,percent_GDP,annual,not_applicable,https://data.worldbank.org/indicator/NE.EXP.GNFS.ZS,,,unverified,,,,,,未核实：世界银行指标元数据在核对时无法读取。预期为 false（流量之比）。财年对应规则未查实，故期末留空。

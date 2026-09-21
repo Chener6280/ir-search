@@ -331,11 +331,14 @@ def list_capabilities(*, registry: DataRegistry = None, account_scope: str = "de
     from .material_registry import list_material_capabilities
     from .infrastructure.web_browser import _browser_status
     from .infrastructure.web_toolkit import WEB_READ_MODES, web_toolkit_status
-    from .adapters.global_macro import _catalog as macro_catalog
+    from .adapters.global_macro import _catalog as macro_catalog, _ECB_EXR_DAILY, SEMANTICS_RULES
     return {
         "schema_version": "1.0",
         "operation": "query_data",
-        "macro_series_catalog": {"curated_not_exhaustive": True, "series": list(macro_catalog().values()), "symbol_patterns": ["FRED.<series_id>", "WB.<ISO3>.<series_id>", "ECB.EXR.D.<CCY>.EUR.SP00.A"]},
+        "macro_series_catalog": {"curated_not_exhaustive": True, "series": list(macro_catalog().values()), "symbol_patterns": ["FRED.<series_id>", "WB.<ISO3>.<series_id>", "ECB.EXR.D.<CCY>.EUR.SP00.A"],
+            # Timestamp semantics are declared per series with their source and the day they were checked.
+            "semantics_rules": dict(SEMANTICS_RULES),
+            "pattern_series": [dict(_ECB_EXR_DAILY, symbol_pattern="ECB.EXR.D.<CCY>.EUR.SP00.A")]},
         "datasets": list(_DATASETS),
         "capabilities": [cap.to_dict() for cap, _ in registry.entries(account_scope=account_scope)],
         "verification_basis": "registration_metadata_not_live_probe",

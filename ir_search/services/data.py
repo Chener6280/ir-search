@@ -275,6 +275,8 @@ def _validate_page(page, request, cap, definition):
                     raise ValueError("Missing date")
             elif spec.dtype == "datetime":
                 _instant(value)
+            elif spec.dtype == "boolean" and type(value) is not bool:
+                raise ValueError("Invalid boolean")  # 0, 1 and "true" are not booleans
         key = tuple(_day(row[f]) if schema[f].dtype == "date" else
                     _instant(row[f]) if schema[f].dtype == "datetime" else row[f] for f in definition.primary_key)
         if key in keys:

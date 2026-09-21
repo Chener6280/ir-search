@@ -77,6 +77,7 @@ MCP 使用相同数据集和字段。新宏观数据默认 `frequency="native"`�
 - Fiona 日线统一金额暂留 null：前次少量样本证明的倍率不能替代供应商单位承诺。成交量/持仓保留供应商数值并标记计数约定未确认；曾观测到的数量冲突仍显示。风险指标均用 `source_*` 命名，模型和价格类型标为未文档化，IV 与 Greeks 不擅自缩放，返回 partial。
 - `derivatives_bars` 的日期范围是**交易日**，夜盘可能在前一自然日；不同于 AKShare `futures_intraday` 的自然日边界。保留带 +08:00 的源时间以及源成交量、成交额和持仓。仅限最近 14 个自然日，历史分钟数据源仍留空。期货分钟实取已通过；期权分钟曾超时，扩大单次预算后取得 48 根，仍保留稳定性限制。
 - Fiona 仅支持已核对的具体合约表示：四位年月期货/商品期权或沪深八位期权编号，并核对源元数据。郑商所三位月码不自动猜年份；不合并跨来源行或字段。国内 EOD 默认仍为 Wind → JYDB；既有 AKShare 日内路线不变。
+- 宏观每行带三个时间戳语义字段，`observation_date` 的含义不变（仍是期初、主键和日期字段）：`period_end` 是期间最后一天（含），只在目录声明 `period_calendar=calendar` 时由频率和期初按日历推出，未核实一律为 null；`is_period_average` 是可空布尔，判据是"该值是否是对同一量更高频观测做时间平均的结果"，null 表示目录未声明、不等于 false；`release_lag_days` 是**声明的约定**（期末之后大约多少天可得），不是源站事实，服务端永不把它折算成任何日期，也不用它满足 `as_of`。这些值逐序列在目录 `entities/macro_series.csv` 里声明，附出处和核对日期，核实不了的留空；判据、各序列的声明、出处、核对日期和备注见 `list_capabilities()["macro_series_catalog"]` 的 `semantics_rules`、`series`、`pattern_series`。
 
 ## 港股原文与引用
 
