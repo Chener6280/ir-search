@@ -22,6 +22,14 @@ _WIND_FUT_COLUMNS = ('OBJECT_ID','S_INFO_WINDCODE','S_INFO_CODE','S_INFO_EXCHMAR
 _JY_FUT_COLUMNS = ('ContractInnerCode','ContractCode','ExchangeCode','ContractType','IfReal','CMValue','ContractMultiplier','PriceUnit','CurrencyCode','EffectiveDate','LastTradingDate')
 _WIND_OPT_COLUMNS = ('OBJECT_ID','S_INFO_WINDCODE','S_INFO_CODE','S_INFO_SCCODE','S_INFO_CALLPUT','S_INFO_STRIKEPRICE','S_INFO_COUNIT','S_INFO_FTDATE','S_INFO_LASTTRADINGDATE')
 _JY_OPT_COLUMNS = ('InnerCode','ContractCode','TradingCode','Exchange','ULAInnerCode','ULAType','ContractType','ContractSize','StrikePrice','ListingDate','LastTradingDate','IfAdjusted','IfReal')
+_INDEX_CODE = re.compile(r'[0-9A-Z]{6}\.(?:SH|SZ|CSI)')
+_WIND_INDEX = {'previous_close':'S_DQ_PRECLOSE','open':'S_DQ_OPEN','high':'S_DQ_HIGH','low':'S_DQ_LOW','close':'S_DQ_CLOSE'}
+_CHAIN_SUFFIX = {exchange:suffix for suffix,exchange in _EXCHANGE.items()}
+# DCE mid-month serial options carry an extra '-MS' segment (A2701-MS-C-4300.DCE).
+_CHAIN_CODE = re.compile(r'\d{8}\.(?:SH|SZ)|[A-Z]{1,3}\d{3,4}(?:-MS)?-?[CP]-?\d+(?:\.\d+)?\.(?:CFE|SHF|DCE|CZC|INE|GFE)')
+_WIND_CHAIN_COLUMNS = ('S_INFO_WINDCODE','S_INFO_EXCODE','S_INFO_SCCODE','S_INFO_CALLPUT','S_INFO_STRIKEPRICE','S_INFO_COUNIT','S_INFO_MONTH','S_INFO_FTDATE','S_INFO_LASTTRADINGDATE')
+_CHAIN_PRICE = {k:v for k,v in _WIND_PRICE.items() if k!='amount'}
+_CHAIN_BATCH = 2000
 
 
 def _parse_symbol(symbol, option=False):
@@ -36,6 +44,9 @@ def _parse_symbol(symbol, option=False):
     if not valid:
         raise DataAdapterError('unsupported')
     return code,suffix
+
+
+_BENCH_CODE = re.compile(r'[A-Z0-9_]{2,24}(?:\(\d{1,4}\))?')
 
 
 class DomesticDerivativesAdapter:
@@ -58,13 +69,27 @@ class DomesticDerivativesAdapter:
             caps.append(DataCapability(self.name,dataset,fields,('CN_OPTIONS' if dataset.startswith('options') else 'CN_FUTURES',),
                 frequencies=('snapshot' if directory else '1d',),adjustments=('none' if directory or dataset=='trading_calendar' else 'raw',),
                 supports_pagination=True,adapter_mode=AdapterMode.LIVE,coverage_notes=tuple(notes)))
+        if self.name=='wind_mysql':
+            for dataset,market,notes in (
+                    ('index_daily','CN_INDEX',('Wind index EOD levels in index points; an index level is not a tradable price',
+                        'Current database snapshot, no point-in-time availability guarantee')),
+                    ('index_valuation','CN_INDEX',('Wind index valuation snapshot; dividend yield is the vendor trailing figure in percent',
+                        'Current database snapshot, no point-in-time availability guarantee')),
+                    ('benchmark_rate','CN_RATE',('Wind benchmark interest-rate fixings (e.g. SHIBOR tenor moving-average codes); percent per annum',
+                        'Current database snapshot, no point-in-time availability guarantee')),
+                    ('options_chain','CN_OPTIONS',('Symbols are exchanges (SSE, SZSE, CFFEX, SHFE, DCE, CZCE, INE, GFEX); date range at most 31 days',
+                        'Contract terms are the current directory snapshot; ETF dividend adjustments are not versioned',
+                        'EOD close and settlement only, no bid/ask; strikes are not synchronized quotes'))):
+                caps.append(DataCapability(self.name,dataset,tuple(f.name for f in MARKET_DATASETS[dataset].fields),(market,),
+                    frequencies=('1d',),adjustments=('raw',),supports_pagination=True,adapter_mode=AdapterMode.LIVE,coverage_notes=notes))
         self.capabilities=tuple(caps)
 
     def query_data(self, request, *, context):
         """Read fixed single-table tasks and preserve metadata gaps/conflicting source fields."""
         option=request.dataset.startswith('options')
         datasets={cap.dataset for cap in self.capabilities}
-        _validate_request(request,context,datasets,'CN_OPTIONS' if option else 'CN_FUTURES')
+        _validate_request(request,context,datasets,'CN_INDEX' if request.dataset in ('index_daily','index_valuation')
+            else 'CN_RATE' if request.dataset=='benchmark_rate' else 'CN_OPTIONS' if option else 'CN_FUTURES')
         directory=request.dataset.endswith('_contracts')
         if request.frequency!=('snapshot' if directory else '1d') or request.adjustment!=('none' if directory or request.dataset=='trading_calendar' else 'raw'):
             raise DataAdapterError('unsupported')
@@ -77,6 +102,29 @@ class DomesticDerivativesAdapter:
                 tuple(request.symbols)+(request.start.strftime('%Y%m%d'),request.end.strftime('%Y%m%d')),
                 ('S_INFO_EXCHMARKET','TRADE_DAYS'),lambda r,i:{'symbol':r['S_INFO_EXCHMARKET'],'trade_date':_day(r['TRADE_DAYS'])})]
             issues.add('calendar_horizon_not_certified')
+        elif request.dataset=='index_daily':
+            if any(not _INDEX_CODE.fullmatch(s) for s in request.symbols):raise DataAdapterError('unsupported')
+            tasks=[_Task('aindexeodprices',('S_INFO_WINDCODE','TRADE_DT','CRNCY_CODE')+tuple(_WIND_INDEX.values()),
+                ('S_INFO_WINDCODE IN '+_in(request.symbols),'TRADE_DT BETWEEN %s AND %s'),
+                tuple(request.symbols)+(request.start.strftime('%Y%m%d'),request.end.strftime('%Y%m%d')),
+                ('S_INFO_WINDCODE','TRADE_DT'),partial(self._wind_index,request=request))]
+            issues.add('index_level_not_tradable_price')
+        elif request.dataset=='index_valuation':
+            if any(not _INDEX_CODE.fullmatch(s) for s in request.symbols):raise DataAdapterError('unsupported')
+            tasks=[_Task('aindexvaluation',('S_INFO_WINDCODE','TRADE_DT','DIVIDEND_YIELD'),
+                ('S_INFO_WINDCODE IN '+_in(request.symbols),'TRADE_DT BETWEEN %s AND %s'),
+                tuple(request.symbols)+(request.start.strftime('%Y%m%d'),request.end.strftime('%Y%m%d')),
+                ('S_INFO_WINDCODE','TRADE_DT'),partial(self._wind_valuation,request=request))]
+            issues.add('vendor_trailing_dividend_yield_not_recomputed')
+        elif request.dataset=='benchmark_rate':
+            if any(not _BENCH_CODE.fullmatch(s) for s in request.symbols):raise DataAdapterError('unsupported')
+            tasks=[_Task('windbenchmarkinterestrate',('B_INFO_BENCHMARKCODE','TRADE_DT','B_INFO_RATE'),
+                ('B_INFO_BENCHMARKCODE IN '+_in(request.symbols),'TRADE_DT BETWEEN %s AND %s'),
+                tuple(request.symbols)+(request.start.strftime('%Y%m%d'),request.end.strftime('%Y%m%d')),
+                ('B_INFO_BENCHMARKCODE','TRADE_DT'),partial(self._wind_benchmark_rate,request=request))]
+            issues.add('vendor_moving_average_code_not_recomputed')
+        elif request.dataset=='options_chain':
+            tasks=self._chain_tasks(request,context,issues)
         else:
             for symbol in request.symbols:_parse_symbol(symbol,option)
             if self.name=='wind_mysql':tasks=self._wind_tasks(request,option,directory,issues)
@@ -107,6 +155,103 @@ class DomesticDerivativesAdapter:
             ('S_INFO_WINDCODE IN '+_in(symbols),'TRADE_DT BETWEEN %s AND %s'),
             tuple(symbols)+(request.start.strftime('%Y%m%d'),request.end.strftime('%Y%m%d')),
             ('S_INFO_WINDCODE','TRADE_DT'),partial(self._wind_quote,request=request)) for table,symbols in sorted(groups.items())]
+
+    @staticmethod
+    def _wind_index(raw,issues,*,request):
+        symbol,day=raw['S_INFO_WINDCODE'],_day(raw['TRADE_DT'])
+        if symbol not in request.symbols or not request.start<=day<=request.end:raise DataAdapterError('upstream_schema')
+        currency=raw['CRNCY_CODE']
+        row={'symbol':symbol,'trade_date':day,'currency':currency if isinstance(currency,str) and currency.strip() else None}
+        for name,column in _WIND_INDEX.items():
+            value=_number(raw[column])
+            if value is not None and value<=0:
+                value=None;issues.add('nonpositive_index_level_as_missing')
+            row[name]=value
+        return row
+
+    @staticmethod
+    def _wind_valuation(raw,issues,*,request):
+        symbol,day=raw['S_INFO_WINDCODE'],_day(raw['TRADE_DT'])
+        if symbol not in request.symbols or not request.start<=day<=request.end:raise DataAdapterError('upstream_schema')
+        return {'symbol':symbol,'trade_date':day,'dividend_yield':_number(raw['DIVIDEND_YIELD'])}
+
+    @staticmethod
+    def _wind_benchmark_rate(raw,issues,*,request):
+        symbol,day=raw['B_INFO_BENCHMARKCODE'],_day(raw['TRADE_DT'])
+        if symbol not in request.symbols or not request.start<=day<=request.end:raise DataAdapterError('upstream_schema')
+        return {'symbol':symbol,'trade_date':day,'rate':_number(raw['B_INFO_RATE'])}
+
+    def _chain_tasks(self,request,context,issues):
+        """Directory first (no JOINs allowed), then keyset-paged EOD quotes in fixed code batches."""
+        if (len(set(request.symbols))!=len(request.symbols) or any(s not in _CHAIN_SUFFIX for s in request.symbols)
+                or (request.end-request.start).days>31):
+            raise DataAdapterError('unsupported')
+        start,end=request.start.strftime('%Y%m%d'),request.end.strftime('%Y%m%d')
+        directory={}
+        for exchange in sorted(request.symbols):
+            last=None
+            while True:
+                conditions=['S_INFO_WINDCODE LIKE %s','S_INFO_FTDATE <= %s','S_INFO_LASTTRADINGDATE >= %s']
+                params=['%.'+_CHAIN_SUFFIX[exchange],end,start]
+                if last is not None:
+                    conditions.append('S_INFO_WINDCODE > %s');params.append(last)
+                sql=('SELECT '+', '.join(_WIND_CHAIN_COLUMNS)+' FROM chinaoptiondescription WHERE '
+                     +' AND '.join(conditions)+' ORDER BY S_INFO_WINDCODE LIMIT %s')
+                rows=self._select(self._profile,sql,tuple(params)+(5001,),max_rows=5001,context=context)
+                for raw in rows[:5000]:
+                    code=raw['S_INFO_WINDCODE']
+                    if not isinstance(code,str) or code in directory:raise DataAdapterError('upstream_schema')
+                    last=code
+                    row=self._chain_contract(raw,exchange,issues)
+                    if row is not None:directory[code]=row
+                if len(rows)<=5000:break
+                if len(directory)>50000:raise DataAdapterError('upstream_schema')
+        issues.update({'contract_adjustment_history_not_applied','underlying_identifier_is_provider_native',
+                       'eod_quotes_not_synchronized_no_bid_ask'})
+        codes=sorted(directory)
+        return [_Task('chinaoptioneodprices',('S_INFO_WINDCODE','TRADE_DT')+tuple(_CHAIN_PRICE.values()),
+            ('S_INFO_WINDCODE IN '+_in(batch),'TRADE_DT BETWEEN %s AND %s'),tuple(batch)+(start,end),
+            ('S_INFO_WINDCODE','TRADE_DT'),partial(self._chain_quote,request=request,directory=directory))
+            for batch in (codes[i:i+_CHAIN_BATCH] for i in range(0,len(codes),_CHAIN_BATCH))]
+
+    @staticmethod
+    def _chain_contract(raw,exchange,issues):
+        code=raw['S_INFO_WINDCODE']
+        kind={'708001000':'call','708002000':'put'}.get(str(raw['S_INFO_CALLPUT']))
+        try:
+            if not code.endswith('.'+_CHAIN_SUFFIX[exchange]) or not _CHAIN_CODE.fullmatch(code):raise DataAdapterError('upstream_schema')
+            strike,size=_number(raw['S_INFO_STRIKEPRICE'],nullable=False),_number(raw['S_INFO_COUNIT'],nullable=False)
+            first,last=_day(raw['S_INFO_FTDATE']),_day(raw['S_INFO_LASTTRADINGDATE'])
+            series=_identity(raw['S_INFO_SCCODE'])
+        except DataAdapterError:
+            issues.add('chain_contracts_with_unparsed_terms_skipped');return None
+        if kind is None or strike<=0 or size<=0 or first>last:
+            issues.add('chain_contracts_with_unparsed_terms_skipped');return None
+        month,trading=str(raw['S_INFO_MONTH'] or ''),raw['S_INFO_EXCODE']
+        return {'symbol':exchange,'contract':code,'series_id':series,'option_type':kind,'strike':strike,'contract_size':size,
+                'contract_month':month if re.fullmatch(r'\d{6}',month) else None,
+                'trading_code':trading if isinstance(trading,str) and trading.strip() else None,
+                'listing_date':first,'last_trading_date':last,'currency':'CNY'}
+
+    @staticmethod
+    def _chain_quote(raw,issues,*,request,directory):
+        info,day=directory.get(raw['S_INFO_WINDCODE']),_day(raw['TRADE_DT'])
+        if info is None or not request.start<=day<=request.end:raise DataAdapterError('upstream_schema')
+        row=dict(info,trade_date=day,**{k:_number(raw[v]) for k,v in _CHAIN_PRICE.items()})
+        if not info['listing_date']<=day<=info['last_trading_date']:issues.add('quote_outside_directory_lifecycle')
+        row.update(source_close=row['close'],price_status='unknown',counting_convention='source_reported_contract_count')
+        if day<date(2020,1,1):issues.add('historical_counting_convention_not_normalized')
+        elif info['contract'].endswith('.DCE'):row['counting_convention']='single_sided'
+        if row['volume'] is not None:
+            row['price_status']='no_trade_reference' if row['volume']==0 else 'traded'
+        if row['volume']==0:
+            issues.add('no_trade_close_may_be_reference')
+            for name in ('open','high','low','close'):
+                if row[name]==0:
+                    row[name]=None;issues.add('zero_no_trade_price_as_missing')
+        if info['contract']=='90008034.SZ' and date(2026,9,7)<=day<=date(2026,9,11) and 'open_interest' in _selected(request):
+            issues.update({'known_source_conflict','szse_option_open_interest_conflict'})
+        return row
 
     def _wind_contract(self,raw,issues,*,request,option):
         symbol=raw['S_INFO_WINDCODE'];code,suffix=_parse_symbol(symbol,option)

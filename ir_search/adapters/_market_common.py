@@ -95,11 +95,18 @@ def _page(adapter, request, tasks, context, issues):
                + ' AND '.join(conditions) + ' ORDER BY ' + ', '.join(task.keys) + ' LIMIT %s')
         rows = adapter._select(adapter._profile, sql, tuple(params + [remaining + 1]), max_rows=remaining + 1, context=context)
         previous = position if task_index == index else None
+        previous_raw = None
         for raw in rows[:remaining]:
             key = [v.isoformat() if isinstance(v, (date, datetime)) else v for v in (raw[k] for k in task.keys)]
             if previous is not None and tuple(key) <= tuple(previous):
+                # 上游偶发整行重复装载（如 chinaoptioneodprices 10002117.SH 2020-01-02/03）：
+                # 内容完全一致的重复行丢弃并留诊断；同键不同值仍是源数据冲突，继续报错
+                if previous_raw is not None and tuple(key) == tuple(previous) and raw == previous_raw:
+                    issues.add('duplicate_source_rows_dropped')
+                    continue
                 raise DataAdapterError('upstream_schema')
             previous = key
+            previous_raw = raw
             normalized = task.normalize(raw, issues)
             records.append({k:v for k,v in normalized.items() if k in _selected(request)})
         if len(rows) > remaining:

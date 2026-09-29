@@ -18,12 +18,13 @@ _TABLES = {"asharedescription", "ashareeodprices", "SecuMain", "LC_Announcement"
 _TABLES.update({'ashareincome', 'asharebalancesheet', 'asharecashflow', 'LC_IncomeStatementAll',
     'LC_BalanceSheetAll', 'LC_CashFlowStatementAll', 'LC_STIBIncomeState', 'LC_STIBBalanceSheet', 'LC_STIBCashFlowState',
     'cfuturesdescription', 'cfuturescalendar', 'chinaoptiondescription', 'cindexfutureseodprices',
-    'cbondfutureseodprices', 'ccommodityfutureseodprices', 'chinaoptioneodprices',
+    'cbondfutureseodprices', 'ccommodityfutureseodprices', 'chinaoptioneodprices', 'aindexeodprices',
     'Fut_ContractMain', 'Fut_TradingQuote', 'Fut_DailyQuote', 'Opt_OptionContract', 'Opt_DailyQuote'})
 
 
 _TABLES.update({'chinamutualfunddescription','chinamutualfundnav','chinamutualfundshare',
-                'chinamutualfundstockportfolio','chinaclosedfundeodprice','MF_NetValue'})
+                'chinamutualfundstockportfolio','chinaclosedfundeodprice','MF_NetValue',
+                'aindexvaluation','windbenchmarkinterestrate'})
 
 def _tls_context(profile):
     try:

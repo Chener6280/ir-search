@@ -55,7 +55,45 @@ _OPTION_CONTRACT = _CONTRACT_BASE + (
     Field('adjustment_status', 'string', 'adjusted, unadjusted, or unverified'),
 )
 
+_INDEX_LEVELS = tuple(Field(n, 'number', d, 'index_points', True) for n, d in (
+    ('open', 'Opening index level'), ('high', 'Highest index level'),
+    ('low', 'Lowest index level'), ('close', 'Closing or latest bar index level')))
+_CHAIN_CONTRACT = (
+    Field('symbol', 'string', 'Requested exchange: SSE, SZSE, CFFEX, SHFE, DCE, CZCE, INE or GFEX'), _DATE,
+    Field('contract', 'string', 'Option contract code including vendor exchange suffix'),
+    Field('series_id', 'string', 'Provider-native option series/underlying group identifier; not a universal ticker'),
+    Field('option_type', 'string', 'call or put'),
+    Field('strike', 'number', 'Current listed strike in native underlying quote units', 'contract_native_quote'),
+    Field('contract_size', 'number', 'Vendor contract unit; changes after ETF dividend adjustments'),
+    Field('contract_month', 'string', 'Vendor delivery/expiry month YYYYMM', nullable=True),
+    Field('trading_code', 'string', 'Exchange trading code; ETF adjusted contracts carry a changed flag', nullable=True),
+    Field('listing_date', 'date', 'Contract first trading date'),
+    Field('last_trading_date', 'date', 'Contract last trading date'),
+)
+
 MARKET_DATASETS = {
+    'index_daily': Dataset('index_daily', 'Index EOD levels in index points; an index level is not a tradable price.',
+        (_SYMBOL, _DATE, Field('previous_close', 'number', 'Vendor previous close level', 'index_points', True))
+        + _INDEX_LEVELS + (_CURRENCY,), ('symbol', 'trade_date'), 'trade_date'),
+    'index_valuation': Dataset('index_valuation', 'Index valuation snapshot; figures are vendor-computed, not recomputed from constituents.',
+        (_SYMBOL, _DATE, Field('dividend_yield', 'number', 'Vendor index dividend yield (trailing) in percent', 'percent', True)),
+        ('symbol', 'trade_date'), 'trade_date'),
+    'benchmark_rate': Dataset('benchmark_rate', 'Benchmark interest-rate fixings; moving-average codes are vendor series, not recomputed.',
+        (_SYMBOL, _DATE, Field('rate', 'number', 'Vendor benchmark fixing in percent per annum', 'percent', True)),
+        ('symbol', 'trade_date'), 'trade_date'),
+    'index_intraday': Dataset('index_intraday', 'Recent delayed web index bars in index points; NOT exchange ticks or official closes.',
+        (_SYMBOL, Field('bar_time', 'datetime', 'Source bar timestamp in Asia/Shanghai'), _DATE) + _INDEX_LEVELS + (_CURRENCY,),
+        ('symbol', 'bar_time'), 'trade_date'),
+    'options_chain': Dataset('options_chain', 'Contracts listed on each requested exchange and date with that day EOD fields; request symbols are exchanges.',
+        _CHAIN_CONTRACT + _PRICE + tuple(f for f in _ACTIVITY if f.name != 'amount') + (_CURRENCY,),
+        ('symbol', 'contract', 'trade_date'), 'trade_date'),
+    'futures_snapshot': Dataset('futures_snapshot', 'Latest provider snapshot per concrete futures contract; NOT an exchange tick feed; delay unverified.',
+        (_SYMBOL, _DATE, Field('quote_time', 'datetime', 'Source snapshot time in Asia/Shanghai'),
+         Field('last', 'number', 'Latest price at quote_time; after the session the source closing price', 'contract_native_quote', True))
+        + tuple(f for f in _PRICE if f.name != 'close')
+        + tuple(f for f in _ACTIVITY if f.name in ('volume', 'open_interest', 'counting_convention'))
+        + (Field('last_trading_date', 'date', 'Contract last trading date from the provider contract table'), _CURRENCY),
+        ('symbol', 'quote_time'), 'trade_date'),
     'financial_statements': Dataset('financial_statements', 'Version-preserving financial statements; bounds select report period, not disclosure date.',
         _FINANCE, ('symbol', 'statement', 'source_record_id'), 'report_period'),
     **{name: Dataset(name, 'Concrete domestic contracts only; prices, settlement, count and amount have separate semantics.',
