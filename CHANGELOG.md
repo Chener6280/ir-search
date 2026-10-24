@@ -1,6 +1,6 @@
 # 变更记录
 
-## 0.2.0rc2 — 2026-09-19，综合评审修复候选
+## 0.2.0rc2 — 2026-10-24，Windows 修复与网页搜索链合并候选
 
 整合四份本机评审、Windows PR #2（`891847e..3f918f7`）及其独立审核。维护同一套跨平台代码，不分叉 Windows/Mac 产品版本。逐项处理与未验边界见 [修复对照](docs/review_resolution.md)；Windows 接手步骤见 [复验交接](docs/windows_review_handoff.md)。测试通过不等于真实供应商、物理电脑或生产 SLA 已验收。
 
@@ -12,6 +12,7 @@
 - 三平台完整离线 CI、Windows UTF-8 开/关、Python 3.9/3.12 无 MCP 基础安装检查；测试崩溃无摘要也生成注解并保存日志。
 
 **检索与诊断**
+- 合并复核修复：中文通用词按长度优先、固定顺序剥除，避免“为什么/什么”因进程哈希顺序造成漏召回；保留星球时间线导出的独立匹配契约，避免新增局部匹配排序字段误拒绝记录。
 - 来源按权重分配剩余时间（内置微信 2，其他 1），未用时间顺延。局部超时保留已返回且通过校验的文本、扫描记录和续取游标；父请求取消/超时仍停止接受结果。
 - 浏览器预算不足时保留微信发现结果并报告 `wechat_browser_budget_insufficient`，不因时间切分自动转收费正文。
 - 单条文本契约/转换错误隔离为 `candidate_rejected`；伪造来源身份、未授权 generated 内容、重复记录、无效页/扫描/游标仍拒绝整页。
@@ -26,11 +27,29 @@
 - 新集成可设服务进程环境 `IR_SEARCH_MCP_MODE=core`，只注册核心数据/素材及诊断工具；默认 `legacy` 保留所有旧入口，`deep_research` 不扩建。
 - Wind/JYDB 共用的数据库分页游标改用安装级随机密钥，经跨进程锁和原子写入持久化。**旧密码签名游标失效**，重新查询；星球/微信/IMA/XHS 的 material cursor 不因此失效。状态不可写或密钥损坏返回 `cursor_state_unavailable`，不再静默使用进程内密钥。
 - 旧公开 fetch 复用验证并固定 IP 的 public_web 传输，重定向共享预算，DNS 等待有截止/取消与并发上限。MCP 工具参数不能单独授权私网；仅可信服务配置 `IR_SEARCH_ALLOW_PRIVATE_NETWORK=1` 可开放旧私网读取。SDK 的显式私网选项保留。
+- 修正旧 fetch 与传输层重复扣操作预算：配置的 5 次重定向可完整使用，额外重定向仍拒绝。TLS reset 回环测试按 Windows/POSIX 的结构格式设置 socket，并在主测试中检查后台线程是否成功执行。
 - 修复合法 `abc.de/cafe.de` 被当数字地址拒绝的问题；真正的非标准数字地址仍拒绝。
 - 旧模拟结果使用 `mock.invalid`、显眼 MOCK 标题及不可作证据标记，不再显示为真实官方披露。旧 Tushare 默认官方 HTTPS，其他代理需要显式配置；不输出上游异常正文。
 - 离线测试固定 live 开关、隔离合成凭证，禁止外部 DNS/socket（本机回环测试允许）。个人公众号选集从当前版本移除，保留公共示例；没有改写 Git 历史。
 
-本轮不新增数据源、不执行真实带凭证/收费调用。A 股复权/交易日历/PIT、统一证券代码、Windows ACL、跨进程额度账本、向量库和大规模接口重构均不冒充已完成。
+上述评审修复阶段未新增来源、未执行真实带凭证/收费调用；本次合并的网页搜索升级及有限冒烟另列如下。A 股复权/交易日历/PIT、统一证券代码、Windows ACL、跨进程额度账本、向量库和大规模接口重构均不冒充已完成。
+
+### 网页搜索与本机验证
+
+- 后续修复：博查迁移当前官方 `api.bocha.cn` 固定端点，c-mac 系统 Python 3.9/LibreSSL 中英文真实搜索通过；TLS/主机名校验和系统网络保持原样。DuckDuckGo 明确验证页改为 `web_content_challenge` 并阻止同一请求再次联网访问该站，保留在线不可用状态；见[补测报告](docs/web_search_transport_repair.md)。
+- `search_materials(providers=['web'])` 新增按地区的有序搜索链：国内默认百智/智谱/博查/Exa/Perplexity/DuckDuckGo，海外默认 Exa/Perplexity/Brave/Serper/AnySearch/Tavily/DuckDuckGo。每机私有 env 可改顺序，无 key 跳过；旧 regional/fixed 单引擎保持兼容。
+- 每次尝试记录引擎、地区、归一化状态和耗时。成功空结果默认停止；整链失败且曾有 quota 才生成原有 caller_web_search 交接，新增 attempted_providers，保持共享最多 10 条候选预算。
+- 新增固定 HTTPS 搜索传输及百智/智谱 MCP 生命周期；禁止重定向和原始供应商错误外泄，无匿名 API 重试或自动付费。智谱日期未知，Exa 类型只接受 auto/lite；Perplexity 仅 Search API。
+- 新增 adapter HTTP/路由测试及 wheel 资源验证。c-mac 本轮详情与未通过项见[验收报告](docs/web_search_chain_validation.md)；使用期观察与 b-mac 部署仍未验收；此前本机阶段未推送，本轮合并候选仅提交 PR，不合入 main。
+
+### 已有工具增强（2026-10-03）
+
+- 2026-10-07 增强：公开网页读取可对精确已审核域名，通过显式回环 HTTP 代理取得真实 A 记录。默认关闭，保留数值地址固定、TLS 主机名校验、私网/占位地址/过期 DNS 与不安全重定向拒绝规则，见[指南](docs/fake_ip_dns.md)。
+- 借鉴 Agent Reach，来源诊断新增分操作观察、可选显式查询/网页样本和配置 RSS 快照检查；保持默认零网络、显式选源、预算和稳定失败诊断。
+- Scrapling 增加有界表格单元格、跨度与结构指纹；正文外有表格时保留整页文本，避免静默漏数，不解释金融口径。
+- 增加可选 Patchright 1.62.1 雪球驱动，保留现有隔离会话与传输策略；默认 Playwright，实验性能力不代表线上取文成功。
+- 使用方法与实际验证范围见[增强指南](docs/reach_scrapling_patchright.md)。
+- 保留此前 WIP 快照中已提交的本地归档、资料导出与相关契约/安装资源；没有把私有资料库或本机缓存作为发布资源。整合范围、冲突与验证见[本轮记录](docs/rc2_merge_validation.md)。
 
 ## 0.2.0rc1 — 2026-09-18，交接候选
 

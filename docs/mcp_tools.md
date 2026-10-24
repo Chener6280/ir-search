@@ -140,6 +140,8 @@ YouTube 字幕需可选 `[video]` 安装；平台挑战、非公网解析、缺�
 
 `source_health` 新增可选 `providers`、`live`、`timeout_seconds`，在 `operational_status` 中返回配置、依赖、后端声明和处理建议。默认零来源调用；`live=true` 必须指定来源，目前只有 XHS 支持登录状态探测，其他来源明确未实现轻量探测。登录通过不等于搜索/正文通过。原 `sources`、`configured_sources` 保持兼容，工具总数不变。
 
+2026-10-03 扩展：支持 `search_samples`（已选来源→查询和发布日期窗口）、`read_samples`（仅一个普通公开 `web` URL）及 `web_read_mode=http/scrapling/browser`。查询限制一条候选、零正文读取，可能计费；live RSS 读取已配置 feed 快照。新增 `operation_status` 分别报告查询、原文、登录和 feed 验证范围；`sample_verified` 不表示所有操作或全量历史通过。使用与验收见[增强指南](reach_scrapling_patchright.md)。
+
 `search_materials` 新增可选 `audit_dir`，将字段白名单构成的私有运行摘要写入本地，并通过结果的 `audit` 返回回执；默认关闭。记录不含查询、正文、URL、作者、账户名或游标，存储失败不影响已返回素材。来源续取仍传 `source_cursors`；Python 调用方另可使用 `next_material_request(result)` 只继续提供有效位置的来源。见 [使用与限制](platform_reliability.md)。
 
 2026-09-18：通用网页新增显式 `scrapling` / `firecrawl` 读取模式；素材搜索新增 `providers=["rss"]`。可选依赖、配置、引用口径和限制见 [网页与订阅源改进](web_toolkit.md)。默认读取方式不变。

@@ -124,3 +124,98 @@ def test_independent_derivative_multiplier_and_negative_activity_are_guarded():
     assert db.run(request(fields=['close'])).records
     db.profile=replace(db.profile,derivatives_amount_multiplier=D(10000));db.quote['S_DQ_VOLUME']=D(-1)
     assert db.run().status.value=='error'
+
+
+def index_request(symbols=('000300.SH',),**kw):
+    return DataRequest('index_daily',symbols=list(symbols),start='2026-09-11',end='2026-09-11',market='CN_INDEX',**kw)
+
+
+def test_index_levels_are_wind_only_index_points():
+    db=Database();db.rows['aindexeodprices']=[{'S_INFO_WINDCODE':'000300.SH','TRADE_DT':'20260911','CRNCY_CODE':'CNY',
+        'S_DQ_PRECLOSE':D('4517.2785'),'S_DQ_OPEN':D(0),'S_DQ_HIGH':D(4520),'S_DQ_LOW':D(4430),'S_DQ_CLOSE':D('4439.1443')}]
+    r=db.run(index_request())
+    assert r.status.value=='ok' and r.records[0]['close']==D('4439.1443') and r.records[0]['open'] is None
+    assert r.records[0]['previous_close']==D('4517.2785') and r.records[0]['currency']=='CNY'
+    assert {'index_level_not_tradable_price','nonpositive_index_level_as_missing'}<={d.code for d in r.diagnostics}
+    assert 'FROM aindexeodprices' in db.calls[0][0]
+    db.calls.clear();assert not db.run(index_request(['IF2609.CFE'])).records and not db.calls
+    jy=Database('jydb');assert not jy.run(index_request()).records and not jy.calls
+
+
+def valuation_request(symbols=('000016.SH',),**kw):
+    return DataRequest('index_valuation',symbols=list(symbols),start='2026-09-11',end='2026-09-11',market='CN_INDEX',**kw)
+
+
+def rate_request(symbols=('SHIBOR_3M(10)',),**kw):
+    return DataRequest('benchmark_rate',symbols=list(symbols),start='2026-09-11',end='2026-09-11',market='CN_RATE',**kw)
+
+
+def test_index_dividend_yield_is_vendor_trailing_percent():
+    db=Database();db.rows['aindexvaluation']=[{'S_INFO_WINDCODE':'000016.SH','TRADE_DT':'20260911','DIVIDEND_YIELD':D('3.2479')}]
+    r=db.run(valuation_request())
+    assert r.status.value=='ok' and r.records==[{'symbol':'000016.SH','trade_date':date(2026,9,11),'dividend_yield':D('3.2479')}]
+    assert 'FROM aindexvaluation' in db.calls[0][0]
+    db.calls.clear();assert not db.run(valuation_request(['IF2609.CFE'])).records and not db.calls
+    jy=Database('jydb');assert not jy.run(valuation_request()).records and not jy.calls
+
+
+def test_benchmark_rate_fixings_keep_vendor_code():
+    db=Database();db.rows['windbenchmarkinterestrate']=[{'B_INFO_BENCHMARKCODE':'SHIBOR_3M(10)','TRADE_DT':'20260911','B_INFO_RATE':D('1.4301')}]
+    r=db.run(rate_request())
+    assert r.status.value=='ok' and r.records==[{'symbol':'SHIBOR_3M(10)','trade_date':date(2026,9,11),'rate':D('1.4301')}]
+    assert 'FROM windbenchmarkinterestrate' in db.calls[0][0]
+    db.calls.clear();assert not db.run(rate_request(["SHIBOR_3M' OR 1=1--"])).records and not db.calls
+    jy=Database('jydb');assert not jy.run(rate_request()).records and not jy.calls
+
+
+class Chain(Database):
+    def __init__(self):
+        super().__init__()
+        term=dict(S_INFO_SCCODE='IO.CFE',S_INFO_STRIKEPRICE=D(4400),S_INFO_COUNIT=D(100),S_INFO_MONTH='202610',
+                  S_INFO_FTDATE='20260824',S_INFO_LASTTRADINGDATE='20261016')
+        self.directory=[dict(term,S_INFO_WINDCODE='IO2610-C-4400.CFE',S_INFO_EXCODE='IO2610-C-4400',S_INFO_CALLPUT=D(708001000)),
+                        dict(term,S_INFO_WINDCODE='IO2610-P-4400.CFE',S_INFO_EXCODE='IO2610-P-4400',S_INFO_CALLPUT=D(708002000)),
+                        dict(term,S_INFO_WINDCODE='IO2610-X-4400.CFE',S_INFO_EXCODE=None,S_INFO_CALLPUT=D(1)),
+                        dict(term,S_INFO_WINDCODE='M2611-C-3000.DCE',S_INFO_EXCODE='M2611-C-3000',S_INFO_CALLPUT=D(708001000))]
+        quote={'TRADE_DT':'20260911','S_DQ_OPEN':D(30),'S_DQ_HIGH':D(33),'S_DQ_LOW':D(29),'S_DQ_CLOSE':D(31),
+               'S_DQ_SETTLE':D('31.2'),'S_DQ_PRESETTLE':D(28),'S_DQ_VOLUME':D(12),'S_DQ_OI':D(40)}
+        self.quotes=[dict(quote,S_INFO_WINDCODE='IO2610-C-4400.CFE'),
+                     dict(quote,S_INFO_WINDCODE='IO2610-P-4400.CFE',S_DQ_OPEN=D(0),S_DQ_HIGH=D(0),S_DQ_LOW=D(0),S_DQ_CLOSE=D(0),S_DQ_VOLUME=D(0))]
+
+    def select(self,profile,sql,params,**kw):
+        self.calls.append((sql,params))
+        if 'FROM chinaoptiondescription' in sql:
+            rows=[r for r in self.directory if r['S_INFO_WINDCODE'].endswith(params[0][1:])]
+            return sorted((dict(r) for r in rows),key=lambda r:r['S_INFO_WINDCODE'])[:params[-1]]
+        codes=set(params[:-3])
+        return [dict(q) for q in self.quotes if q['S_INFO_WINDCODE'] in codes][:params[-1]]
+
+
+def test_chain_joins_directory_terms_to_eod_quotes_per_exchange():
+    db=Chain();r=db.run(request('options_chain','CFFEX'))
+    assert r.status.value=='ok' and [x['contract'] for x in r.records]==['IO2610-C-4400.CFE','IO2610-P-4400.CFE']
+    call,put=r.records
+    assert call['symbol']=='CFFEX' and call['series_id']=='IO.CFE' and call['option_type']=='call' and call['strike']==4400
+    assert call['contract_size']==100 and call['contract_month']=='202610' and call['last_trading_date']==date(2026,10,16)
+    assert call['price_status']=='traded' and call['close']==31 and call['settlement']==D('31.2')
+    assert put['option_type']=='put' and put['close'] is None and put['source_close']==0 and put['price_status']=='no_trade_reference'
+    codes={d.code for d in r.diagnostics}
+    assert {'chain_contracts_with_unparsed_terms_skipped','eod_quotes_not_synchronized_no_bid_ask','zero_no_trade_price_as_missing'}<=codes
+    assert db.calls[0][1][0]=='%.CFE' and 'JOIN' not in db.calls[0][0] and 'FROM chinaoptioneodprices' in db.calls[1][0]
+
+
+@pytest.mark.parametrize('change',[dict(symbols=['CFE']),dict(start='2026-08-01'),dict(provider='jydb')])
+def test_chain_rejects_non_exchange_symbols_long_ranges_and_jydb(change):
+    db=Chain();db.profile=replace(db.profile,provider=change.pop('provider','wind_mysql'))
+    r=db.run(replace(request('options_chain','CFFEX'),**change))
+    assert not r.records and not db.calls
+
+
+def test_chain_drops_identical_duplicate_source_rows_but_conflicts_still_fail():
+    db=Chain();db.quotes.insert(1,dict(db.quotes[0]))  # 供应商整行重复装载：去重、留诊断、不报错
+    r=db.run(request('options_chain','CFFEX'))
+    assert r.status.value=='ok' and len(r.records)==2
+    assert 'duplicate_source_rows_dropped' in {d.code for d in r.diagnostics}
+    db=Chain();db.quotes.insert(1,dict(db.quotes[0],S_DQ_CLOSE=D(32)))  # 同键不同值=源数据冲突，仍须报错
+    r=db.run(request('options_chain','CFFEX'))
+    assert r.status.value=='error' and 'upstream_schema' in {d.code for d in r.diagnostics}

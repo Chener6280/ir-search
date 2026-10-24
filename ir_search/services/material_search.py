@@ -26,6 +26,8 @@ _GENERIC_TERMS = frozenset((
     "影响", "原因", "变化", "分析", "展望", "趋势", "进展", "最新", "近期", "目前", "当前", "未来",
     "为何", "为什么", "哪些", "什么", "多少", "是否", "问题", "表现", "解读", "点评", "梳理", "总结",
     "观点", "看法", "判断", "逻辑", "相关", "有关", "方面", "主要", "具体", "整体", "以及", "对于"))
+# Overlapping suffixes (为什么 / 什么) must use longest-first matching in every process.
+_GENERIC_TERMS = tuple(sorted(_GENERIC_TERMS, key=lambda word: (-len(word), word)))
 # Never remove individual characters inside financial terms (有色、对冲、在建).
 _PARTIAL_MIN_CHARS, _PARTIAL_MIN_COVERAGE = 5, 0.6
 _ASCII_TERM = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,30}")
@@ -143,7 +145,7 @@ def _validate_page(page, cap, request):
             or any(not isinstance(d, Diagnostic) for d in page.diagnostics)):
         raise ValueError("Invalid material page")
     seen = set()
-    if not isinstance(page.scans, list) or len(page.scans) > 16:
+    if not isinstance(page.scans, list) or len(page.scans) > (20 if cap.provider == "web" else 16):
         raise ValueError("Invalid scan details")
     for scan in page.scans:
         if not isinstance(scan, MaterialSourceScan) or replace(scan).material_type not in cap.material_types:
@@ -161,7 +163,11 @@ def _validate_page(page, cap, request):
             raise ValueError('Invalid web fallback request')
         fallback = replace(raw)
         route_key = (fallback.failed_provider, fallback.web_region)
-        if (fallback != raw or cap.provider != 'web' or route_key not in failed_routes or route_key in fallback_routes
+        attempts = [s for s in page.scans if s.web_region == fallback.web_region]
+        chain_valid = (fallback.attempted_providers and tuple(s.discovery_provider for s in attempts) == fallback.attempted_providers
+                       and any(s.state == 'quota' for s in attempts) and all(s.state not in {'queried', 'web_region_budget_exhausted'} for s in attempts)
+                       and attempts[-1].discovery_provider == fallback.failed_provider)
+        if (fallback != raw or cap.provider != 'web' or (not chain_valid and (fallback.attempted_providers or route_key not in failed_routes)) or route_key in fallback_routes
                 or fallback.published_start != request.published_start or fallback.published_end != request.published_end
                 or fallback.period_start != request.period_start or fallback.period_end != request.period_end
                 or fallback.max_results > min(request.candidates_per_source, 10)
@@ -217,6 +223,10 @@ def _source_weight(adapter):
 
 
 def _matching(candidate, plan, request):
+    if request.zsxq_timeline_export:
+        return {"topic_terms": [], "related_terms": [], "classification": "source_timeline_record",
+                "business_period": "not_requested",
+                "interpretation": "bounded_timeline_selection_not_query_match"}
     body = (candidate.title + "\n" + candidate.text + "\n" + "\n".join(a.name for a in candidate.attachments)).casefold()
     identifiers = [v for v in plan['entity_aliases'] + plan['symbols'] if v not in plan['institution_aliases']]
     institution_ids = {row['institution_id'] for row in plan['institutions']}
@@ -314,8 +324,9 @@ def _version(raw, adapter, cap, request, result):
     version_id = "sha256:" + hashlib.sha256((candidate.title + "\n" + candidate.text).encode()).hexdigest()
     version = {**candidate.to_dict(), "content_hash": content_hash, "version_id": version_id,
                "warnings": sorted(set(warnings)), "match": match, "evidence_spans": _spans(candidate, match, version_id)}
-    score = (100 if match["topic_terms"] else 60 if match["partial_topic_terms"] else 0)
-    score += 5 * len(match["topic_terms"]) + 3 * len(match["partial_topic_terms"]) + len(match["related_terms"])
+    partial_terms = match.get("partial_topic_terms", ())
+    score = (100 if match["topic_terms"] else 60 if partial_terms else 0)
+    score += 5 * len(match["topic_terms"]) + 3 * len(partial_terms) + len(match["related_terms"])
     # A vendor's claimed publisher category is not independent original-source verification.
     tier_score = int(candidate.provenance.source_tier or 0)
     if candidate.read_details.get('publisher_verification') == 'vendor_claim_unverified':
@@ -422,7 +433,7 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
         result.required_inputs.extend(["published_start", "published_end"])
     if not request.period_start and re.search(r"\d{1,2}月", request.question):
         result.required_inputs.extend(["period_start", "period_end"])
-    if not result.plan["topic_terms"]:
+    if not result.plan["topic_terms"] and not request.zsxq_timeline_export:
         result.required_inputs.append("keywords")
     available = {adapter.name: adapter for adapter in registry.entries(account_scope=context.account_scope)}
     result.plan['source_selection_policy'] = 'explicit_user_choice'
@@ -666,8 +677,9 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
         state["returned_evidence"] = _returned_evidence(result.items, state["provider"])
     if request.period_start and not any(v["match"]["business_period"] == "overlaps_requested_period" for g in result.items for v in g["versions"]):
         result.gaps.append({"code": "no_evidence_with_verified_business_period"})
-    matches = [v["match"] for g in result.items for v in g["versions"]]
-    if matches and not any(m["topic_terms"] or m["partial_topic_terms"] for m in matches):
+    matches = ([] if request.zsxq_timeline_export else
+               [v["match"] for g in result.items for v in g["versions"]])
+    if matches and not any(m["topic_terms"] or m.get("partial_topic_terms") for m in matches):
         result.gaps.append({"code": "related_terms_only_not_direct_topic_evidence"})
     elif matches and not any(m["topic_terms"] for m in matches):
         result.gaps.append({"code": "partial_topic_term_matches_only"})

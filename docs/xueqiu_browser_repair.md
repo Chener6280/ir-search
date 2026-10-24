@@ -67,3 +67,5 @@ SDK 可为单次浏览器样本使用 `RequestContext(timeout_seconds=30, max_op
 - 用户授权的追加对照摘要为 `.local/xueqiu-repair/authorized-comparison.json`。仅记录脱敏错误代码和请求数；此次未使用或更改 env 凭证，包内运行代码未改变。
 
 本轮没有发布 GitHub。实际自动取数状态以此处的失败结果为准；离线测试通过不等于雪球平台在线放行。
+
+2026-10-03 补充：增加显式 `XUEQIU_BROWSER_DRIVER=patchright`，固定可选 Patchright 1.62.1，继续使用本文的短期会话、TLS、公网地址和预算约束。Playwright 仍为默认驱动，不自动跨驱动重试；Patchright 自身包含上游驱动补丁，此选项与原先 Playwright 的行为分别报告。新增实现不改写上述历史失败或宣布平台已放行；本次真实对照和当前限制见[增强指南](reach_scrapling_patchright.md)。

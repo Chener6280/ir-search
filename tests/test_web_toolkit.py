@@ -185,3 +185,73 @@ def test_scrapling_fallback_preserves_base_truncation_warning(monkeypatch):
     monkeypatch.setattr(toolkit,'_scrapling_selector',lambda:lambda *a,**k:Empty())
     d=toolkit.extract_scrapling_document(b'<div>'+b'Revenue '*14000+b'</div>',URL,max_chars=100000)
     assert len(d.text)<=100000 and 'text_truncated' in d.warnings
+
+
+def test_scrapling_table_cells_preserve_units_spans_and_uninterpreted_numbers():
+    pytest.importorskip('scrapling')
+    html = ('<title>Financial report</title><article><p>' + 'Financial results. '*10 + '</p>'
+            '<table><caption>单位：亿元</caption><tr><th rowspan="2">指标</th><th colspan="2">2026</th></tr>'
+            '<tr><th>Q1</th><th>Q2</th></tr><tr><td>收入</td><td>1,234.50</td><td>—</td></tr></table></article>')
+    doc = toolkit.extract_scrapling_document(html.encode(), URL)
+    details = doc.extra['html_extraction']; table = details['tables'][0]
+    assert table['caption'] == '单位：亿元' and table['rows'][0]['cells'][0]['rowspan'] == 2
+    assert table['rows'][0]['cells'][1]['colspan'] == 2
+    assert table['rows'][2]['cells'][1]['text'] == '1,234.50'
+    assert table['rows'][2]['cells'][2]['text'] == '—' and not table['truncated']
+    assert details['table_scope'] == 'selected_body_dom_cells_not_normalized_financial_data'
+    assert '1,234.50' in doc.text and details['completeness'] == 'not_verified'
+
+
+def test_scrapling_does_not_drop_a_table_outside_selected_article():
+    pytest.importorskip('scrapling')
+    html = HTML + '<table><tr><td>Revenue outside article 987.65</td></tr></table>'
+    doc = toolkit.extract_scrapling_document(html.encode(), URL)
+    details = doc.extra['html_extraction']
+    assert details['selected'] == 'stdlib' and details['state'] == 'tables_outside_selected_body'
+    assert details['omitted_table_count'] == 1 and '987.65' in doc.text
+    assert 'scrapling_selection_fallback' in doc.warnings
+
+
+def test_scrapling_structure_hash_tracks_layout_not_text():
+    pytest.importorskip('scrapling')
+    first = toolkit.extract_scrapling_document(HTML.encode(), URL)
+    changed_text = toolkit.extract_scrapling_document(HTML.replace('123.45','456.78').encode(), URL)
+    changed_shape = toolkit.extract_scrapling_document(HTML.replace('<p>','<div>').replace('</p>','</div>').encode(), URL)
+    assert first.extra['html_extraction']['structure_hash'] == changed_text.extra['html_extraction']['structure_hash']
+    assert first.extra['html_extraction']['structure_hash'] != changed_shape.extra['html_extraction']['structure_hash']
+    assert first.text_hash != changed_text.text_hash
+
+
+def test_scrapling_table_budget_and_invalid_layout_are_visible():
+    pytest.importorskip('scrapling')
+    html = '<article><p>' + 'Financial report '*20 + '</p><table><tr><td colspan="unknown">' + 'x'*600 + '</td></tr></table></article>'
+    doc = toolkit.extract_scrapling_document(html.encode(), URL, max_chars=100)
+    details = doc.extra['html_extraction']
+    assert details['tables_truncated'] and details['tables'][0]['invalid_spans']
+    assert details['tables'][0]['rows'][0]['cells'][0]['colspan'] is None
+    assert len(details['tables'][0]['rows'][0]['cells'][0]['text']) == 100
+    assert {'scrapling_tables_truncated','scrapling_table_layout_unresolved'} <= set(doc.warnings)
+    assert len(doc.text) == 100 and doc.text_hash == hashlib.sha1(doc.text.encode()).hexdigest()
+
+
+def test_scrapling_nested_tables_do_not_fabricate_a_flat_grid():
+    pytest.importorskip('scrapling')
+    html = '<article><p>' + 'Financial report '*20 + '</p><table><tr><td>Outer<table><tr><td>Inner</td></tr></table></td></tr></table></article>'
+    doc = toolkit.extract_scrapling_document(html.encode(), URL)
+    assert doc.extra['html_extraction']['tables'][0]['nested_tables']
+    assert 'scrapling_table_layout_unresolved' in doc.warnings
+
+
+def test_scrapling_table_diagnostics_and_exact_citations_flow_through_retrieve(monkeypatch):
+    pytest.importorskip('scrapling')
+    html = HTML.replace('</article>', '<table><tr><td>Revenue</td><td>123.45</td></tr></table></article>')
+    from ir_search.documents.html import extract_html_document
+    from ir_search.evidence import extract_evidence
+    doc = toolkit.extract_scrapling_document(html.encode(), URL)
+    doc = web_documents._annotate(doc, 'http')
+    assert doc.extra['web_read']['html_extraction']['tables'][0]['rows'][0]['cells'][1]['text'] == '123.45'
+    for span in extract_evidence(doc, 'Revenue'):
+        assert span.text == doc.text[span.start_char:span.end_char]
+    monkeypatch.setattr('ir_search.services.retrieval.read_web_document', lambda *a, **k:doc)
+    result = retrieve(MaterialRequest('Revenue',[URL],web_read_mode='scrapling')).to_dict()
+    assert result['materials'][0]['read_details']['html_extraction']['tables']

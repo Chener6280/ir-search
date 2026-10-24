@@ -111,7 +111,6 @@ def _fetch_bytes_with_redirects(
         req = urllib.request.Request(current_url, headers=headers)
         req.allow_private_network = allow_private_network
         req.context = context
-        context.begin_operation()
         try:
             with _open_once(opener, req, timeout_sec) as resp:
                 raw = resp.read(5_000_000)
@@ -136,18 +135,19 @@ def _fetch_bytes_with_redirects(
 
 
 def _open_once(opener, req: urllib.request.Request, timeout_sec: int):
+    from ir_search.context import RequestContext
+    context = getattr(req, "context", None) or RequestContext(timeout_seconds=timeout_sec)
     if getattr(req, "allow_private_network", False):
         # Explicit trusted SDK opt-in only. MCP does not grant this from tool arguments.
+        context.begin_operation()
         return opener.open(req, timeout=timeout_sec)
     from io import BytesIO
     from email.message import Message
     from urllib.response import addinfourl
-    from ir_search.context import RequestContext
     from ir_search.infrastructure.public_web import _request
     from ir_search.registry import DataAdapterError
     try:
-        reply = _request(req.full_url, context=getattr(req, "context", None) or
-                              RequestContext(timeout_seconds=timeout_sec), max_bytes=5_000_000)
+        reply = _request(req.full_url, context=context, max_bytes=5_000_000)
     except DataAdapterError as exc:
         if exc.code == "blocked_url": raise UrlBlockedError("blocked public URL or address") from None
         if exc.code == "fake_ip_blocked":

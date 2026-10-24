@@ -8,15 +8,16 @@ from datetime import datetime
 from typing import Optional
 
 from ir_search.adapters.base import AdapterError
+from ir_search.infrastructure.web_search import _legacy_search_failure
 from ir_search.config import load_yaml
 from ir_search.models import Hit, Intent, Query
-from ir_search.network import bool_env, http_error_message, open_url
+from ir_search.network import bool_env, open_url
 
 
 class BochaAdapter:
     name = "bocha"
     mode = "live"
-    endpoint = "https://api.bochaai.com/v1/web-search"
+    endpoint = "https://api.bocha.cn/v1/web-search"
 
     def query(self, q: Query) -> list[Hit]:
         key = os.environ.get("BOCHA_API_KEY")
@@ -37,10 +38,8 @@ class BochaAdapter:
         try:
             with open_url(req, timeout=15, **bocha_network_options()) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            raise AdapterError(http_error_message("bocha request failed", exc), retryable=True) from exc
         except Exception as exc:
-            raise AdapterError(f"bocha request failed: {exc}", retryable=True) from exc
+            raise AdapterError(_legacy_search_failure(exc), retryable=True) from None
         items = data.get("data", {}).get("webPages", {}).get("value", [])
         return [
             Hit(

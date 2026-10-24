@@ -3,11 +3,11 @@
 Offline: every server here listens on 127.0.0.1 only and the resolver is pointed at it.
 """
 import errno
+import os
 import socket
 import ssl
 import struct
 import threading
-import time
 from types import SimpleNamespace
 
 import pytest
@@ -26,7 +26,8 @@ ALERT = bytes([0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28])
 @pytest.fixture
 def server(monkeypatch):
     """Start one loopback server of the given kind and point the resolver at it."""
-    listeners = []
+    listeners, workers, failures = [], [], []
+    stop = threading.Event()
 
     def start(kind):
         listener = socket.socket()
@@ -42,25 +43,35 @@ def server(monkeypatch):
             try:
                 if kind == "reset":
                     conn.recv(4096)
-                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("hh", 1, 0))
+                    layout = 'hh' if os.name == 'nt' else 'ii'
+                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack(layout, 1, 0))
                 elif kind == "silent_then_close":
-                    time.sleep(0.4)
+                    stop.wait(0.4)
                 elif kind == "alert":
                     conn.recv(4096)
                     conn.sendall(ALERT)
-                    time.sleep(0.2)
+                    stop.wait(0.2)
                 elif kind == "hold":
-                    time.sleep(3)
+                    stop.wait(3)
+            except Exception as exc:
+                failures.append(exc)
             finally:
                 conn.close()
 
-        threading.Thread(target=run, daemon=True).start()
+        worker = threading.Thread(target=run, daemon=True)
+        workers.append(worker)
+        worker.start()
         address = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", listener.getsockname()[1]))
         monkeypatch.setattr(web, "_resolve", lambda *args: address)
 
     yield start
+    stop.set()
     for listener in listeners:
         listener.close()
+    for worker in workers:
+        worker.join(timeout=1)
+        assert not worker.is_alive(), 'loopback TLS server did not stop'
+    assert not failures, 'loopback TLS server failed to create the requested response'
 
 
 def code_of(call):

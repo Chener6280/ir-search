@@ -27,6 +27,14 @@ class XueqiuReadProfile:
     browser_use_cookie: bool = False
     browser_headless: bool = True
     browser_channel: str = 'chromium'
+    browser_driver: str = 'playwright'
+
+    def __post_init__(self):
+        if (self.mode not in {'http', 'browser'} or type(self.browser_use_cookie) is not bool
+                or type(self.browser_headless) is not bool
+                or self.browser_channel not in {'chromium', 'chrome'}
+                or self.browser_driver not in {'playwright', 'patchright'}):
+            raise SourceConfigError()
 
 
 def xueqiu_read_profile(*, values=None, env_file=None):
@@ -36,21 +44,27 @@ def xueqiu_read_profile(*, values=None, env_file=None):
     cookie = values.get('XUEQIU_BROWSER_USE_COOKIE', 'false').lower()
     headless = values.get('XUEQIU_BROWSER_HEADLESS', 'true').lower()
     channel = values.get('XUEQIU_BROWSER_CHANNEL', 'chromium')
+    driver = values.get('XUEQIU_BROWSER_DRIVER', 'playwright')
     if mode not in {'http', 'browser'} or cookie not in {'true', 'false'} or headless not in {'true', 'false'}:
         raise SourceConfigError()
     if channel not in {'chromium', 'chrome'}: raise SourceConfigError()
-    return XueqiuReadProfile(mode, cookie == 'true', headless == 'true', channel)
+    return XueqiuReadProfile(mode, cookie == 'true', headless == 'true', channel, driver)
 
 
-def _dependency():
+def _dependency(driver='playwright'):
+    if driver not in {'playwright', 'patchright'}: raise SourceConfigError()
     try:
-        parts = tuple(int(p) for p in version('playwright').split('.')[:2])
+        installed = version(driver)
+        parts = tuple(int(p) for p in installed.split('.')[:2])
     except PackageNotFoundError: raise DataAdapterError('browser_dependency_missing') from None
     except ValueError: raise DataAdapterError('browser_version_unsupported') from None
     if parts < (1, 49): raise DataAdapterError('browser_version_unsupported')
+    if driver == 'patchright' and (installed != '1.62.1' or sys.version_info < (3, 10)):
+        raise DataAdapterError('browser_version_unsupported')
 
 
-def _run(url, *, context, max_chars, cookie, headless=True, channel='chromium'):
+def _run(url, *, context, max_chars, cookie, headless=True, channel='chromium', driver='playwright'):
+    if driver not in {'playwright', 'patchright'}: raise SourceConfigError()
     context.begin_operation()
     remaining = context.max_operations - context.operations
     if remaining < 1: raise RequestStopped('operation_budget_exhausted')
@@ -60,7 +74,8 @@ def _run(url, *, context, max_chars, cookie, headless=True, channel='chromium'):
         os.chmod(directory, 0o700)
         output = Path(directory)/'result.json'
         payload = {'url': url, 'timeout': context.remaining_seconds(), 'operations': remaining,
-                   'output': str(output), 'cookie': cookie, 'max_chars': max_chars, 'headless': headless, 'channel': channel}
+                   'output': str(output), 'cookie': cookie, 'max_chars': max_chars, 'headless': headless,
+                   'channel': channel, 'driver': driver}
         process = subprocess.Popen([sys.executable, '-I', '-c', bootstrap, package], cwd=directory,
             env=_environment(directory), stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=os.name == 'posix', creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
@@ -94,12 +109,13 @@ def read_xueqiu_browser_document(url, *, context, max_chars=20000):
     context.check_active()
     try: profile = xueqiu_read_profile()
     except SourceConfigError: raise DataAdapterError('source_config_error') from None
-    _dependency()
+    if profile.browser_driver == 'playwright': _dependency()
+    else: _dependency(profile.browser_driver)
     cookie = _cookie('XUEQIU_COOKIE') if profile.browser_use_cookie else ''
     if profile.browser_use_cookie and not cookie: raise DataAdapterError('no_credential')
     try:
         data = _run(canonical, context=context, max_chars=max_chars, cookie=cookie,
-                    headless=profile.browser_headless, channel=profile.browser_channel)
+                    headless=profile.browser_headless, channel=profile.browser_channel, driver=profile.browser_driver)
         if data.get('url') != canonical: raise DataAdapterError('blocked_url')
         for name, limit in (('title', 4000), ('text', max_chars), ('publisher', 500), ('publication', 200), ('publication_url', 8192)):
             if not isinstance(data.get(name), str) or len(data[name]) > limit: raise DataAdapterError('upstream_schema')
@@ -110,13 +126,18 @@ def read_xueqiu_browser_document(url, *, context, max_chars=20000):
                 or browser.get('tls_verified') is not True or browser.get('login_performed') is not False
                 or any(type(browser.get(k)) is not int or browser[k] < 0 for k in ('blocked_requests', 'wire_bytes'))):
             raise DataAdapterError('upstream_schema')
+        backend = profile.browser_driver + '_chromium'
+        if browser.get('backend', 'playwright_chromium') != backend:
+            raise DataAdapterError('upstream_schema')
         # Rebuild diagnostics from known fields; never forward arbitrary child state.
         details = {'content_origin': 'community_post', 'source_attribution_preserved': True,
             'comments_included': False, 'read_mode': 'browser', 'browser': {
-                'backend': 'playwright_chromium', 'network': 'public_dns_pinned_connect', 'tls_verified': True,
+                'backend': backend, 'network': 'public_dns_pinned_connect', 'tls_verified': True,
                 'blocked_requests': browser['blocked_requests'], 'wire_bytes': browser['wire_bytes'],
                 'cookie_mode': 'explicit_env' if cookie else 'anonymous', 'login_performed': False,
-                'channel': profile.browser_channel, 'headless': profile.browser_headless, 'experimental': True}}
+                'channel': profile.browser_channel, 'headless': profile.browser_headless, 'experimental': True,
+                'session_scope': 'disposable_context', 'automatic_failover': False,
+                'driver_patches': 'upstream_patchright' if profile.browser_driver == 'patchright' else 'none'}}
         if cookie:
             secrets = [p.partition('=')[2] for p in cookie.split(';') if len(p.partition('=')[2]) > 12]
             if any(secret in data[field] for secret in secrets

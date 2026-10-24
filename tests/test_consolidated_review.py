@@ -78,6 +78,7 @@ def test_legacy_fetch_uses_pinned_transport_and_one_redirect_budget(monkeypatch)
     from ir_search.documents.fetcher import fetch_document
     calls = []
     def transport(url, **kw):
+        kw['context'].begin_operation()  # The real pinned transport owns this accounting.
         calls.append((url, kw['context']))
         if len(calls) == 1:
             return public_web._Reply(302, '', 'https://example.org/b', b'', datetime.now(timezone.utc))
@@ -86,6 +87,30 @@ def test_legacy_fetch_uses_pinned_transport_and_one_redirect_budget(monkeypatch)
     doc = fetch_document('https://example.org/a')
     assert doc.text == 'Example evidence' and not doc.errors
     assert calls[0][1] is calls[1][1] and calls[0][1].operations == 2
+
+
+@pytest.mark.parametrize('redirects,max_redirects', [(0, 0), (3, 5), (5, 5), (6, 5)])
+def test_legacy_redirect_budget_with_the_real_transport(monkeypatch, redirects, max_redirects):
+    from ir_search.documents.fetcher import _fetch_bytes_with_redirects, RedirectLimitError
+    from test_public_web_transport import ADDRESS, Connection, Response
+    calls = []
+    monkeypatch.setattr(public_web, '_resolve', lambda *args: ADDRESS)
+    def connection(host, port, **options):
+        calls.append(host)
+        response = (Response(status=302, headers={'Location': f'https://hop{len(calls)}.example.org/page'})
+                    if len(calls) <= redirects else Response(body=b'original evidence'))
+        return Connection(response)
+    monkeypatch.setattr(public_web, '_Connection', connection)
+    def fetch():
+        return _fetch_bytes_with_redirects('https://start.example.org/page', allow_private_network=False,
+                                          timeout_sec=10, max_redirects=max_redirects)
+    if redirects > max_redirects:
+        with pytest.raises(RedirectLimitError):
+            fetch()
+    else:
+        body, _, _, chain = fetch()
+        assert body == b'original evidence' and len(chain) == redirects
+    assert len(calls) == min(redirects + 1, max_redirects + 1)
 
 
 def test_dns_wait_is_cancelled_and_does_not_wait_for_resolver(monkeypatch):

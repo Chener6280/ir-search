@@ -199,6 +199,14 @@ def test_only_playwrights_own_chromium_counts_as_bundled(payload, bundled):
     assert launched == payload.get("channel", "chromium") and (launched == "chromium") is bundled
 
 
+@pytest.mark.parametrize('driver', ['playwright', 'patchright'])
+@pytest.mark.parametrize('channel', ['chromium', 'chrome'])
+def test_alternative_driver_keeps_the_bundled_chromium_waiver_closed(driver, channel):
+    payload = {'driver': driver, 'channel': channel}
+    assert worker._bundled_chromium(payload) is (driver == 'playwright' and channel == 'chromium')
+    assert worker._context_options()['ignore_https_errors'] is False
+
+
 @pytest.mark.parametrize("channel,bundled", [("chromium", True), ("chrome", False), ("msedge", False)])
 def test_worker_main_builds_the_gate_from_the_channel_it_launches(monkeypatch, tmp_path, channel, bundled):
     seen = {}

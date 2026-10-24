@@ -1,5 +1,11 @@
 # IMA 素材 adapter
 
+## 2026-09-27：归档接口安全诊断补充
+
+IMA OpenAPI 错误仍使用原有 `DataAdapterError.code`，新增可选 `diagnostics` 字典：只包含允许的 `operation`、整数 `httpStatus`、整数 `providerCode`。公开 `list_collection_directory` 异常保留该字段；`retrieve_asset` 的失败结果也在有证据时返回该字段。未知业务码仍为 `ima_upstream_rejected`，不擅自归类成限流或权限；调用方应停止、显示证据并由维护者诊断。此扩展不改变成功返回格式、不要求调用方导入内部模块，兼容没有该字段的旧调用方。
+
+诊断不含上游消息、原始响应、请求参数、文件内容、请求头、API Key、Cookie、客户端 ID 或签名 URL。HTTP/业务码只在实际取得时提供，缺失不编造。秘密回显检查仍先于业务码读取。采集时间由调用方记录；不伪造平台请求 ID。
+
 2026-09-16。`ima` 已作为独立来源进入 `search_materials` / `retrieve` 的 Python SDK 与 MCP。认证与协议参考 [IMA 官方 Agent 接入页](https://ima.qq.com/agent-interface)及其发布的 [官方 skill 1.1.10](https://app-dl.ima.qq.com/skills/ima-skills-1.1.10.zip)，实现为包内 Python 客户端；不依赖安装官方 skill、Node、桌面客户端或开发者的 skills 路径。参考包未随项目发布。
 
 ## 已实现
@@ -59,6 +65,11 @@ if refs:
 MCP `search_materials` 支持相同字段。`retrieve` 接受上述 `ima://` 引用；需要指定来源时使用 `providers=["ima"]`，无需调用 `deep_research`。
 
 ## 口径、权限与边界
+
+- 官方业务码 `220021` 映射为 `ima_daily_quota_exhausted`（`FailureKind.QUOTA`）。
+  2026-09-27 官方目录接口实测表示资料获取次数达到当日上限、请次日再试；
+  不归类为整库权限拒绝，不自动密集重试，也不推测精确重置时刻。
+  这不证明官方客户端也受限；客户端正常下载须由独立通道核验，SDK 不绕过其限制。
 
 - 官方知识库搜索目前没有可靠的发布日期筛选；实测部分响应也不含 `is_end/next_cursor`。缺字段返回 `ima_pagination_unknown`，不会宣布扫描完成或擅自编造游标。
 - `published_start/end` 仍按统一契约必填；拿到原始网页日期后进行本地过滤。日期未知的文件、笔记仍可返回并明确标记。`source_created_at/source_updated_at` 是笔记创建/修改时间，绝不代替内容发布日期或经营数据所属期间。

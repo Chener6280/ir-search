@@ -8,8 +8,9 @@ from datetime import datetime
 from typing import Optional
 
 from ir_search.adapters.base import AdapterError
+from ir_search.infrastructure.web_search import _legacy_search_failure
 from ir_search.models import Hit, Query
-from ir_search.network import http_error_message, open_url
+from ir_search.network import open_url
 
 
 class TavilyAdapter:
@@ -31,10 +32,8 @@ class TavilyAdapter:
         try:
             with open_url(req, timeout=int(os.environ.get("TAVILY_TIMEOUT", "20"))) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            raise AdapterError(http_error_message("tavily request failed", exc), retryable=True) from exc
         except Exception as exc:
-            raise AdapterError(f"tavily request failed: {exc}", retryable=True) from exc
+            raise AdapterError(_legacy_search_failure(exc), retryable=True) from None
 
         return [
             Hit(

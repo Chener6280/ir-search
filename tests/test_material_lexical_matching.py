@@ -119,3 +119,26 @@ def test_matching_primitives():
     assert _strip_generic("capex outlook") == "capex outlook"
     assert _partial_match("毛利率", "毛利和利率") is None  # short terms stay exact-only
     assert _partial_match("光模块需求", "消费需求变化不大") is None  # one shared word is not enough
+
+
+@pytest.mark.parametrize('hash_seed', ['0', '1'])
+def test_overlapping_generic_suffixes_are_stable_across_processes(tmp_path, hash_seed):
+    import json
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parents[1]
+    env = {key: value for key, value in os.environ.items()
+           if key.upper() in {'PATH', 'SYSTEMROOT', 'WINDIR', 'TMP', 'TEMP', 'TMPDIR'}}
+    env.update(PYTHONHASHSEED=hash_seed, PYTHONPATH=str(root), PYTHONUTF8='1')
+    script = '''import json
+from ir_search.services.material_search import _plan
+from ir_search import MaterialSearchRequest
+print(json.dumps(_plan(MaterialSearchRequest('毛利率为什么'))['topic_terms']))
+'''
+    child = subprocess.run([sys.executable, '-c', script], cwd=tmp_path, env=env,
+                           capture_output=True, text=True, encoding='utf-8', check=True, timeout=10)
+    assert json.loads(child.stdout) == ['毛利率']
+    found = run('毛利率为什么', [candidate(1, '公司毛利率同比下降。')])
+    assert len(found.items) == 1 and found.plan['topic_terms'] == ['毛利率']

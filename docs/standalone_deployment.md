@@ -1,6 +1,6 @@
 # 独立安装与跨电脑测试
 
-适用：0.2.0rc1 交接候选。源码入口是 [GitHub 仓库](https://github.com/Chener6280/ir-search) 的 `main` 分支；记录实际提交号，以便复现测试。先读 [HANDOFF](../HANDOFF.md)。运行不需要 Desktop、BrokerSkills 或原电脑的私有目录。
+适用：0.2.0rc2 合并候选，包含 Windows/跨平台修复与地区多引擎搜索链；发布分支的 PR 仍需评审，不能据此假设 main 已更新。源码入口是 [GitHub 仓库](https://github.com/Chener6280/ir-search) 的 `main` 分支；记录实际提交号，以便复现测试。先读 [HANDOFF](../HANDOFF.md)。运行不需要 Desktop、BrokerSkills 或原电脑的私有目录。
 
 ## 1. 创建独立环境
 
@@ -30,7 +30,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install '.[dev,mcp]'
 ```
 
-也可安装测试包内 wheel：`python -m pip install 'dist/ir_search-0.2.0rc1-py3-none-any.whl[mcp]'`。离线源码测试仍需保留源码中的 tests/templates/configs/scripts；已安装 SDK/MCP 运行不依赖这些 checkout 文件。
+也可安装测试包内 wheel：`python -m pip install 'dist/ir_search-0.2.0rc2-py3-none-any.whl[mcp]'`。离线源码测试仍需保留源码中的 tests/templates/configs/scripts；已安装 SDK/MCP 运行不依赖这些 checkout 文件。
 
 ## 2. 按来源补充依赖
 
@@ -43,6 +43,7 @@ py -3.12 -m venv .venv
 | 动态网页 | `.[crawl,extract]`，再执行当前环境的 `python -m playwright install chromium` |
 | Alpha派、岗底斯登录助手、实验性雪球浏览器 | `.[browser]`，安装匹配浏览器；新设备/平台验证按官方流程完成 |
 | Scrapling | `.[scrapling]`；只使用解析器，不安装 stealth/AI fetcher |
+| 实验性雪球 Patchright 驱动 | `.[patchright]`，Python 3.10+、固定 1.62.1；当前环境执行 `python -m patchright install chromium`，或显式使用本机 Chrome；见[增强指南](reach_scrapling_patchright.md) |
 | YouTube 平台字幕 | `.[video]`；字幕/语言/网络条件单独验收 |
 | 小宇宙显式 ASR | `.[audio]`、当前机器 PATH 中的 FFmpeg、火山 Agent Plan 语音权限 |
 | 小红书 | 独立 Xiaohongshu MCP 后端、本人登录、loopback 地址与私有 token；见[配置](xhs_material_adapter.md) |
@@ -144,3 +145,47 @@ MCP 工具的路径参数由模型填写，而模型同时会读到不可信的�
 数据库分页需要凭证目录旁 `.local/state` 可私有写入，多个 worker 共用该目录并要求文件系统提供可靠锁与原子替换。只读安装请把凭证路径指向本机可写的私有目录。损坏密钥不自动重建，以免掩盖状态问题；修复状态后重新发起第一页。未验证 SMB/NFS 的锁语义，不建议把状态目录放网络盘。旧密码签名数据库游标失效，素材来源的独立续取游标不受该迁移影响。
 
 `Diagnostic.datasets=[]` 表示共享诊断；非空时只适用于列出的数据集。共享认证/连接配置错误不得伪装成覆盖不足后切换来源。
+
+## 网页搜索链：每台电脑分别配置
+
+本轮供 b-mac 后续下载的候选为 `release/rc2-merge`（PR 未合入 main）。在 b-mac 的新目录安装，避免覆盖已有项目或私有配置：
+
+```bash
+git clone --branch release/rc2-merge https://github.com/Chener6280/ir-search.git ir-search-rc2
+cd ir-search-rc2
+python3.12 -m venv .venv
+.venv/bin/python -m pip install '.[dev,mcp,mysql]'
+.venv/bin/python -m pytest
+cp credentials.env.example credentials.env
+chmod 600 credentials.env
+export IR_SEARCH_CREDENTIALS_FILE="$PWD/credentials.env"
+```
+
+随后仅在 b-mac 的私有文件中填入其获授权使用的 key、选择所需来源，再配置 MCP 的 Python 与凭证文件绝对路径。GitHub 下载、wheel 与 PR 均不提供真实 key；不要将 c-mac 的私有 env、备份、缓存、会话或账号清单同步进仓库。MCP 预检可运行 `scripts/doctor_ir_search_mcp.py --ir-search-python "$PWD/.venv/bin/python" --ir-search-path "$PWD"`。本机测试不能代替 b-mac 的离线、MCP 与实际研究验证；详见[整合验收记录](rc2_merge_validation.md)。
+
+显式选用 `providers=["web"]` 后，私有 env 中设置：
+
+```dotenv
+WEB_MATERIALS_ENABLED=true
+WEB_SEARCH_PROVIDER=chain
+WEB_CN_PROVIDERS=baizhi,zai,bocha,exa,perplexity,duckduckgo
+WEB_OVERSEAS_PROVIDERS=exa,perplexity,brave,serper,anysearch,tavily,duckduckgo
+WEB_FAILOVER_ON_EMPTY=false
+EXA_SEARCH_TYPE=auto
+BAIZHI_API_KEY=
+ZAI_API_KEY=
+ZAI_CODING_CN_API_KEY=
+BRAVE_API_KEY=
+SERPER_API_KEY=
+PERPLEXITY_API_KEY=
+BOCHA_API_KEY=
+EXA_API_KEY=
+ANYSEARCH_API_KEY=
+TAVILY_API_KEY=
+```
+
+每台电脑使用自己的私有凭证、两条链顺序和 `IR_SEARCH_CREDENTIALS_FILE` 路径。新 key 全部为空模板；智谱接受两种名称，首选 `ZAI_API_KEY`。缺 key 自动跳过并记录 `no_credentials`，DuckDuckGo 是显式无 key 兜底。不要把其他电脑的私有 env、Pi JSON 或账号复制进 wheel/repository。迁移引用值时只在本机解析，备份后写入权限 600 的文件，严禁打印值。
+
+旧 `regional/exa` 和 `WEB_OVERSEAS_PROVIDER` 继续兼容单引擎，不会静默启用所有新源。固定搜索端点使用现有系统 TLS/出口，不修改网络或代理设置，不随重定向发送凭证。新实现仅需基础依赖；作为 MCP 服务仍安装 `[mcp]`。协议、字段、诊断和调用方交接详见[网页链指南](web_search_fallback.md)。
+
+新 wheel 验证包含全部 adapter、三个 YAML、SDK 地区计划、MCP 和无私有文件检查，从与源码无关的目录执行。c-mac 本轮只是本机样本；b-mac 标为待验证，a-win 本轮不操作，不能推定跨机部署通过。

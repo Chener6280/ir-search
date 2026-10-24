@@ -278,6 +278,12 @@ def tushare_corpus_profile(*, values=None, env_file=None) -> Optional[TushareCor
         raise SourceConfigError(exc.code if isinstance(exc, SourceConfigError) else "invalid_source_config") from None
 
 
+from ir_search.config import load_yaml
+
+_WEB_DEFAULT_CHAINS = load_yaml('source_routes.yaml')['web_material_chains']
+WEB_ENGINES = ('baizhi', 'zai', 'bocha', 'exa', 'perplexity', 'brave', 'serper', 'anysearch', 'tavily', 'duckduckgo')
+
+
 @dataclass(frozen=True)
 class WebMaterialProfile:
     """Opt-in public web discovery; credentials only go to the fixed search API."""
@@ -288,17 +294,37 @@ class WebMaterialProfile:
     bocha_api_key: str = field(default="", repr=False)
     exa_api_key: str = field(default="", repr=False)
     overseas_provider: str = 'anysearch'
+    baizhi_api_key: str = field(default="", repr=False)
+    zai_api_key: str = field(default="", repr=False)
+    brave_api_key: str = field(default="", repr=False)
+    serper_api_key: str = field(default="", repr=False)
+    perplexity_api_key: str = field(default="", repr=False)
+    tavily_api_key: str = field(default="", repr=False)
+    cn_providers: tuple[str, ...] = tuple(_WEB_DEFAULT_CHAINS['cn'])
+    overseas_providers: tuple[str, ...] = tuple(_WEB_DEFAULT_CHAINS['overseas'])
+    failover_on_empty: bool = False
+    exa_search_type: str = 'auto'
+
+    def credential(self, provider):
+        """Resolve only this provider's credential; never use an anonymous API retry."""
+        return self.api_key if provider == 'anysearch' else getattr(self, provider + '_api_key', '')
 
     def __post_init__(self):
-        for key in (self.api_key, self.bocha_api_key, self.exa_api_key):
+        for key in (self.credential(name) for name in WEB_ENGINES):
             if not isinstance(key, str) or (key and not re.fullmatch(r"[A-Za-z0-9_.-]{8,512}", key)):
                 raise SourceConfigError("invalid_source_config")
-        if self.search_provider not in {"anysearch", "bocha", "exa", "regional"} or self.overseas_provider not in {'anysearch', 'exa'}:
+        if self.search_provider not in set(WEB_ENGINES) | {"regional", "chain"} or self.overseas_provider not in {'anysearch', 'exa'}:
+            raise SourceConfigError()
+        if (self.exa_search_type not in {'auto', 'lite'} or type(self.failover_on_empty) is not bool
+                or any(not isinstance(chain, tuple) or not 1 <= len(chain) <= len(WEB_ENGINES)
+                       or len(set(chain)) != len(chain) or any(name not in WEB_ENGINES for name in chain)
+                       for chain in (self.cn_providers, self.overseas_providers))):
             raise SourceConfigError()
         if type(self.allow_anonymous) is not bool:
             raise SourceConfigError()
-        ready = {"anysearch": bool(self.api_key or self.allow_anonymous), "bocha": bool(self.bocha_api_key), 'exa': bool(self.exa_api_key)}
-        configured = (ready['bocha'] or ready[self.overseas_provider]) if self.search_provider == "regional" else ready[self.search_provider]
+        ready = {name: bool(self.credential(name)) or name == 'duckduckgo' for name in WEB_ENGINES}
+        ready['anysearch'] |= self.allow_anonymous
+        configured = (ready['bocha'] or ready[self.overseas_provider]) if self.search_provider == "regional" else True if self.search_provider == "chain" else ready[self.search_provider]
         if not configured:
             raise SourceConfigError("source_credentials_missing")
         if not isinstance(self.allowed_domains, tuple) or len(self.allowed_domains) > 10:
@@ -308,9 +334,16 @@ class WebMaterialProfile:
             raise SourceConfigError()
 
 
-def web_material_profile(*, values=None, env_file=None) -> Optional[WebMaterialProfile]:
+def web_material_profile(*, values=None, env_file=None, process_overrides=False) -> Optional[WebMaterialProfile]:
     """Configure the independent web material adapter without changing process env."""
+    use_process = values is None or process_overrides
     values = read_credentials(env_file) if values is None else values
+    # Only web-specific process overrides, for bounded testing and per-process routing.
+    names = {'WEB_MATERIALS_ENABLED', 'WEB_SEARCH_PROVIDER', 'WEB_OVERSEAS_PROVIDER', 'WEB_ALLOWED_DOMAINS',
+             'WEB_CN_PROVIDERS', 'WEB_OVERSEAS_PROVIDERS', 'WEB_ALLOW_ANONYMOUS', 'WEB_FAILOVER_ON_EMPTY',
+             'EXA_SEARCH_TYPE', 'ZAI_CODING_CN_API_KEY', *(name.upper() + '_API_KEY' for name in WEB_ENGINES)}
+    if use_process:
+        values = {**values, **{key: os.environ[key] for key in names if key in os.environ}}
     enabled = values.get("WEB_MATERIALS_ENABLED", "false").lower()
     anonymous = values.get("WEB_ALLOW_ANONYMOUS", "false").lower()
     if enabled not in {"true", "false"}:
@@ -320,9 +353,18 @@ def web_material_profile(*, values=None, env_file=None) -> Optional[WebMaterialP
     if anonymous not in {"true", "false"}:
         raise SourceConfigError()
     domains = tuple(dict.fromkeys(d.strip().lower() for d in values.get("WEB_ALLOWED_DOMAINS", "").split(",") if d.strip()))
+    failover = values.get('WEB_FAILOVER_ON_EMPTY', 'false').lower()
+    if failover not in {'true', 'false'}: raise SourceConfigError()
+    options = {name + '_api_key': values.get(name.upper() + '_API_KEY', '') for name in
+               ('baizhi', 'zai', 'brave', 'serper', 'perplexity', 'tavily')}
+    options['zai_api_key'] = options['zai_api_key'] or values.get('ZAI_CODING_CN_API_KEY', '')
+    for region in ('cn', 'overseas'):
+        raw = values.get('WEB_' + region.upper() + '_PROVIDERS')
+        if raw is not None: options[region + '_providers'] = tuple(v.strip().lower() for v in raw.split(',') if v.strip())
     return WebMaterialProfile(values.get("ANYSEARCH_API_KEY", ""), anonymous == "true", domains,
                               values.get("WEB_SEARCH_PROVIDER", "anysearch"), values.get("BOCHA_API_KEY", ""),
-                              values.get('EXA_API_KEY', ''), values.get('WEB_OVERSEAS_PROVIDER', 'anysearch'))
+                              values.get('EXA_API_KEY', ''), values.get('WEB_OVERSEAS_PROVIDER', 'anysearch'),
+                              **options, failover_on_empty=failover == 'true', exa_search_type=values.get('EXA_SEARCH_TYPE', 'auto'))
 
 
 @dataclass(frozen=True)
@@ -581,11 +623,14 @@ def source_configuration_status(*, env_file=None) -> dict:
                 "access": "unknown", "live_verified": False}
         if profile:
             item.update(discovery_provider=profile.search_provider,
-                        authentication_mode="api_key" if profile.api_key or profile.bocha_api_key or profile.exa_api_key else "anonymous",
+                        authentication_mode="api_key" if any(profile.credential(name) for name in WEB_ENGINES) else "anonymous",
                         anysearch_configured=bool(profile.api_key or profile.allow_anonymous),
                         bocha_configured=bool(profile.bocha_api_key), exa_configured=bool(profile.exa_api_key),
                         overseas_provider=profile.overseas_provider,
-                        quota_fallback='caller_native_web_search')
+                        quota_fallback='caller_native_web_search',
+                        cn_providers=list(profile.cn_providers), overseas_providers=list(profile.overseas_providers),
+                        engine_credentials={name: bool(profile.credential(name)) for name in WEB_ENGINES},
+                        failover_on_empty=profile.failover_on_empty, exa_search_type=profile.exa_search_type)
         sources.append(item)
     except SourceConfigError as exc:
         sources.append(_error_row("web", exc))
@@ -643,9 +688,10 @@ def source_configuration_status(*, env_file=None) -> dict:
                 item['read_mode'] = reader.mode
                 item['browser_cookie_mode'] = 'explicit_env' if reader.browser_use_cookie else 'anonymous'
                 item['browser_channel'] = reader.browser_channel
+                item['browser_driver'] = reader.browser_driver
                 item['browser_headless'] = reader.browser_headless
                 item['browser_experimental'] = True
-                item['browser_dependency_installed'] = find_spec('playwright') is not None
+                item['browser_dependency_installed'] = find_spec(reader.browser_driver) is not None
                 item['browser_runtime_verified'] = False
             if profile:
                 item.update(bocha_configured=bool(profile.bocha_api_key), anysearch_configured=bool(profile.api_key or profile.allow_anonymous))

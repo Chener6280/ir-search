@@ -1,5 +1,6 @@
 """Formal Fiona datasets on the dedicated Bearer client; source uncertainty is explicit."""
 from datetime import date, datetime, timezone, timedelta
+from decimal import Decimal
 import json,re
 from ir_search.contracts import AdapterMode, DataCapability, DataPage, Diagnostic, Provenance
 from ir_search.contracts.expanded_data import FIONA_DATASETS
@@ -40,6 +41,13 @@ def _date(value):
     return _day(value)
 
 
+def _significant(value):
+    """Snapshot prices are single-precision floats (7577.4 arrives as 7577.39990234375)."""
+    number=_number(value)
+    if number is None or number==0:return number
+    return number.quantize(Decimal(1).scaleb(number.adjusted()-6))
+
+
 class FionaAdapter:
     name='fiona'
     def __init__(self,profile,*,client_factory=None):
@@ -53,9 +61,16 @@ class FionaAdapter:
                 'Provider truncation and missing contracts explicit; narrow date/contract ranges to continue.',
                 'Risk-model/scale unknown; native bars counts retained; futures EOD amount withheld until units confirmed.'))
             for d,definition in {**{k:MARKET_DATASETS[k] for k in ('futures_daily','options_daily')},**FIONA_DATASETS}.items())
+        self.capabilities+=(DataCapability(self.name,'futures_snapshot',tuple(f.name for f in MARKET_DATASETS['futures_snapshot'].fields),
+            ('CN_FUTURES',),frequencies=('snapshot',),adjustments=('raw',),adapter_mode=AdapterMode.LIVE,
+            coverage_notes=('Latest Fiona snapshot for at most 20 concrete four-digit-year-month contracts; source delay unverified.',
+                'last maps the source 收盘价 field; its in-session meaning was only checked after the close.',
+                'Source prices arrive as binary floats and are rounded to 7 significant digits.',
+                'Settlement stays null until published; trade_date is the exchange trading day, including night sessions.')),)
 
     def query_data(self,request,*,context):
         """Verify contract identities, then normalize only fields whose semantics are known."""
+        if request.dataset=='futures_snapshot':return self._snapshot(request,context)
         option=request.market=='CN_OPTIONS'
         cap=next((c for c in self.capabilities if c.dataset==request.dataset and request.market in c.markets),None)
         if (not cap or request.frequency not in cap.frequencies or request.adjustment not in cap.adjustments or request.as_of or request.cursor
@@ -135,3 +150,63 @@ class FionaAdapter:
         return DataPage([{k:v for k,v in r.items() if k in selected} for r in records],
             Provenance('fiona','Fiona MCP',datetime.now(timezone.utc),authority=SourceAuthority.DATA_VENDOR,adapter_mode=AdapterMode.LIVE),
             complete=complete,diagnostics=[Diagnostic(code,'query_data',self.name,failure_kind=failure,adapter_mode=AdapterMode.LIVE) for code,failure in sorted(issues.items())])
+
+    def _snapshot(self,request,context):
+        """One verified contract table read, then one snapshot read; rows outside the date window are withheld."""
+        if (request.market!='CN_FUTURES' or request.frequency!='snapshot' or request.adjustment!='raw' or request.as_of
+                or request.cursor or not request.start or not 1<=len(request.symbols)<=20 or context.account_scope!='default'
+                or request.value_kind.value!='actual' or (request.end-request.start).days>31):
+            raise DataAdapterError('unsupported')
+        native={}
+        for symbol in request.symbols:
+            code,_suffix=_parse_symbol(symbol)
+            if not re.fullmatch(r'[A-Z]{1,3}\d{4}',code) or code in native:raise DataAdapterError('unsupported')
+            native[code]=symbol
+        client=self._factory(self._profile,'futures_market_data')
+        metadata,truncated=_payload(client.read('get_futures_contract_info_table',dict(contract=','.join(native),limit=20),context=context))
+        if truncated:raise DataAdapterError('upstream_schema')
+        verified={}
+        for m in metadata:
+            code=str(m.get('合约代码','')).upper()
+            if code not in native or code in verified or m.get('交易所代码')!=_EXCHANGES[native[code].split('.')[-1]]:
+                raise DataAdapterError('upstream_schema')
+            lo,hi=_date(m['上市日期']),_date(m['最后交易日'])
+            if lo>hi:raise DataAdapterError('upstream_schema')
+            verified[code]=hi
+        issues={'fiona_snapshot_delay_unverified':FailureKind.NONE}
+        if len(verified)!=len(native):issues['fiona_contracts_missing']=FailureKind.UPSTREAM_SCHEMA
+        records=[]
+        if verified:
+            rows,truncated=_payload(client.read('get_futures_snapshot_quotes',dict(contract=','.join(verified),limit=50),context=context))
+            if truncated:issues['fiona_source_truncated_narrow_request']=FailureKind.UPSTREAM_SCHEMA
+            seen=set()
+            for r in rows:
+                code=str(r.get('合约代码','')).upper()
+                if code not in verified or code in seen:raise DataAdapterError('upstream_schema')
+                seen.add(code)
+                suffix=native[code].split('.')[-1]
+                if r.get('交易所代码') not in {suffix,_EXCHANGES[suffix]}:raise DataAdapterError('upstream_schema')
+                day=_date(r.get('交易日期'))
+                try:instant=datetime.fromisoformat(str(r['行情时间']))
+                except (KeyError,ValueError):raise DataAdapterError('upstream_schema') from None
+                if instant.tzinfo is None:instant=instant.replace(tzinfo=timezone(timedelta(hours=8)))
+                if instant.utcoffset()!=timedelta(hours=8) or not -1<=(day-instant.date()).days<=7:raise DataAdapterError('upstream_schema')
+                if not request.start<=day<=request.end:
+                    issues['snapshot_outside_requested_dates_withheld']=FailureKind.UPSTREAM_SCHEMA;continue
+                row=dict(symbol=native[code],trade_date=day,quote_time=instant,last_trading_date=verified[code],currency='CNY',
+                    counting_convention='provider_native_unverified',volume=_number(r.get('成交量')),open_interest=_number(r.get('持仓量')),
+                    **{k:_significant(r.get(v)) for k,v in {'last':'收盘价','open':'开盘价','high':'最高价','low':'最低价',
+                        'settlement':'结算价','previous_settlement':'前结算价'}.items()})
+                for k in ('last','open','high','low','settlement','previous_settlement'):
+                    if row[k] is not None and row[k]<=0:
+                        row[k]=None;issues['nonpositive_snapshot_price_as_missing']=FailureKind.NONE
+                if any(row[k] is not None and row[k]<0 for k in ('volume','open_interest')):raise DataAdapterError('upstream_schema')
+                records.append(row)
+        selected=_selected(request)
+        if selected&{'volume','open_interest'}:issues['fiona_counting_convention_unverified']=FailureKind.UPSTREAM_SCHEMA
+        if set(native.values())-{r['symbol'] for r in records}:issues['requested_symbols_without_rows']=FailureKind.UPSTREAM_SCHEMA
+        records.sort(key=lambda r:r['symbol'])
+        return DataPage([{k:v for k,v in r.items() if k in selected} for r in records],
+            Provenance('fiona','Fiona MCP',datetime.now(timezone.utc),authority=SourceAuthority.DATA_VENDOR,adapter_mode=AdapterMode.LIVE),
+            complete=not any(f!=FailureKind.NONE for f in issues.values()),
+            diagnostics=[Diagnostic(code,'query_data',self.name,failure_kind=failure,adapter_mode=AdapterMode.LIVE) for code,failure in sorted(issues.items())])

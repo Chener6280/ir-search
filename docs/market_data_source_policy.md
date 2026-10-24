@@ -20,6 +20,12 @@
 | `prices_intraday` | AKShare | 最近 14 自然日内请求，沪深普通 A 股；实际窗口由来源决定 |
 | `futures_intraday` | AKShare；Wind 辅助日历 | 具体合约分钟 OHLC、原始量/持仓；自然日期筛选 |
 | `options_intraday` | AKShare | 沪深 ETF 期权当日时间点价格、均价、原始成交/持仓；不是 OHLC |
+| `index_daily`（CN_INDEX） | Wind | 指数日线点位（前收、OHLC）；指数点位不是可交易价格 |
+| `index_valuation`（CN_INDEX） | Wind | 指数估值快照（滚动股息率 DIVIDEND_YIELD，百分数）；供应商计算值，不从成分股重算 |
+| `benchmark_rate`（CN_RATE） | Wind | 基准利率定盘（如 SHIBOR 期限的移动平均码 SHIBOR_3M(10)），百分数年化；移动平均为供应商序列，不重算 |
+| `index_intraday`（CN_INDEX） | AKShare（固定新浪后端） | 最近 14 自然日内上交所 000xxx、深交所 399xxx 指数分钟点位；不给量额 |
+| `options_chain`（CN_OPTIONS） | Wind | symbols 填交易所（SSE/SZSE/CFFEX/SHFE/DCE/CZCE/INE/GFEX），按日返回在市全部合约条款 + EOD 收盘/结算；日期跨度 ≤31 天；合约条款是当前快照，无买卖价 |
+| `futures_snapshot`（CN_FUTURES） | 仅显式 `provider='fiona'` | ≤20 个具体四位年月合约的最新快照、快照时间和最后交易日；延迟未核验，单精度价格按 7 位有效数字还原；不进默认路由 |
 | `derivatives_daily` | 预留 Wind / JYDB | 其他衍生品尚未定义具体品类，不注册假能力 |
 | 较长历史日内 | **留空** | 明确返回 `historical_intraday_source_not_configured` |
 
@@ -40,6 +46,20 @@
 - complete 表示当前查询页结束且没有已识别的质量失败，不保证历史、股票池和全部交易时段完整。取完全部页面后仍须检查实际覆盖。
 - 已知持仓冲突、财务币种未确认、映射不完整等返回 partial；`allow_partial=false` 拒绝交付相应数据行。
 - 实际供应商、live、data_vendor、data_table 与诊断全部保留，不冒充交易所原件或经审计报表。
+
+## 分页与诊断语义（大窗口取数必读）
+
+以下行为按当前实现记录，供调用方/下游 agent 正确判读，避免把分页噪音当截断、或把截断当完整：
+
+- 每个 `get_data` 请求 `symbols` 上限 20 个；每页最多 `limit` 行（默认上限 5000）。大窗口必须分批或翻页。
+- 续页（带 `cursor`）必须显式填写 `provider`，否则直接返回 `pagination_requires_explicit_provider` 且不带任何数据行——调用方若跟随游标但丢开 provider，会静默只拿到第一页。
+- `incomplete_page` 有两种成因，不能一概而论：（a）页满待续的中间页（跟随游标即可拿全）；（b）页内含非 `NONE` 诊断（如 `requested_symbols_without_rows` 部分标的无行、`known_source_conflict` 来源字段冲突）导致该页 `complete=false`。游标走完后末页仍带 `incomplete_page` 并不代表行被截断。
+- 判断行级截断的正确口径：12 页内游标没有走完（仍有 `next_cursor`），或发生过 `pagination_requires_explicit_provider` 拒页。两种情况都必须按「数据不完整」处理，不得落长期缓存。
+- `requested_symbols_without_rows`（UPSTREAM_SCHEMA）= 所请求标的中部分在该区间没有数据行（如上市前的候选合约），属内容事实，不等于拉取失败。
+- `options_chain` 已知：SZSE 区间末段常带 `known_source_conflict` / `szse_option_open_interest_conflict`（持仓量字段的源间冲突，UPSTREAM_SCHEMA）；不用持仓量的调用方可以照常使用价格行。
+- MySQL 来源（wind_mysql/jydb）的连接在同进程内全局串行（infrastructure/mysql 锁），并发取数只是排队，且每个请求受 `RequestContext` 时间/操作数预算约束；批量历史回建应串行分批，不要堆并发。
+- `trading_calendar` 按交易所返回已发布开市日期（仅交易日行）；`options_chain` 单次日期跨度 ≤31 天。
+- 分页键回归检查（`adapters/_market_common._page`）对**整行内容完全一致**的重复源行做去重并返回 `duplicate_source_rows_dropped` 诊断（`NONE` 级，不破坏 complete）；**同键不同值**属源数据冲突，仍然 `upstream_schema` 报错。已知实例：`chinaoptioneodprices` 的 `10002117.SH` 在 2020-01-02/2020-01-03 各有一对逐字段相同的重复行（SSE 300ETF 期权上市首月供应商重复装载），修复前该合约所在任何 31 天块整体 error。
 
 ## 财务选择
 

@@ -114,7 +114,7 @@ def _resolve(host, port, context, scheme=None):
     # states a scheme that means "this process performs TLS with hostname verification on this
     # very connection". The set is closed and spelled out here, in one place, on purpose. Plain
     # http and ws, any other spelling, and callers that state no scheme stay blocked.
-    return _checked_lookup(host, port, context, peer_verified=scheme in {"https", "wss"})
+    return _checked_lookup(host, port, context, peer_verified=scheme in {"https", "wss"}, real_dns=True)
 
 
 def _resolve_browser_tunnel(host, port, context, bundled_chromium=False):
@@ -131,7 +131,7 @@ def _resolve_browser_tunnel(host, port, context, bundled_chromium=False):
     return _checked_lookup(host, port, context, peer_verified=bundled_chromium is True)
 
 
-def _checked_lookup(host, port, context, *, peer_verified):
+def _checked_lookup(host, port, context, *, peer_verified, real_dns=False):
     # OS resolvers have no portable timeout. Bound the caller's wait and the number
     # of outstanding resolver workers; never resolve the host again when connecting.
     context.check_active()
@@ -158,6 +158,14 @@ def _checked_lookup(host, port, context, *, peer_verified):
     if answer.get("failed"):
         raise DataAdapterError("network")
     rows = answer["rows"]
+    # Keep the independent, exact-host real-DNS opt-in from c-mac. It resolves
+    # fresh public addresses rather than waiving their validation. Browser
+    # CONNECT gates never enter this path; their tighter Windows gate remains.
+    if real_dns and rows and all(ipaddress.ip_address(row[4][0].split('%', 1)[0]) in _FAKE_IP_BLOCK for row in rows):
+        from .fake_ip_dns import _real_rows
+        fresh = _real_rows(host, port, context)
+        if fresh is not None:
+            rows = fresh
     addresses = [ipaddress.ip_address(row[4][0].split("%", 1)[0]) for row in rows]
     # Every address outside the placeholder block keeps the original rule: one non-public answer
     # rejects the whole set, so a placeholder can never bring a private address in with it.
@@ -225,7 +233,7 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
     if type(search_api_errors) is not bool or (search_api_errors and (
             method != 'POST' or parsed.scheme != 'https' or parsed.query or parsed.fragment
             or (host, parsed.path) not in {
-                ('api.bochaai.com', '/v1/web-search'), ('api.anysearch.com', '/v1/search'),
+                ('api.bocha.cn', '/v1/web-search'), ('api.anysearch.com', '/v1/search'),
                 ('api.exa.ai', '/search'), ('api.tavily.com', '/search'),
                 ('api.firecrawl.dev', '/v2/search')})):
         raise DataAdapterError('blocked_url')

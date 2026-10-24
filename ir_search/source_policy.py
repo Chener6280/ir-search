@@ -36,6 +36,11 @@ _ROUTES = (
     SourceRoute("prices_intraday", "A_SHARE", ("akshare",), "recent_only"),
     SourceRoute("futures_intraday", "CN_FUTURES", ("akshare",), "recent_only"),
     SourceRoute("options_intraday", "CN_OPTIONS", ("akshare",), "recent_only"),
+    SourceRoute("index_daily", "CN_INDEX", ("wind_mysql",)),
+    SourceRoute("index_valuation", "CN_INDEX", ("wind_mysql",)),
+    SourceRoute("benchmark_rate", "CN_RATE", ("wind_mysql",)),
+    SourceRoute("index_intraday", "CN_INDEX", ("akshare",), "recent_only"),
+    SourceRoute("options_chain", "CN_OPTIONS", ("wind_mysql",)),
 )
 
 

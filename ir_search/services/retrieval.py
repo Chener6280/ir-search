@@ -38,6 +38,13 @@ def retrieve(request: MaterialRequest, *, context: Optional[RequestContext] = No
     for index, url in enumerate(queue):
         try:
             context.check_active()
+            if url.startswith('localarchive://'):
+                from ir_search.adapters.local_archive import retrieve_local_material
+                material = retrieve_local_material(url, request, context)
+                result.materials.append(material)
+                result.reads.append({'input_index': index, 'url': url, **material.read_details})
+                result.diagnostics.append(_diag(index, 'local_snapshot_not_live_source', FailureKind.NONE))
+                continue
             community_reference = url.startswith("zsxq://")
             ima_reference = url.startswith("ima://")
             wisburg_reference = url.startswith("wisburg://")

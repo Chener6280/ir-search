@@ -66,7 +66,7 @@ def test_http_429_stops_same_host_without_retry_or_second_dns(monkeypatch):
 def test_search_api_error_body_is_bounded_and_does_not_change_page_policy(monkeypatch):
     conn=fixture(monkeypatch,Response(body=b'{"message":"quota exhausted"}',status=403,
                                     headers={'Content-Type':'application/json'}))
-    reply=web._request('https://api.bochaai.com/v1/web-search',context=RequestContext(),method='POST',search_api_errors=True)
+    reply=web._request('https://api.bocha.cn/v1/web-search',context=RequestContext(),method='POST',search_api_errors=True)
     assert reply.status==403 and b'quota exhausted' in reply.body and conn.closed
     fixture(monkeypatch,Response(body=b'x'*16385,status=403))
     with pytest.raises(DataAdapterError,match='response_too_large'):

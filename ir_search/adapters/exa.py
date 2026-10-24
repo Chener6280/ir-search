@@ -8,9 +8,10 @@ from datetime import datetime
 from typing import Optional
 
 from ir_search.adapters.base import AdapterError
+from ir_search.infrastructure.web_search import _legacy_search_failure
 from ir_search.config import load_yaml
 from ir_search.models import Hit, Intent, Query
-from ir_search.network import bool_env, http_error_message, open_url
+from ir_search.network import bool_env, open_url
 
 
 class ExaAdapter:
@@ -32,10 +33,8 @@ class ExaAdapter:
         try:
             with open_url(req, timeout=15, **exa_network_options()) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            raise AdapterError(http_error_message("exa request failed", exc), retryable=True) from exc
         except Exception as exc:
-            raise AdapterError(f"exa request failed: {exc}", retryable=True) from exc
+            raise AdapterError(_legacy_search_failure(exc), retryable=True) from None
         return [
             Hit(
                 title=item.get("title") or "",
@@ -51,9 +50,11 @@ class ExaAdapter:
 
 
 def build_exa_payload(q: Query) -> dict:
+    search_type = os.environ.get('EXA_SEARCH_TYPE', 'auto')
+    if search_type not in {'auto', 'lite'}: raise AdapterError('unsupported_exa_search_type')
     payload = {
         "query": q.text,
-        "type": "auto",
+        "type": search_type,
         "numResults": q.count,
         "contents": {"text": {"maxCharacters": 1000}, "summary": True},
     }

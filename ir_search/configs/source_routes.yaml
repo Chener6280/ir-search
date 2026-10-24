@@ -24,3 +24,8 @@ routes:
     zh: [bocha]
     en: [exa]
     mixed: [bocha, exa]
+
+# Material web chains only; legacy routes above remain unchanged.
+web_material_chains:
+  cn: [baizhi, zai, bocha, exa, perplexity, duckduckgo]
+  overseas: [exa, perplexity, brave, serper, anysearch, tavily, duckduckgo]
