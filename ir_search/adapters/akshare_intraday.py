@@ -19,6 +19,8 @@ from ir_search.source_policy import RECENT_INTRADAY_DAYS
 _CN = ZoneInfo("Asia/Shanghai")
 _PERIODS = ("1m", "5m", "15m", "30m", "60m")
 _SYMBOL = re.compile(r"(?:6\d{5}\.SH|[03]\d{5}\.SZ)")
+_INDEX = re.compile(r"(?:000\d{3}\.SH|399\d{3}\.SZ)")
+_SINA = {name: name for name in ("open", "high", "low", "close")}
 _COLUMNS = {"open": "开盘", "high": "最高", "low": "最低", "close": "收盘", "volume": "成交量", "amount": "成交额"}
 _FIELDS = ("symbol", "bar_time", "trade_date") + tuple(_COLUMNS) + ("currency",)
 
@@ -77,7 +79,7 @@ class AKShareIntradayAdapter:
         if backend not in {"eastmoney", "sina"}:
             raise ValueError("Unsupported AKShare stock backend")
         self._backend = backend
-        self._columns = _COLUMNS if backend == "eastmoney" else {name: name for name in ("open", "high", "low", "close")}
+        self._columns = _COLUMNS if backend == "eastmoney" else _SINA
         self._fields = ("symbol", "bar_time", "trade_date") + tuple(self._columns) + ("currency",)
         self._fetch = fetch or _fetch
         self._now = now or (lambda: datetime.now(timezone.utc))
@@ -90,17 +92,28 @@ class AKShareIntradayAdapter:
                             "Selected backend: " + backend + "; no implicit endpoint switching",
                             "Maximum request lookback is 14 calendar days; this is not a coverage guarantee",
                             "Delayed web bars; full-session coverage and closed-bar status are unverified"),
-        ),)
+        ), DataCapability(
+            self.name, "index_intraday", ("symbol", "bar_time", "trade_date") + tuple(_SINA) + ("currency",), ("CN_INDEX",),
+            frequencies=_PERIODS, adapter_mode=AdapterMode.LIVE,
+            coverage_notes=("SSE 000xxx and SZSE 399xxx index levels via the Sina backend regardless of the stock backend",
+                            "Up to 1970 recent bars; index points, not tradable prices; volume and turnover withheld",
+                            "Delayed web bars; full-session coverage and closed-bar status are unverified"),
+        ))
 
     def query_data(self, request, *, context):
         """Read bounded recent bars, preserving timestamps and visible data gaps."""
-        if (request.dataset != "prices_intraday" or request.market != "A_SHARE" or request.frequency not in _PERIODS
+        index = request.dataset == "index_intraday"
+        if (request.dataset not in {"prices_intraday", "index_intraday"} or request.market != ("CN_INDEX" if index else "A_SHARE")
+                or request.frequency not in _PERIODS
                 or request.adjustment != "raw" or request.value_kind.value != "actual" or request.as_of or request.cursor
                 or not request.start or not 1 <= len(request.symbols) <= 5 or context.account_scope != "default"
-                or any(not _SYMBOL.fullmatch(symbol) for symbol in request.symbols)):
+                or any(not (_INDEX if index else _SYMBOL).fullmatch(symbol) for symbol in request.symbols)):
             raise DataAdapterError("unsupported")
-        fields = (set(request.fields) if request.fields else set(self._fields)) | {"symbol", "bar_time", "trade_date", "currency"}
-        if not fields <= set(self._fields):
+        backend = "sina" if index else self._backend
+        columns = _SINA if index else self._columns
+        allowed = ("symbol", "bar_time", "trade_date") + tuple(columns) + ("currency",)
+        fields = (set(request.fields) if request.fields else set(allowed)) | {"symbol", "bar_time", "trade_date", "currency"}
+        if not fields <= set(allowed):
             raise DataAdapterError("unsupported")
         now = self._now().astimezone(_CN)
         earliest = now.date() - timedelta(days=RECENT_INTRADAY_DAYS - 1)
@@ -116,7 +129,7 @@ class AKShareIntradayAdapter:
                 "start_date": f"{earliest.isoformat()} 00:00:00", "end_date": f"{now.date().isoformat()} 23:59:59",
             }
             function, time_column = "stock_zh_a_hist_min_em", "时间"
-            if self._backend == "sina":
+            if backend == "sina":
                 function, time_column = "stock_zh_a_minute", "day"
                 kwargs = {"symbol": symbol[-2:].lower() + symbol[:6], "period": request.frequency[:-1], "adjust": ""}
             rows = self._fetch(function, kwargs, context=context)
@@ -125,7 +138,7 @@ class AKShareIntradayAdapter:
                 raise DataAdapterError("upstream_schema")
             included = 0
             for raw in rows:
-                if not isinstance(raw, dict) or time_column not in raw or not set(self._columns.values()) <= set(raw):
+                if not isinstance(raw, dict) or time_column not in raw or not set(columns.values()) <= set(raw):
                     raise DataAdapterError("upstream_schema")
                 try:
                     instant = datetime.fromisoformat(raw[time_column])
@@ -144,7 +157,7 @@ class AKShareIntradayAdapter:
                     raise DataAdapterError("upstream_schema")
                 seen.add(key)
                 row = {"symbol": symbol, "bar_time": instant, "trade_date": instant.date(), "currency": "CNY"}
-                for name, column in self._columns.items():
+                for name, column in columns.items():
                     if name not in fields:
                         continue
                     value = raw[column]
@@ -176,9 +189,11 @@ class AKShareIntradayAdapter:
         if len(records) > request.limit:
             issues.add("row_limit_reached_narrow_request")
         issues.update({"recent_intraday_coverage_unverified", "web_quote_delay_unverified", "live_bar_may_be_incomplete"})
-        if self._backend == "sina":
+        if backend == "sina":
             issues.add("sina_activity_units_not_exposed")
-        publisher = "Eastmoney via AKShare" if self._backend == "eastmoney" else "Sina via AKShare"
+        if index:
+            issues.add("index_level_not_tradable_price")
+        publisher = "Eastmoney via AKShare" if backend == "eastmoney" else "Sina via AKShare"
         return DataPage(records[:request.limit], Provenance(self.name, publisher, self._now(),
                         authority=SourceAuthority.DATA_VENDOR, adapter_mode=AdapterMode.LIVE), complete=False,
                         diagnostics=[Diagnostic(code, "query_data", provider=self.name, adapter_mode=AdapterMode.LIVE)

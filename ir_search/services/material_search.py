@@ -125,6 +125,10 @@ def _validate_page(page, cap, request):
 
 
 def _matching(candidate, plan, request):
+    if request.zsxq_timeline_export:
+        return {"topic_terms": [], "related_terms": [], "classification": "source_timeline_record",
+                "business_period": "not_requested",
+                "interpretation": "bounded_timeline_selection_not_query_match"}
     body = (candidate.title + "\n" + candidate.text + "\n" + "\n".join(a.name for a in candidate.attachments)).casefold()
     identifiers = [v for v in plan['entity_aliases'] + plan['symbols'] if v not in plan['institution_aliases']]
     institution_ids = {row['institution_id'] for row in plan['institutions']}
@@ -284,7 +288,7 @@ def _search_materials(request: MaterialSearchRequest, *, registry=None, context=
         result.required_inputs.extend(["published_start", "published_end"])
     if not request.period_start and re.search(r"\d{1,2}月", request.question):
         result.required_inputs.extend(["period_start", "period_end"])
-    if not result.plan["topic_terms"]:
+    if not result.plan["topic_terms"] and not request.zsxq_timeline_export:
         result.required_inputs.append("keywords")
     available = {adapter.name: adapter for adapter in registry.entries(account_scope=context.account_scope)}
     result.plan['source_selection_policy'] = 'explicit_user_choice'

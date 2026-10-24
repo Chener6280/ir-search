@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "as_of": "2026-09-18",
+  "as_of": "2026-10-03",
   "package_version": "0.2.0rc1",
-  "basis": "48 local reference records plus 9 documented service references; no upstream refresh this handoff",
+  "basis": "48 local reference records plus 9 documented service references; no upstream refresh this handoff; 2026-10-03 adds Patchright/Enhanced records, preserves historical snapshots",
   "entries": [
     {
       "id": "s045",
@@ -1011,6 +1011,44 @@
       "reference_snapshot_required_at_runtime": false,
       "external_runtime_required_when_enabled": false,
       "recorded_on": "2026-09-18",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": null,
+      "snapshot_sha256": null
+    },
+    {
+      "id": "review-patchright-python",
+      "name": "Patchright Python",
+      "public_urls": [
+        "https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python"
+      ],
+      "adoption": "optional_dependency",
+      "used_for": "固定 1.62.1，实验性雪球驱动；复用本项目短期会话、TLS、公网门禁和预算；匿名实测 blocked_url，未宣称取文成功。",
+      "implementation": [
+        "ir_search/infrastructure/xueqiu_browser.py",
+        "ir_search/infrastructure/_xueqiu_browser_worker.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": true,
+      "recorded_on": "2026-10-03",
+      "upstream_revision": null,
+      "license_in_reviewed_snapshot": "Apache-2.0",
+      "snapshot_sha256": null,
+      "runtime_version": "1.62.1"
+    },
+    {
+      "id": "review-patchright-enhanced",
+      "name": "patchright-enhanced",
+      "public_urls": [
+        "https://github.com/whaleyxbt/patchright-enhanced"
+      ],
+      "adoption": "design_reference",
+      "used_for": "只借鉴临时浏览器与会话清理思路；未复制代码或引入 Node/TypeScript、代理轮换及无限会话循环。",
+      "implementation": [
+        "ir_search/infrastructure/xueqiu_browser.py"
+      ],
+      "reference_snapshot_required_at_runtime": false,
+      "external_runtime_required_when_enabled": false,
+      "recorded_on": "2026-10-03",
       "upstream_revision": null,
       "license_in_reviewed_snapshot": null,
       "snapshot_sha256": null

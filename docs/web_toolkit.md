@@ -66,8 +66,15 @@ MCP `search_materials` 使用同名字段。`text_reads_per_source=0` 只扫描�
 
 Scrapling 只选唯一 `article`，否则选唯一 `main` / `role=main`。多篇、空区域、过短正文、目录或挑战页保留普通解析结果，记录 `html_extraction.state`、`selected`、`scrapling_selection_fallback`。不启用自适应相似匹配、stealth fetcher，不声称修复雪球验证限制。HTML 元数据和链接保留整页结果；正文哈希和引用位置按最终返回文字重算。选择器命中不等于完整性验证。[Selector 文档](https://scrapling.readthedocs.io/en/latest/parsing/main_classes.html)
 
+2026-10-03 补充：新增有界 DOM 表格单元格、原始行列跨度和页面结构指纹。如果所选正文之外还有表格，则回退整页提取，避免静默丢失数值。表格不转换成金融数据，不展开合并单元格，不解释单位；结构指纹供调用方比较，不自动修改选择器。限制与验收见[增强指南](reach_scrapling_patchright.md)。
+
 Firecrawl 固定调用官方 HTTPS `/v2/scrape`，Bearer Key 只发给该 API；不给目标网站传 Cookie，不发送带查询参数/fragment 的 URL。只请求 rawHtml，关闭 PDF 解析、TLS 跳过和缓存复用，使用 basic proxy，不请求 JSON/Agent/LLM 提取。API 重定向不跟随。验证原站 HTTP 状态、最终 URL 和域名范围；缺少最终 URL 或状态时不接受为原文。[官方接口](https://docs.firecrawl.dev/api-reference/endpoint/scrape)
 
 远端中间跳转/DNS 不受本机逐跳控制；本机只检查初始和报告的最终地址，`firecrawl.redirect_scope` 标记为 `remote_intermediate_hops_unobserved`。返回 HTML hash 不是原站网络字节校验，接收时间不是发布时间。需要严格本机域名边界时继续使用本地 HTTP/浏览器。本轮未配置自托管 Firecrawl。
 
 `list_capabilities.web_reading.optional_readers` 和 `source_health` 提供配置/依赖诊断，不会把“Key 已填”“包已安装”标记为实测成功。验收结果见 [本轮验收](web_toolkit_acceptance.md)。
+
+
+## Exact-host fake-IP DNS compatibility
+
+See [fake_ip_dns.md](fake_ip_dns.md) for the opt-in resolver, public-address checks and deployment boundaries.

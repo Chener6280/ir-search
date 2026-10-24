@@ -269,3 +269,92 @@ def test_cancelled_child_is_terminated_without_returning_late_data(monkeypatch):
     with pytest.raises(RequestStopped,match='cancelled'):
         reader._run(URL,context=c,max_chars=100,cookie='')
     assert stopped==[process] and c.operations==5
+
+
+def test_patchright_is_explicit_and_never_silently_falls_back(monkeypatch):
+    profile = reader.xueqiu_read_profile(values={'XUEQIU_READ_MODE':'browser', 'XUEQIU_BROWSER_DRIVER':'patchright'})
+    assert profile.browser_driver == 'patchright'
+    with pytest.raises(SourceConfigError): reader.xueqiu_read_profile(values={'XUEQIU_BROWSER_DRIVER':'unknown'})
+    with pytest.raises(SourceConfigError): reader.XueqiuReadProfile(browser_driver='unknown')
+    seen = []
+    monkeypatch.setattr(reader, 'xueqiu_read_profile', lambda:profile)
+    monkeypatch.setattr(reader, '_dependency', lambda driver:seen.append(driver))
+    def run(url, **kwargs):
+        seen.append(kwargs['driver'])
+        data = snapshot()
+        data['browser']['backend'] = 'patchright_chromium'
+        return data
+    monkeypatch.setattr(reader, '_run', run)
+    doc = reader.read_xueqiu_browser_document(URL, context=RequestContext())
+    b = doc.extra['web_read']['browser']
+    assert seen == ['patchright','patchright'] and b['backend'] == 'patchright_chromium'
+    assert b['driver_patches'] == 'upstream_patchright' and not b['automatic_failover']
+    assert b['session_scope'] == 'disposable_context' and b['experimental']
+    monkeypatch.setattr(reader, '_run', lambda *a, **k:snapshot())
+    with pytest.raises(DataAdapterError, match='upstream_schema'):
+        reader.read_xueqiu_browser_document(URL, context=RequestContext())
+
+
+def test_patchright_requires_reviewed_version_and_missing_dependency_does_not_launch(monkeypatch):
+    profile = reader.XueqiuReadProfile(mode='browser', browser_driver='patchright')
+    monkeypatch.setattr(reader, 'xueqiu_read_profile', lambda:profile)
+    monkeypatch.setattr(reader, '_run', lambda *a, **k:pytest.fail('No fallback or launch'))
+    for installed in ('1.57.0','1.63.0','broken'):
+        monkeypatch.setattr(reader, 'version', lambda name, installed=installed:installed)
+        with pytest.raises(DataAdapterError, match='browser_version_unsupported'):
+            reader.read_xueqiu_browser_document(URL, context=RequestContext())
+    monkeypatch.setattr(reader, 'version', lambda name:'1.62.1')
+    if reader.sys.version_info < (3, 10):
+        with pytest.raises(DataAdapterError, match='browser_version_unsupported'): reader._dependency('patchright')
+    monkeypatch.setattr(reader.sys, 'version_info', (3, 12))
+    reader._dependency('patchright')
+    def missing(name):
+        assert name == 'patchright'
+        raise reader.PackageNotFoundError()
+    monkeypatch.setattr(reader, 'version', missing)
+    with pytest.raises(DataAdapterError, match='browser_dependency_missing'):
+        reader.read_xueqiu_browser_document(URL, context=RequestContext())
+
+
+def test_worker_imports_only_selected_driver_and_preserves_dependency_error(monkeypatch):
+    factory = object(); imports = []
+    monkeypatch.setattr(worker, 'import_module', lambda name:imports.append(name) or SimpleNamespace(async_playwright=factory))
+    assert worker._driver_factory('patchright') is factory
+    assert imports == ['patchright.async_api']
+    with pytest.raises(DataAdapterError, match='source_config_error'): worker._driver_factory('arbitrary.module')
+    assert len(imports) == 1
+    def absent(name): raise ImportError('private dependency path')
+    monkeypatch.setattr(worker, 'import_module', absent)
+    with pytest.raises(DataAdapterError, match='browser_dependency_missing'): worker._driver_factory('patchright')
+
+
+def test_patchright_worker_payload_is_private_bounded_and_cleaned(monkeypatch):
+    seen = {}
+    class Input:
+        def write(self, raw):
+            data = json.loads(raw); seen['payload'] = data
+            Path(data['output']).write_text(json.dumps({'operations':1, **snapshot()}))
+        def close(self): pass
+    process = SimpleNamespace(stdin=Input(), poll=lambda:0)
+    def start(args, **kwargs): seen.update(args=args, **kwargs); return process
+    monkeypatch.setenv('HTTPS_PROXY','http://private-proxy-value')
+    monkeypatch.setattr(reader.subprocess, 'Popen', start)
+    monkeypatch.setattr(reader, '_stop', lambda p:seen.update(stopped=True))
+    context = RequestContext(max_operations=3)
+    reader._run(URL, context=context, max_chars=100, cookie='', driver='patchright')
+    assert seen['payload']['driver'] == 'patchright' and seen['payload']['operations'] == 2
+    assert context.operations == 2 and seen['stopped'] and not Path(seen['cwd']).exists()
+    assert 'HTTPS_PROXY' not in seen['env'] and 'private-proxy-value' not in repr(seen)
+
+
+def test_patchright_health_requires_selected_package(tmp_path, monkeypatch):
+    path = tmp_path/'sources.env'
+    path.write_text('XUEQIU_MATERIALS_ENABLED=true\nBOCHA_API_KEY=synthetic-key\n'
+                    'XUEQIU_READ_MODE=browser\nXUEQIU_BROWSER_DRIVER=patchright\n')
+    path.chmod(0o600)
+    monkeypatch.setattr(source_diagnostics, 'find_spec', lambda name:None if name == 'patchright' else object())
+    row = source_diagnostics.diagnose_sources(['xueqiu'], env_file=path)['sources'][0]
+    assert row['state'] == 'dependency_missing'
+    assert row['reader_configuration']['browser_driver'] == 'patchright'
+    assert row['required_dependencies'][0]['installation_extra'] == 'patchright'
+    assert row['operation_status']['retrieve']['state'] == 'not_probed'

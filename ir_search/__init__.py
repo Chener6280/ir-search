@@ -7,6 +7,11 @@ from .registry import DataAdapterError, DataRegistry, build_data_registry, descr
 from .services.data import get_data
 from .services.retrieval import retrieve
 from .services.material_archive import export_material
+from .services.local_archive import (
+    index_local_archive, local_archive_status, search_local_archive, read_local_archive,
+    parse_local_archive, resolve_local_archive_asset,
+)
+from .services.local_audio import list_local_audio, prepare_local_audio, transcribe_local_audio
 from .services.announcements import search_announcements
 from .contracts.materials import (
     MaterialSearchRequest, MaterialSearchResult, MaterialSearchPage, MaterialCandidate,
@@ -14,6 +19,12 @@ from .contracts.materials import (
 )
 from .material_registry import MaterialRegistry, build_material_registry, list_material_capabilities
 from .services.material_search import search_materials
+from .services.collection_export import (
+    list_material_collections, export_collection_timeline, retrieve_asset, list_topic_comments,
+)
+from .contracts.collection_export import CollectionDescriptor, TimelineItem, TimelineComment
+from .services.collection_directory import list_collection_directory
+from .services.local_ingest import ingest_local_record, ingest_local_asset, inspect_ingested_record
 from .services.material_runs import next_material_request, record_material_run
 from .services.source_diagnostics import diagnose_sources
 from .institutions import list_institutions
@@ -67,7 +78,14 @@ __all__ = [
     "MaterialCapability", "MaterialKind", "MaterialSourceScan", "MaterialAttachment", "MaterialSection", "TextScope", "MaterialRegistry",
     "build_material_registry", "list_material_capabilities", "search_materials", "list_institutions",
     "diagnose_sources", "next_material_request", "record_material_run",
+    "list_material_collections", "export_collection_timeline", "retrieve_asset", "list_topic_comments",
+    "CollectionDescriptor", "TimelineItem", "TimelineComment",
+    "list_collection_directory",
+    "ingest_local_record", "ingest_local_asset", "inspect_ingested_record",
     "WebSearchFallback",
+    "index_local_archive", "local_archive_status", "search_local_archive", "read_local_archive",
+    "parse_local_archive", "resolve_local_archive_asset",
+    "list_local_audio", "prepare_local_audio", "transcribe_local_audio",
 ]
 
 

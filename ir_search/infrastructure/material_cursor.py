@@ -8,7 +8,7 @@ import re
 
 from ir_search.registry import DataAdapterError
 
-_PROVIDERS = {'zsxq', 'wechat', 'ima', 'xhs'}
+_PROVIDERS = {'zsxq', 'wechat', 'ima', 'xhs', 'wisburg'}
 
 
 def _fingerprint(request, account_scope):

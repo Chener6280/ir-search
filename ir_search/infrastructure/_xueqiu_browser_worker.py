@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import json
+from importlib import import_module
 from pathlib import Path
 import re
 import sys
@@ -65,8 +66,18 @@ def _cookie_rows(cookie):
     return rows
 
 
+def _driver_factory(driver):
+    if driver not in {'playwright', 'patchright'}:
+        raise DataAdapterError('source_config_error')
+    try:
+        return import_module(driver + '.async_api').async_playwright
+    except (ImportError, OSError):
+        raise DataAdapterError('browser_dependency_missing') from None
+
+
 async def _read(payload, context, gate, proxy):
-    from playwright.async_api import async_playwright
+    driver = payload.get('driver', 'playwright')
+    async_playwright = _driver_factory(driver)
     blocked, failure, navigation = 0, [], _NavigationGuard()
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(channel=payload.get('channel', 'chromium'), headless=payload.get('headless', True), chromium_sandbox=True,
@@ -144,7 +155,7 @@ async def _read(payload, context, gate, proxy):
             return {'url': payload['url'], 'title': await title.inner_text(), 'text': text[:payload['max_chars']],
                 'truncated': len(text)>payload['max_chars'], 'publisher': publisher,
                 'publication': publication, 'publication_url': publication_url,
-                'browser': {'backend': 'playwright_chromium', 'network': 'public_dns_pinned_connect',
+                'browser': {'backend': driver + '_chromium', 'network': 'public_dns_pinned_connect',
                     'tls_verified': True, 'blocked_requests': blocked, 'wire_bytes': gate.wire_bytes,
                     'cookie_mode': 'explicit_env' if payload.get('cookie') else 'anonymous',
                     'login_performed': False, 'comments_included': False}}

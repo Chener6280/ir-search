@@ -71,6 +71,30 @@ def _topic_ref(group, topic):
     return f"zsxq://topic/{_id(group)}/{_id(topic)}"
 
 
+def _timeline_page(data):
+    """Validate one get_group_topics payload; brief rows are never assumed complete."""
+    rows, more, next_cursor = data.get("topics_brief"), data.get("has_more"), data.get("next_end_time")
+    if (not isinstance(rows, list) or len(rows) > 1000 or any(not isinstance(r, dict) for r in rows)
+            or type(more) is not bool or not isinstance(next_cursor, str)):
+        raise DataAdapterError("upstream_schema")
+    if next_cursor: _time(next_cursor)
+    return rows, more, next_cursor
+
+
+def _timeline_advance(cursor, more, next_cursor, *, window_start):
+    """Next timeline walk position plus a stop code; None/None means a clean stop.
+
+    A walk ends without a diagnostic at the last page or once the cursor reaches
+    before the requested window; a non-advancing cursor is reported by the caller.
+    """
+    if not more: return None, None
+    if not next_cursor or _time(next_cursor) >= _time(cursor):
+        return None, "community_cursor_not_advancing"
+    if _time(next_cursor).astimezone(_CST).date() < window_start:
+        return None, None
+    return next_cursor, None
+
+
 def _candidate(topic, group_id, fetched_at, *, max_chars, full=False, comments=()):
     if not isinstance(topic, dict): raise DataAdapterError("upstream_schema")
     tid = _id(str(topic.get("topic_id", "")))
@@ -215,12 +239,7 @@ class ZsxqMaterialAdapter:
                 if not 1 <= page_size <= 30: raise DataAdapterError('invalid_cursor')
                 try:
                     response = client.read("get_group_topics", {"group_id": gid, "limit": page_size, "scope": "all", "end_time": cursor}, context=context)
-                    data = response.data
-                    rows, more, next_cursor = data.get("topics_brief"), data.get("has_more"), data.get("next_end_time")
-                    if (not isinstance(rows, list) or len(rows) > 1000 or any(not isinstance(r, dict) for r in rows)
-                            or type(more) is not bool or not isinstance(next_cursor, str)):
-                        raise DataAdapterError("upstream_schema")
-                    if next_cursor: _time(next_cursor)
+                    rows, more, next_cursor = _timeline_page(response.data)
                     selected, position = _slice(rows, count, state)
                     # Re-fetch the same bounded page shape when resuming a clipped upstream response.
                     advancing = (next_cursor and _time(next_cursor) < _time(cursor)
@@ -302,11 +321,10 @@ class ZsxqMaterialAdapter:
                         if continuation: page.continuation_cursors.append(continuation)
                         return page
                 if position < len(rows): break
-                if not more: break
-                if not next_cursor or _time(next_cursor) >= _time(cursor):
-                    page.diagnostics.append(_diag("community_cursor_not_advancing")); break
-                if _time(next_cursor).astimezone(_CST).date() < request.published_start: break
-                cursor = next_cursor
+                advanced, stop_code = _timeline_advance(cursor, more, next_cursor, window_start=request.published_start)
+                if stop_code: page.diagnostics.append(_diag(stop_code))
+                if advanced is None: break
+                cursor = advanced
             else:
                 page.diagnostics.append(_diag("community_page_budget_exhausted"))
             if continuation: page.continuation_cursors.append(continuation)

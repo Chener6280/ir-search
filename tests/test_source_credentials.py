@@ -91,7 +91,8 @@ def test_registry_and_status_load_enabled_file_without_connecting(tmp_path, monk
     monkeypatch.setattr("ir_search.infrastructure.mysql._connect", lambda *a: pytest.fail("Unexpected network"))
     registry = build_data_registry(env_file=path)
     assert {cap.dataset for cap,_ in registry.entries()} == {'securities','prices_daily','financial_statements',
-        'futures_contracts','options_contracts','futures_daily','options_daily','trading_calendar','fund_profile','fund_nav','fund_shares','fund_holdings','fund_exchange_daily'}
+        'futures_contracts','options_contracts','futures_daily','options_daily','trading_calendar','fund_profile','fund_nav','fund_shares','fund_holdings','fund_exchange_daily',
+        'index_daily','index_valuation','benchmark_rate','options_chain'}
     status = source_configuration_status(env_file=path)
     assert status["sources"][0]["configured"] and not status["sources"][0]["live_verified"]
     assert not status["sources"][1]["enabled"]

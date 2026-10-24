@@ -17,6 +17,7 @@ ir-search-wechat = "ir_search.clients.wechat_articles:main"
 ir-search-acceptance = "ir_search.acceptance:main"
 ir-search-gangtise-login = "ir_search.infrastructure.gangtise_auth:main"
 ir-search-doctor = "ir_search.services.source_diagnostics:main"
+ir-search-archive = "ir_search.local_archive_cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "setuptools>=61", "wheel"]
@@ -30,6 +31,8 @@ extract = [
   "trafilatura>=1.12",
 ]
 browser = ["playwright>=1.49"]
+patchright = ["patchright==1.62.1; python_version >= '3.10'"]
+local_archive = ["firecrawl-anydoc==0.2.4; python_version >= '3.10'", "PyMuPDF>=1.24"]
 crawl = ["crawl4ai==0.9.3; python_version >= '3.10'"]
 scrapling = ["scrapling==0.4.15; python_version >= '3.10'"]
 video = ["youtube-transcript-api==1.2.4"]

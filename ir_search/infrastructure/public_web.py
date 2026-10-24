@@ -80,6 +80,13 @@ def _resolve(host, port, context):
     context.check_active()
     rows = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     context.check_active()
+    # A reviewed exact host may opt into encrypted real DNS when every local
+    # answer is synthetic. Never exempt private/fake IPs from the validator.
+    if rows and all(ipaddress.ip_address(row[4][0]) in ipaddress.ip_network('198.18.0.0/15') for row in rows):
+        from .fake_ip_dns import _real_rows
+        real = _real_rows(host, port, context)
+        if real is not None:
+            rows = real
     if not rows or any(not ipaddress.ip_address(row[4][0].split("%", 1)[0]).is_global for row in rows):
         raise DataAdapterError("blocked_url")
     # Connect to the checked numeric address without a second hostname resolution.

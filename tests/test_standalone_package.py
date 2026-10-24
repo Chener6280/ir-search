@@ -123,6 +123,9 @@ from ir_search.config_validation import validate_configs
 from ir_search.entity import load_entities
 assert len(ir_search.list_institutions()['institutions']) == 14
 doctor = ir_search.diagnose_sources(['xhs','video'])
+assert all(s['operation_status']['retrieve']['state']=='not_probed' for s in doctor['sources'])
+from ir_search.infrastructure.xueqiu_browser import xueqiu_read_profile
+assert xueqiu_read_profile(values={'XUEQIU_BROWSER_DRIVER':'patchright'}).browser_driver == 'patchright'
 assert doctor['source_calls_started'] == 0
 assert all(not s['search_live_verified'] for s in doctor['sources'])
 empty_run = ir_search.search_materials(ir_search.MaterialSearchRequest('demand'))
@@ -184,7 +187,7 @@ from ir_search.adapters.akshare_options import AKShareOptionsAdapter
 from ir_search.infrastructure.credentials import MySQLProfile
 profile=MySQLProfile('wind_mysql','test-host','test-db','test-user','package_test_only',tls_mode='disabled')
 assert FinancialStatementsAdapter(profile).capabilities[0].dataset=='financial_statements'
-assert len(DomesticDerivativesAdapter(profile).capabilities)==5
+assert len(DomesticDerivativesAdapter(profile).capabilities)==9
 assert AKShareOptionsAdapter().capabilities[0].dataset=='options_intraday'
 from ir_search.adapters.fmp import FMPAdapter
 from ir_search.infrastructure.credentials import FMPProfile, source_configuration_status
@@ -243,6 +246,9 @@ if importlib.util.find_spec("mcp"):
         assert material_result['required_inputs'] == materials['required_inputs'] and material_result['diagnostics']
         response = await server.call_tool('source_health', {'providers':['xhs']})
         assert json.loads(response[0].text)['operational_status']['source_calls_started'] == 0
+        response = await server.call_tool('source_health', {
+            'providers':['web'], 'read_samples':{'web':'https://example.com/report'}, 'web_read_mode':'http'})
+        assert json.loads(response[0].text)['status'] == 'error'  # Samples require explicit live=True.
         response = await server.call_tool('search_materials', {'question':'demand', 'audit_dir':str(Path('mcp-runs').absolute())})
         assert json.loads(response[0].text)['audit']['status'] == 'recorded'
         response = await server.call_tool("get_data", {"dataset":"securities"})
@@ -526,7 +532,7 @@ from ir_search.adapters.official_materials import HKEXMaterialAdapter, CompanyIR
 from ir_search.infrastructure.public_web import _Reply
 assert len(_issuers())==3
 assert len(FundAdapter(MySQLProfile('wind_mysql','test-host','test-db','test-user','package_test_only')).capabilities)==5
-assert len(FionaAdapter(FionaProfile('package-fiona-test')).capabilities)==4
+assert len(FionaAdapter(FionaProfile('package-fiona-test')).capabilities)==5
 Path(os.environ['IR_SEARCH_CREDENTIALS_FILE']).write_text('GLOBAL_MACRO_ENABLED=true\nHKEX_ENABLED=true\nCOMPANY_IR_ENABLED=true\n')
 import ir_search.adapters.global_macro as macro_module
 macro_module._request=lambda url,**kw:_Reply(200,'text/csv','',b'observation_date,CPIAUCSL\n2025-01-01,300\n',datetime.now(timezone.utc))

@@ -43,6 +43,7 @@ py -3.12 -m venv .venv
 | 动态网页 | `.[crawl,extract]`，再执行当前环境的 `python -m playwright install chromium` |
 | Alpha派、岗底斯登录助手、实验性雪球浏览器 | `.[browser]`，安装匹配浏览器；新设备/平台验证按官方流程完成 |
 | Scrapling | `.[scrapling]`；只使用解析器，不安装 stealth/AI fetcher |
+| 实验性雪球 Patchright 驱动 | `.[patchright]`，Python 3.10+、固定 1.62.1；当前环境执行 `python -m patchright install chromium`，或显式使用本机 Chrome；见[增强指南](reach_scrapling_patchright.md) |
 | YouTube 平台字幕 | `.[video]`；字幕/语言/网络条件单独验收 |
 | 小宇宙显式 ASR | `.[audio]`、当前机器 PATH 中的 FFmpeg、火山 Agent Plan 语音权限 |
 | 小红书 | 独立 Xiaohongshu MCP 后端、本人登录、loopback 地址与私有 token；见[配置](xhs_material_adapter.md) |

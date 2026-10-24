@@ -78,3 +78,31 @@ def test_live_observed_single_contract_object_shape():
     response=FionaResponse({'structuredContent':dict(items={'order_book_id':'90008034'},total=None,returned=None,truncated=False)},datetime.now(timezone.utc),'options_market_data','get_option_contract_info')
     assert _payload(response)==([{'order_book_id':'90008034'}],False)
     with pytest.raises(Exception):_payload(replace(response,tool='get_option_history_quotes'))
+
+
+def snapshot(client,**change):
+    client.meta={'合约代码':'IF2610','交易所代码':'CFFEX','上市日期':'2026-08-24','最后交易日':'2026-10-16'}
+    client.quote={'合约代码':'IF2610','交易所代码':'CFE','交易日期':'2026-09-24','行情时间':'2026-09-24T15:25:52',
+        '开盘价':4500.0,'收盘价':4441.39990234375,'最高价':4512.0,'最低价':4430.60009765625,'成交量':25746,
+        '结算价':None,'前结算价':4517.2001953125,'持仓量':61286.0}
+    return run(client,**dict(dict(dataset='futures_snapshot',symbols=['IF2610.CFE'],start='2026-09-14',end='2026-09-27',
+        frequency='snapshot',adjustment='raw'),**change))
+
+
+def test_snapshot_rounds_single_precision_prices_and_keeps_lifecycle():
+    c=Client();r=snapshot(c,fields=['last','previous_settlement','settlement','last_trading_date'])
+    assert r.status.value=='ok' and [t for t,_ in c.calls]==['get_futures_contract_info_table','get_futures_snapshot_quotes']
+    row=r.records[0]
+    assert str(row['last'])=='4441.400' and str(row['previous_settlement'])=='4517.200' and row['settlement'] is None
+    assert row['quote_time'].utcoffset()==timedelta(hours=8) and row['last_trading_date']==date(2026,10,16)
+    assert 'fiona_snapshot_delay_unverified' in {d.code for d in r.diagnostics}
+    full=snapshot(Client());assert full.status.value=='partial' and full.records[0]['volume']==25746
+
+
+def test_snapshot_withholds_rows_outside_window_and_unverified_identities():
+    c=Client();r=snapshot(c,start='2026-09-25',end='2026-09-27')
+    assert not r.records and 'snapshot_outside_requested_dates_withheld' in {d.code for d in r.diagnostics}
+    c=Client();c.meta={'合约代码':'IF2610','交易所代码':'SHFE','上市日期':'2026-08-24','最后交易日':'2026-10-16'}
+    r=run(c,dataset='futures_snapshot',symbols=['IF2610.CFE'],start='2026-09-14',end='2026-09-27',frequency='snapshot',adjustment='raw')
+    assert r.status.value=='error' and len(c.calls)==1
+    c=Client();assert not snapshot(c,symbols=['IF610.CFE']).records and not c.calls

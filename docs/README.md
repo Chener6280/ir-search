@@ -22,6 +22,7 @@
 - [素材搜索](material_search.md)、[MCP 工具](mcp_tools.md)、[网页原文读取](web_reader.md)。
 - [网页选择与配置](web_material_adapter.md)、[额度回退](web_search_fallback.md)、[RSS / Scrapling / Firecrawl](web_toolkit.md)。
 - [来源诊断与续取](platform_reliability.md)、[已审阅恢复规则](reliability_patterns.md)。
+- [Agent Reach / Scrapling / Patchright 增强](reach_scrapling_patchright.md)：分操作实测、表格与结构诊断、可选浏览器驱动及验收限制。
 
 ## Adapter 文档与验收
 

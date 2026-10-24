@@ -10,6 +10,7 @@ from .models import FailureKind
 
 # Intent catalog, not adapters or promises about external account access.
 MATERIAL_SOURCE_INTENT = {
+    "local_archive": "local_archive",
     "hkex": "official_filings",
     "company_ir": "company_ir",
     "rss": "feed",
@@ -64,6 +65,11 @@ def build_material_registry(*, env_file=None) -> MaterialRegistry:
     """Register implemented sources only; a filled token is not an adapter."""
     from .infrastructure.credentials import SourceConfigError, mysql_profile, read_credentials, tushare_corpus_profile, web_material_profile, zsxq_profile, wechat_profile
     registry = MaterialRegistry()
+    import os
+    archive_root = os.environ.get('IR_SEARCH_LOCAL_ARCHIVE_ROOT')
+    if archive_root:
+        from .adapters.local_archive import LocalArchiveAdapter
+        registry.register(LocalArchiveAdapter(archive_root))
     try:
         values = read_credentials(env_file)
     except SourceConfigError as exc:

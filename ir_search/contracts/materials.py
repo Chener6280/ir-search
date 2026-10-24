@@ -100,6 +100,7 @@ class MaterialSearchRequest(JsonModel):
     video_platforms: tuple[str, ...] = ('bilibili', 'youtube')
     video_languages: tuple[str, ...] = ('zh-Hans', 'zh-CN', 'zh', 'en')
     zsxq_group_ids: tuple[str, ...] = ()
+    zsxq_timeline_export: bool = False
     source_cursors: tuple[str, ...] = ()
     sec_ciks: tuple[str, ...] = ()
     sec_forms: tuple[str, ...] = ()
@@ -109,6 +110,8 @@ class MaterialSearchRequest(JsonModel):
 
     def __post_init__(self):
         _text(self.question, "question")
+        if type(self.zsxq_timeline_export) is not bool:
+            raise ValueError('zsxq_timeline_export must be boolean')
         if self.xhs_sort not in {'latest','relevance','likes'} or self.xhs_cache_mode not in {'use','refresh'}:
             raise ValueError('Invalid XHS options')
         if type(self.xhs_comment_limit) is not int or not 0<=self.xhs_comment_limit<=19:
@@ -125,6 +128,8 @@ class MaterialSearchRequest(JsonModel):
         if len(groups) > 20 or any(not re.fullmatch(r'[1-9][0-9]{0,29}',v) for v in groups):
             raise ValueError('Invalid group IDs')
         object.__setattr__(self, 'zsxq_group_ids', groups)
+        if self.zsxq_timeline_export and (tuple(self.providers) != ('zsxq',) or not groups):
+            raise ValueError('ZSXQ timeline export requires only provider zsxq and explicit group IDs')
         # Encoded cursors have their own 12,000-character bound; ordinary search
         # strings have a smaller 2,000-character limit and must not truncate them.
         cursors = self.source_cursors

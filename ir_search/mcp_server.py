@@ -302,11 +302,13 @@ def deep_research_payload(
     ).to_dict()
 
 
-def source_health_payload(*, providers=None, live=False, timeout_seconds=30) -> dict:
+def source_health_payload(*, providers=None, live=False, timeout_seconds=30,
+                          search_samples=None, read_samples=None, web_read_mode='http') -> dict:
     from .services.source_diagnostics import diagnose_sources
     try:
         operational = diagnose_sources(providers or (), live=live,
-            context=RequestContext(timeout_seconds=timeout_seconds))
+            context=RequestContext(timeout_seconds=timeout_seconds), search_samples=search_samples,
+            read_samples=read_samples, web_read_mode=web_read_mode)
     except (ValueError, TypeError): return _framework_input_error('source_health')
     try:
         result = dict(source_health_impl())
@@ -441,15 +443,20 @@ def run() -> None:
 
     @mcp.tool()
     def source_health(providers: Optional[list[str]] = None, live: bool = False,
-                      timeout_seconds: float = 30) -> dict:
+                      timeout_seconds: float = 30, search_samples: Optional[dict] = None,
+                      read_samples: Optional[dict[str, str]] = None, web_read_mode: str = 'http') -> dict:
         """Report configuration, dependencies, backend routes and remediation without secrets.
 
-        Default is local inspection only. live=True requires explicit providers; currently only
-        xhs supports a login-status probe. A passed login does not verify search/body/data access.
-        No installation, automatic login or paid data query occurs.
+        Default is local inspection only. live=True requires explicit providers and checks XHS
+        login or configured RSS snapshots. search_samples maps selected providers to a question,
+        published_start/end and optional scope fields: one candidate, zero body reads; charges
+        may apply. read_samples accepts {"web": "https://..."} for one generic public URL;
+        web_read_mode is http/scrapling/browser. Operation status proves only the bounded sample.
+        No installation, automatic login or numeric data query occurs.
         """
 
-        return source_health_payload(providers=providers, live=live, timeout_seconds=timeout_seconds)
+        return source_health_payload(providers=providers, live=live, timeout_seconds=timeout_seconds,
+            search_samples=search_samples, read_samples=read_samples, web_read_mode=web_read_mode)
 
     @mcp.tool()
     def list_capabilities() -> dict:
@@ -564,6 +571,7 @@ def run() -> None:
         video_platforms: Optional[list[str]] = None,
         video_languages: Optional[list[str]] = None,
         zsxq_group_ids: Optional[list[str]] = None,
+        zsxq_timeline_export: bool = False,
         source_cursors: Optional[list[str]] = None,
         sec_ciks: Optional[list[str]] = None,
         sec_forms: Optional[list[str]] = None,
@@ -602,6 +610,8 @@ def run() -> None:
         source_cursors resumes prior coverage.continuation_cursors with the same query/date/account scope.
         zsxq_group_ids selects configured groups; stale page snapshots fail instead of skipping uninspected rows.
         ZSXQ reads bounded timelines with local matching; source_excerpt is not a verified complete detail.
+        zsxq_timeline_export returns every bounded timeline candidate instead of applying lexical matching.
+        It requires provider zsxq plus explicit zsxq_group_ids and remains subject to date, candidate and read budgets.
         WeChat uses configured account timelines; wechat_accounts selects exact configured names or ghids.
         Inspect text_provider and warnings to distinguish original WeChat text from vendor fallback.
         wechat_cache_mode: use/refresh/off. Inspect scans and read_details for snapshot ages and paid body calls.
@@ -626,7 +636,8 @@ def run() -> None:
             "wechat_cache_mode": wechat_cache_mode,
             "ima_knowledge_base_ids": ima_knowledge_base_ids or [], "ima_include_notes": ima_include_notes,
             "wisburg_categories": wisburg_categories or [],
-            "zsxq_group_ids": zsxq_group_ids or [], "source_cursors": source_cursors or [],
+            "zsxq_group_ids": zsxq_group_ids or [], "zsxq_timeline_export": zsxq_timeline_export,
+            "source_cursors": source_cursors or [],
             "sec_ciks": sec_ciks or [], "sec_forms": sec_forms or [],
             "xhs_sort": xhs_sort, "xhs_comment_limit": xhs_comment_limit, "xhs_cache_mode": xhs_cache_mode,
             "dry_run": dry_run, "web_institutions": web_institutions or [], "web_read_workers": web_read_workers,

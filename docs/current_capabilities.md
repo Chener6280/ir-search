@@ -45,4 +45,6 @@ HTTP 是基础路径；Crawl4AI 是可选动态渲染，Scrapling 仅可选解�
 
 ## 尚未承诺
 
+2026-10-03 增强：来源诊断支持分操作样本，Scrapling 提供有界 DOM 表格与结构指纹，雪球可显式选择 Patchright 1.62.1。美联储单篇原文和 RSS 快照已通过有限实测；Patchright 雪球匿名样本返回 `blocked_url`，原自动取文失败状态未升级为通过。新能力、预算和环境限制见[增强指南](reach_scrapling_patchright.md)。
+
 跨电脑实测、GitHub 远端 CI、长期在线率、全市场/全历史覆盖、历史日内、统一 PIT、自动语义向量库、完整视频/音频文稿、自动后台调度、无人值守会话续期和跨进程统一费用账本均不在当前已验收承诺中。`partial`、`unavailable`、未知日期/单位和额度交接是正常契约的一部分；调用 skill 必须向用户披露。

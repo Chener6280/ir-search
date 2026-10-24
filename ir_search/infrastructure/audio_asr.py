@@ -164,7 +164,13 @@ def _stream(pcm, profile, context):
             except TimeoutError: continue
             count += 1
             received_bytes += len(frame)
-            if count > 4096 or received_bytes > 16 * _MAX_FRAME: raise DataAdapterError('response_too_large')
+            if count > 4096 or received_bytes > 16 * _MAX_FRAME:
+                error = DataAdapterError('response_too_large')
+                # Numeric diagnostics only: never retain frames, headers or keys.
+                error.response_metrics = {'frames_received': count, 'response_bytes_received': received_bytes,
+                    'frame_limit': 4096, 'response_byte_limit': 16*_MAX_FRAME,
+                    'pcm_bytes_sent': position, 'pcm_bytes_total': len(pcm)}
+                raise error
             final, payload = _decode(frame)
             if final:
                 if position < len(pcm): raise DataAdapterError('audio_incomplete')

@@ -552,9 +552,10 @@ def source_configuration_status(*, env_file=None) -> dict:
                 item['read_mode'] = reader.mode
                 item['browser_cookie_mode'] = 'explicit_env' if reader.browser_use_cookie else 'anonymous'
                 item['browser_channel'] = reader.browser_channel
+                item['browser_driver'] = reader.browser_driver
                 item['browser_headless'] = reader.browser_headless
                 item['browser_experimental'] = True
-                item['browser_dependency_installed'] = find_spec('playwright') is not None
+                item['browser_dependency_installed'] = find_spec(reader.browser_driver) is not None
                 item['browser_runtime_verified'] = False
             if profile:
                 item.update(bocha_configured=bool(profile.bocha_api_key), anysearch_configured=bool(profile.api_key or profile.allow_anonymous))
