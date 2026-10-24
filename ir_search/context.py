@@ -91,3 +91,42 @@ class RequestContext:
 
     def cancel(self) -> None:
         self._cancelled.set()
+
+
+class SourceSlice:
+    """One source's share of a request: a nearer deadline over the parent's shared budget.
+
+    Operation counts, cancellation, host pacing and request-local caches stay on the
+    parent, so a slow source can run out of its own time without ending the request.
+    """
+
+    def __init__(self, parent, seconds: float):
+        object.__setattr__(self, "_parent", parent)
+        object.__setattr__(self, "_deadline", parent._clock() + max(0.0, seconds))
+
+    def __getattr__(self, name):
+        return getattr(self._parent, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._parent, name, value)
+
+    def expired(self) -> bool:
+        return self._parent._clock() >= self._deadline
+
+    def remaining_seconds(self) -> float:
+        return max(0.0, min(self._parent.remaining_seconds(), self._deadline - self._parent._clock()))
+
+    def check_active(self) -> None:
+        self._parent.check_active()
+        if self.expired():
+            raise RequestStopped("deadline_exceeded")
+
+    def begin_operation(self) -> None:
+        self.check_active()
+        self._parent.begin_operation()
+
+    def _wait_for_public_host(self, host):
+        self.check_active()
+        ready = self._parent._wait_for_public_host(host)
+        self.check_active()
+        return ready

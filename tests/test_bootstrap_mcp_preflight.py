@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _platform import requires_posix_workspace
 from scripts.bootstrap_cursor_research_workspace import main as bootstrap_main
+
+
+pytestmark = requires_posix_workspace
 
 
 def test_bootstrap_runs_mcp_preflight_by_default(tmp_path):

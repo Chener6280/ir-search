@@ -78,10 +78,10 @@ def test_byte_budget_cors_headers_and_diagnostics(monkeypatch):
     assert n.diagnostics()["received_bytes"] == 3 and n.context.operations == 1
 
 
-def test_worker_environment_drops_credentials_dotenv_proxies_and_python_hooks(monkeypatch):
+def test_worker_environment_drops_credentials_dotenv_proxies_and_python_hooks(monkeypatch, tmp_path):
     for key in ("WIND_PASSWORD", "OPENAI_API_KEY", "HTTPS_PROXY", "HTTP_PROXY", "PYTHONPATH", "NODE_OPTIONS", "IR_SEARCH_CREDENTIALS_FILE"):
         monkeypatch.setenv(key, "must_not_escape")
-    env = browser._environment("/tmp/fixture")
+    env = browser._environment(str(tmp_path))  # a real worker directory: the switch snapshot is written into it
     assert "must_not_escape" not in json.dumps(env)
     assert env["PYTHON_DOTENV_DISABLED"] == "1" and env["LITELLM_LOCAL_MODEL_COST_MAP"] == "True"
 

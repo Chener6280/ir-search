@@ -84,25 +84,90 @@ def source_health_impl():
     return source_health()
 
 
+class _OutputConfigurationError(RuntimeError):
+    pass
+
+
+def _output_root():
+    """Where MCP-requested exports may be written on this computer."""
+    import os
+    from pathlib import Path
+    configured = os.environ.get("IR_SEARCH_OUTPUT_ROOT", "").strip()
+    if configured:
+        root = Path(configured).expanduser()
+        if not root.is_absolute():
+            raise ValueError("IR_SEARCH_OUTPUT_ROOT must be an absolute path")
+        return root
+    from .infrastructure.credentials import credentials_path
+    return credentials_path().absolute().parent / ".local" / "exports"
+
+
+def _mcp_output_dir(value, field):
+    """Confine MCP-requested writes to one local root.
+
+    Tool arguments are chosen by a model that also reads untrusted web pages, PDFs and
+    posts, so a path argument must not be able to reach arbitrary directories. The Python
+    SDK is called by trusted local code and keeps accepting any directory.
+    """
+    from pathlib import Path
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip() or any(ord(c) < 32 for c in value):
+        raise ValueError(f"{field} must be a directory path without control characters")
+    try:
+        root = _output_root().resolve()
+    except (OSError, ValueError, RuntimeError):
+        raise _OutputConfigurationError("invalid_output_root") from None
+    try:
+        # Reject foreign and drive-relative paths rather than interpreting them as folders.
+        from .infrastructure.credentials import _absolute_elsewhere
+        if _absolute_elsewhere(value):
+            raise ValueError("foreign_path")
+        target = Path(value).expanduser()
+        if target.drive and (not target.is_absolute() or target.drive.casefold() != root.drive.casefold()):
+            # In particular, never resolve an untrusted remote UNC share.
+            raise ValueError("foreign_volume")
+        target = (target if target.is_absolute() else root / target).resolve()
+    except (OSError, ValueError, RuntimeError):
+        raise ValueError(f"{field} must be a valid local path") from None
+    if target != root and root not in target.parents:
+        raise ValueError(f"{field} must be inside the local output root: pass a relative folder name, "
+                         "or set IR_SEARCH_OUTPUT_ROOT for the MCP server")
+    return str(target)
+
+
 def get_data_payload(request: Mapping[str, Any], *, registry=None, timeout_seconds: float = 30) -> dict:
     try:
         if not isinstance(request, Mapping):
-            raise ValueError("Expected a request object")
-        return get_data_impl(DataRequest(**dict(request)), registry=registry,
-                             context=RequestContext(timeout_seconds=timeout_seconds)).to_dict()
-    except (ValueError, TypeError):
-        return _framework_input_error("query_data")
+            raise ValueError("request must be an object")
+        typed = DataRequest(**dict(request))
+        context = RequestContext(timeout_seconds=timeout_seconds)
+    except (ValueError, TypeError) as exc:
+        return _framework_input_error("query_data", exc)
+    try:
+        return get_data_impl(typed, registry=registry, context=context).to_dict()
+    except Exception as exc:
+        return _framework_internal_error("query_data", exc)
 
 
 def search_materials_payload(request: Mapping[str, Any], *, registry=None, timeout_seconds: float = 30,
                              audit_dir=None) -> dict:
     try:
         if not isinstance(request, Mapping):
-            raise ValueError("Expected a request object")
-        return search_materials_impl(MaterialSearchRequest(**dict(request)), registry=registry,
-            context=RequestContext(timeout_seconds=timeout_seconds, max_operations=100), audit_dir=audit_dir).to_dict()
-    except (ValueError, TypeError):
-        return _framework_input_error("search_materials")
+            raise ValueError("request must be an object")
+        typed = MaterialSearchRequest(**dict(request))
+        context = RequestContext(timeout_seconds=timeout_seconds, max_operations=100)
+        audit_dir = _mcp_output_dir(audit_dir, "audit_dir")
+    except _OutputConfigurationError as exc:
+        return {"schema_version": "1.0", "status": "error", "diagnostics": [{
+            "code": "invalid_output_root", "operation": "search_materials",
+            "key": "IR_SEARCH_OUTPUT_ROOT", "message": "Fix the MCP server output root configuration."}]}
+    except (ValueError, TypeError) as exc:
+        return _framework_input_error("search_materials", exc)
+    try:
+        return search_materials_impl(typed, registry=registry, context=context, audit_dir=audit_dir).to_dict()
+    except Exception as exc:
+        return _framework_internal_error("search_materials", exc)
 
 
 def retrieve_payload(question: str, urls: list[str], *, max_chars: int = 20000,
@@ -113,44 +178,94 @@ def retrieve_payload(question: str, urls: list[str], *, max_chars: int = 20000,
                  audio_start_seconds: int = 0, audio_max_seconds: int = 60, audio_window_count: int = 1,
                  xhs_comment_limit: int = 0, xhs_cache_mode: str = 'use') -> dict:
     try:
-        return retrieve_impl(MaterialRequest(question, urls, max_chars, max_spans, web_read_mode,
-                             follow_links, link_domains or (), previous_text_hashes if previous_text_hashes is not None else {}, wechat_cache_mode,
-                             archive_dir, archive_images, max_archive_images, video_languages if video_languages is not None else ("zh-Hans", "zh-CN", "zh", "en"),
-                             audio_mode, audio_start_seconds, audio_max_seconds, audio_window_count,
-                             xhs_comment_limit, xhs_cache_mode),
-                             context=RequestContext(timeout_seconds=timeout_seconds, max_operations=100)).to_dict()
-    except (ValueError, TypeError):
-        return _framework_input_error("retrieve")
+        typed = MaterialRequest(
+            question=question, urls=urls, max_chars=max_chars, max_spans=max_spans, web_read_mode=web_read_mode,
+            follow_links=follow_links, link_domains=link_domains or (),
+            previous_text_hashes=previous_text_hashes if previous_text_hashes is not None else {},
+            wechat_cache_mode=wechat_cache_mode, archive_dir=_mcp_output_dir(archive_dir, "archive_dir"),
+            archive_images=archive_images,
+            max_archive_images=max_archive_images,
+            video_languages=video_languages if video_languages is not None else ("zh-Hans", "zh-CN", "zh", "en"),
+            audio_mode=audio_mode, audio_start_seconds=audio_start_seconds, audio_max_seconds=audio_max_seconds,
+            audio_window_count=audio_window_count, xhs_comment_limit=xhs_comment_limit, xhs_cache_mode=xhs_cache_mode)
+        from .services.retrieval import _check_credential_free_url
+        for url in typed.urls:
+            _check_credential_free_url(url)
+        context = RequestContext(timeout_seconds=timeout_seconds, max_operations=100)
+    except _OutputConfigurationError as exc:
+        return {"schema_version": "1.0", "status": "error", "diagnostics": [{
+            "code": "invalid_output_root", "operation": "retrieve",
+            "key": "IR_SEARCH_OUTPUT_ROOT", "message": "Fix the MCP server output root configuration."}]}
+    except (ValueError, TypeError) as exc:
+        return _framework_input_error("retrieve", exc)
+    try:
+        return retrieve_impl(typed, context=context).to_dict()
+    except Exception as exc:
+        return _framework_internal_error("retrieve", exc)
 
 
 def describe_dataset_payload(dataset: str) -> dict:
+    if not isinstance(dataset, str) or not dataset.strip():
+        return _framework_input_error("describe_dataset", ValueError("dataset must be a nonempty string"))
     try:
         return describe_dataset_impl(dataset)
-    except (ValueError, TypeError):
-        return _framework_input_error("describe_dataset")
+    except Exception as exc:
+        return _framework_internal_error("describe_dataset", exc)
 
 
 def list_capabilities_payload() -> dict:
-    return list_capabilities_impl()
+    try:
+        return list_capabilities_impl()
+    except Exception as exc:
+        return _framework_internal_error("list_capabilities", exc)
 
 
 def search_announcements_payload(symbols, start, end, *, query="", limit=50, cursor=None, timeout_seconds=30) -> dict:
     try:
-        return search_announcements_impl(AnnouncementRequest(symbols, start, end, query, limit, cursor),
-                                         context=RequestContext(timeout_seconds=timeout_seconds))
-    except (ValueError, TypeError):
-        return _framework_input_error("search_announcements")
+        typed = AnnouncementRequest(symbols, start, end, query, limit, cursor)
+        context = RequestContext(timeout_seconds=timeout_seconds)
+    except (ValueError, TypeError) as exc:
+        return _framework_input_error("search_announcements", exc)
+    try:
+        return search_announcements_impl(typed, context=context)
+    except Exception as exc:
+        return _framework_internal_error("search_announcements", exc)
 
 
-def _framework_input_error(operation):
-    return {"schema_version": "1.0", "status": "error", "diagnostics": [{
+def _framework_input_error(operation, exc=None):
+    """The caller's arguments were rejected before any source was contacted."""
+    diagnostic = {
         "code": "invalid_request", "operation": operation,
         "message": "Check argument types, ranges and dataset fields; provide credential-free URLs.",
+    }
+    # Python enum/date/path exceptions can include tokens, cookies or passwords.
+    # Only allow-listed field names are exposed, never the rest of an exception.
+    import re
+    safe_fields = set(DataRequest.__dataclass_fields__) | set(MaterialSearchRequest.__dataclass_fields__) | set(MaterialRequest.__dataclass_fields__) | {"timeout_seconds", "audit_dir", "archive_dir", "request"}
+    message = str(exc) if exc is not None else ""
+    match = re.match(r"^(?:Search budget out of range: )?([a-z][a-z0-9_]*) (?:must |requires |is required)", message)
+    if match and match[1] in safe_fields:
+        diagnostic["detail"] = match[1]
+    elif "got an unexpected keyword argument" in message:
+        diagnostic["detail"] = "unknown_argument"
+    return {"schema_version": "1.0", "status": "error", "diagnostics": [diagnostic]}
+
+
+def _framework_internal_error(operation, exc):
+    """The request was valid; the service or a source failed. Exception text may hold secrets."""
+    return {"schema_version": "1.0", "status": "error", "diagnostics": [{
+        "code": "internal_error", "operation": operation, "failure_kind": "unknown",
+        "exception_type": type(exc).__name__,
+        "message": "The arguments were accepted; the service failed while running. Do not rewrite the "
+                   "arguments: check source_health, then retry or report the failure.",
     }]}
 
 
 def list_tool_names() -> list[str]:
-    return TOOL_NAMES[:]
+    import os
+    mode = os.environ.get("IR_SEARCH_MCP_MODE", "legacy")
+    if mode not in {"core", "legacy"}: raise ValueError("invalid_mcp_mode")
+    return TOOL_NAMES[5:] if mode == "core" else TOOL_NAMES[:]
 
 
 def server_instructions() -> str:
@@ -194,6 +309,10 @@ def fetch_document_payload(
     include_tables: bool = True,
     allow_private_network: bool = False,
 ) -> dict:
+    import os
+    if allow_private_network and os.environ.get("IR_SEARCH_ALLOW_PRIVATE_NETWORK") != "1":
+        return {"errors": ["blocked_by_policy: private network access requires local server configuration"],
+                "source_text_trust": "untrusted"}
     try:
         document = fetch_document_impl(
             url,
@@ -342,8 +461,13 @@ def run() -> None:
         raise SystemExit("Install MCP support with: python -m pip install 'ir-search[mcp]'") from exc
 
     mcp = make_fastmcp(FastMCP)
+    selected_tools = set(list_tool_names())
+    def register_tool():
+        def register(function):
+            return mcp.tool()(function) if function.__name__ in selected_tools else function
+        return register
 
-    @mcp.tool()
+    @register_tool()
     def search(
         query: str,
         sources: Optional[list[str]] = None,
@@ -368,7 +492,7 @@ def run() -> None:
         )
         return ir_search(q).to_dict()
 
-    @mcp.tool()
+    @register_tool()
     def fetch_document(
         url: str,
         source_hint: Optional[str] = None,
@@ -384,7 +508,7 @@ def run() -> None:
             include_tables=include_tables,
         )
 
-    @mcp.tool()
+    @register_tool()
     def extract_evidence(
         url: str,
         question: str,
@@ -394,7 +518,7 @@ def run() -> None:
 
         return extract_evidence_payload(url, question, max_spans=max_spans)
 
-    @mcp.tool()
+    @register_tool()
     def verify_claims(
         claims: list[str],
         evidence_urls: Optional[list[str]] = None,
@@ -410,7 +534,7 @@ def run() -> None:
             question=question,
         )
 
-    @mcp.tool()
+    @register_tool()
     def deep_research(
         question: str,
         intent: Optional[str] = None,
@@ -439,7 +563,7 @@ def run() -> None:
             allow_broker=allow_broker,
         )
 
-    @mcp.tool()
+    @register_tool()
     def source_health(providers: Optional[list[str]] = None, live: bool = False,
                       timeout_seconds: float = 30) -> dict:
         """Report configuration, dependencies, backend routes and remediation without secrets.
@@ -451,17 +575,17 @@ def run() -> None:
 
         return source_health_payload(providers=providers, live=live, timeout_seconds=timeout_seconds)
 
-    @mcp.tool()
+    @register_tool()
     def list_capabilities() -> dict:
         """List numeric and material declarations plus unregistered intentions; not a live permission check."""
         return list_capabilities_payload()
 
-    @mcp.tool()
+    @register_tool()
     def describe_dataset(dataset: str) -> dict:
         """Describe fields, units and keys; a defined dataset may have no registered provider."""
         return describe_dataset_payload(dataset)
 
-    @mcp.tool()
+    @register_tool()
     def get_data(
         dataset: str, symbols: Optional[list[str]] = None, fields: Optional[list[str]] = None,
         start: Optional[str] = None, end: Optional[str] = None, market: str = "A_SHARE",
@@ -489,7 +613,7 @@ def run() -> None:
             "period_basis": period_basis, "revision": revision,
         }, timeout_seconds=timeout_seconds)
 
-    @mcp.tool()
+    @register_tool()
     def retrieve(question: str, urls: list[str], max_chars: int = 20000,
                  max_spans: int = 10, timeout_seconds: float = 30, web_read_mode: str = "auto",
                  follow_links: int = 0, link_domains: Optional[list[str]] = None,
@@ -535,14 +659,14 @@ def run() -> None:
                                 audio_window_count=audio_window_count,
                                 xhs_comment_limit=xhs_comment_limit, xhs_cache_mode=xhs_cache_mode)
 
-    @mcp.tool()
+    @register_tool()
     def search_announcements(symbols: list[str], start: str, end: str, query: str = "",
                              limit: int = 50, cursor: Optional[str] = None, timeout_seconds: float = 30) -> dict:
         """Read one JYDB announcement metadata page; pass source_ref values to retrieve for text and citations."""
         return search_announcements_payload(symbols, start, end, query=query, limit=limit,
                                             cursor=cursor, timeout_seconds=timeout_seconds)
 
-    @mcp.tool()
+    @register_tool()
     def search_materials(
         question: str, symbols: Optional[list[str]] = None, entities: Optional[list[str]] = None,
         keywords: Optional[list[str]] = None, published_start: Optional[str] = None, published_end: Optional[str] = None,

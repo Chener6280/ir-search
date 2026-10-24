@@ -5,9 +5,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from _platform import requires_posix_workspace
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNNER_TEMPLATE = REPO_ROOT / "templates" / "cursor-research-workspace" / "scripts" / "run_ir_search_mcp.sh"
+
+pytestmark = requires_posix_workspace
 
 
 def test_run_ir_search_mcp_loads_env_local_without_printing_secret(tmp_path):

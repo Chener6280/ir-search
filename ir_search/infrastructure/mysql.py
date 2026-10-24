@@ -9,6 +9,7 @@ import socket
 import threading
 from pathlib import Path
 
+from ._interrupt import wake_blocked_socket
 from .credentials import MySQLProfile
 from ir_search.context import RequestStopped
 from ir_search.registry import DataAdapterError
@@ -104,11 +105,7 @@ def _select(profile: MySQLProfile, sql: str, params: tuple, *, max_rows: int, co
                     context.check_active()
                 except RequestStopped:
                     sock = getattr(connection, "_sock", None)
-                    if sock is not None:
-                        try:
-                            sock.shutdown(socket.SHUT_RDWR)
-                        except OSError:
-                            pass
+                    wake_blocked_socket(sock)
                     return
         watcher = threading.Thread(target=interrupt_socket, name="ir-search-sql-budget", daemon=True)
         watcher.start()

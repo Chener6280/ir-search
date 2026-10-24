@@ -23,7 +23,7 @@ class FakeResponse:
         return json.dumps(self.payload, ensure_ascii=False).encode("utf-8")
 
 
-def test_tushare_adapter_uses_skill_proxy_http_shape(monkeypatch):
+def test_tushare_adapter_defaults_to_official_http_shape(monkeypatch):
     calls = []
 
     def fake_open_url(req, timeout, proxy_url=None, disable_proxy=False):
@@ -45,7 +45,7 @@ def test_tushare_adapter_uses_skill_proxy_http_shape(monkeypatch):
 
     hits = TushareAdapter().query(Query(text="600519 财务指标", count=5))
 
-    assert [call["url"] for call in calls] == ["https://fastapic.stockai888.top", "https://fastapic.stockai888.top"]
+    assert [call["url"] for call in calls] == ["https://api.tushare.pro", "https://api.tushare.pro"]
     assert calls[0]["body"]["api_name"] == "stock_basic"
     assert calls[0]["body"]["token"] == "token-from-env"
     assert calls[0]["body"]["params"]["ts_code"] == "600519.SH"

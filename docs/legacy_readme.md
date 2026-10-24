@@ -370,7 +370,7 @@ export TUSHARE_TOKEN="..."
 export TUSHARE_PRO_TOKEN="..."
 
 # 按 a-stock-data skill，默认也是这个代理 URL；一般无需改。
-export TUSHARE_HTTP_URL="https://fastapic.stockai888.top"
+export TUSHARE_HTTP_URL="https://api.tushare.pro" # rc2 默认官方地址；其他代理需显式选择
 export TUSHARE_RATE_LIMIT_SECONDS="0.65"
 ```
 

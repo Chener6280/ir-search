@@ -8,6 +8,7 @@ import time
 
 import pytest
 
+from _platform import POSIX_PERMISSIONS, symlinks_supported
 from ir_search import MaterialRequest, MaterialSearchRequest, RequestContext, retrieve, search_materials
 from ir_search.context import RequestStopped
 from ir_search.contracts.materials import MaterialKind
@@ -277,9 +278,10 @@ def test_private_state_permissions_tampering_rotation_and_nonpersistent_secrets(
     assert state.read()=={}
     state.write({'token':'synthetic_token','saved_at':time.time()})
     assert _get_token(profile,context=RequestContext())=='synthetic_token'
-    assert state.root.stat().st_mode & 0o777==0o700
-    assert (state.root/'session.json').stat().st_mode & 0o777==0o600
-    raw=(state.root/'session.json').read_text()
+    if POSIX_PERMISSIONS:
+        assert state.root.stat().st_mode & 0o777==0o700
+        assert (state.root/'session.json').stat().st_mode & 0o777==0o600
+    raw=(state.root/'session.json').read_text(encoding='utf-8')
     assert profile.phone not in raw and profile.password not in raw
     assert _State(replace(profile,password='rotated_password')).read()=={}
     with state.lock():
@@ -290,21 +292,27 @@ def test_private_state_permissions_tampering_rotation_and_nonpersistent_secrets(
     _invalidate_token(profile,'synthetic_token')
     with pytest.raises(DataAdapterError,match='gangtise_login_challenge'):_get_token(profile,context=RequestContext())
     state.write({'token':'synthetic_token','saved_at':time.time()})
-    path=state.root/'session.json';path.write_text(raw.replace('synthetic_token','modified_token'))
+    path=state.root/'session.json';path.write_text(raw.replace('synthetic_token','modified_token'),encoding='utf-8')
     with pytest.raises(DataAdapterError,match='gangtise_state_invalid'):state.read()
 
 
 def test_state_symlinks_insecure_permissions_and_oversized_files(tmp_path):
     state=_State(replace(PROFILE,state_dir=str(tmp_path/'state')));state.prepare()
-    target=tmp_path/'outside';target.write_text('{}');(state.root/'session.json').symlink_to(target)
+    if symlinks_supported():
+        target=tmp_path/'outside';target.write_text('{}',encoding='utf-8');(state.root/'session.json').symlink_to(target)
+        with pytest.raises(DataAdapterError):state.read()
+        (state.root/'session.json').unlink()
+    state.write({'token':'synthetic_token'})
+    path=state.root/'session.json'
+    if POSIX_PERMISSIONS:
+        path.chmod(0o644)
+        with pytest.raises(DataAdapterError):state.read()
+        path.chmod(0o600)
+    path.write_text('x'*33000,encoding='utf-8')
     with pytest.raises(DataAdapterError):state.read()
-    (state.root/'session.json').unlink();state.write({'token':'synthetic_token'})
-    path=state.root/'session.json';path.chmod(0o644)
-    with pytest.raises(DataAdapterError):state.read()
-    path.chmod(0o600);path.write_text('x'*33000)
-    with pytest.raises(DataAdapterError):state.read()
-    link=tmp_path/'link';link.symlink_to(state.root.parent)
-    with pytest.raises(DataAdapterError):_State(replace(PROFILE,state_dir=str(link))).prepare()
+    if symlinks_supported():
+        link=tmp_path/'link';link.symlink_to(state.root.parent,target_is_directory=True)
+        with pytest.raises(DataAdapterError):_State(replace(PROFILE,state_dir=str(link))).prepare()
 
 
 def test_authentication_helper_cli_and_expired_state(monkeypatch,tmp_path,capsys):

@@ -70,7 +70,7 @@ def build_material_registry(*, env_file=None) -> MaterialRegistry:
         registry.diagnostics.append(Diagnostic(exc.code, "configure", failure_kind=FailureKind.BLOCKED_BY_POLICY))
         return registry
     try:
-        profile = mysql_profile("jydb", values=values)
+        profile = mysql_profile("jydb", values=values, datasets=())
         if profile:
             from .adapters.jydb_materials import JYDBMaterialAdapter
             registry.register(JYDBMaterialAdapter(profile))

@@ -1,6 +1,6 @@
 # ir-search 跨电脑与 Agent 测试交接
 
-交接版本：**0.2.0rc1**。日期：2026-09-18。本版是供 GitHub 分发、待外部验证的候选版本，不等于已经投产。
+交接版本：**0.2.0rc2**。日期：2026-09-19。本版是供 GitHub 分发、待外部验证的候选版本，不等于已经投产。
 
 ## 接手者先读
 
@@ -21,9 +21,9 @@
 
 ## 如何取得当前代码
 
-主分发入口是 [GitHub 仓库](https://github.com/Chener6280/ir-search) 的 `main` 分支。克隆或更新后核对 `pyproject.toml` 的版本为 `0.2.0rc1`，并在测试报告记录 `git rev-parse HEAD` 的提交号。安装和配置步骤见[部署指南](docs/standalone_deployment.md)。
+本轮修复候选在 [GitHub 仓库](https://github.com/Chener6280/ir-search) 的 `codex/review-consolidation` 分支，包含原 Windows PR #2 及后续修复；合并前 `main` 仍是旧版本。先按 [Windows 复验交接](docs/windows_review_handoff.md) 取正确分支。克隆或更新后核对 `pyproject.toml` 的版本为 `0.2.0rc2`，并在测试报告记录 `git rev-parse HEAD` 的提交号。安装和配置步骤见[部署指南](docs/standalone_deployment.md)。
 
-交接包包含源码、测试、当前/历史文档、公开配置模板及 wheel；`HANDOFF_MANIFEST.json` 记录相对文件名、SHA-256 和排除规则。凭证、Cookie、会话、私有技能库存、原始响应及本地参考库不包含在包里。摘要和参考名录不替代原始授权资料。
+本轮交接通过 Git 分支和 PR 提供源码、测试、文档与公开配置模板。旧 ZIP / `HANDOFF_MANIFEST.json` 是历史快照，本轮未重发 ZIP；需要 wheel 时从当前提交构建。凭证、Cookie、会话、私有技能库存、原始响应及本地参考库不包含在包里。摘要和参考名录不替代原始授权资料。
 
 此前提供的交接 ZIP 是独立快照，没有 Git 历史；GitHub 仓库用于后续同步。两种方式均应在独立目录测试，不要用整个开发者目录覆盖新电脑。私有 env、登录态和原始响应必须在各自电脑单独配置。
 
@@ -38,7 +38,7 @@
 
 ## 已完成与仍待完成
 
-已完成本机离线回归、真实 FastMCP 工具调用、wheel 脱离源码的安装验证，以及此前分来源有限真实样本。具体本轮计数和测试包复测见[本轮验证记录](docs/handoff_validation.md)。历史验收只证明当时样本，不代表现在凭证有效或另一台电脑网络可用。
+已完成本机离线回归、真实 FastMCP 工具调用、wheel 脱离源码的安装验证，以及此前分来源有限真实样本。rc2 的修复及验证见[综合评审记录](docs/review_resolution.md)，[旧交接验证](docs/handoff_validation.md)保留其历史范围。历史验收只证明当时样本，不代表现在凭证有效或另一台电脑网络可用。
 
 GitHub 的 Linux（Python 3.10/3.12）、macOS 和 Windows（Python 3.12）检查以[当前提交的 Actions 结果](https://github.com/Chener6280/ir-search/actions/workflows/standalone.yml)为准。仍待外部验证：另一台物理电脑、实际 Agent 宿主集成、来源持续在线表现、Cookie/会话过期恢复、真实 skills 的检索质量和费用观察。世界银行连接、雪球正文、部分 Fiona 分钟耗时和字段口径等限制见能力清单，不应作为隐含已通过项。
 

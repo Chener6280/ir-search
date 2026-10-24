@@ -65,18 +65,40 @@ def _cookie_rows(cookie):
     return rows
 
 
+def _launch_options(payload, proxy, password):
+    """Everything the browser is started with; nothing here may switch a certificate check off.
+
+    The gate's fake-ip waiver rests on this browser verifying the origin certificate end to end.
+    """
+    return {'channel': payload.get('channel', 'chromium'), 'headless': payload.get('headless', True),
+            'chromium_sandbox': True,
+            'proxy': {'server': proxy, 'bypass': '<-loopback>', 'username': 'ir-search', 'password': password},
+            'args': ['--disable-background-networking', '--disable-component-update', '--disable-quic',
+                     '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+                     '--disable-features=MediaRouter,OptimizationHints', '--js-flags=--max-old-space-size=512']}
+
+
+def _context_options():
+    return {'ignore_https_errors': False, 'accept_downloads': False, 'service_workers': 'block',
+            'viewport': {'width': 1280, 'height': 900}}
+
+
+def _bundled_chromium(payload):
+    """Whether the browser to be launched is the Chromium build Playwright ships.
+
+    Judged from the launch options themselves, so the gate is told about the browser that really
+    starts. A system Chrome may be governed by policies this code does not control.
+    """
+    return _launch_options(payload, '', '')['channel'] == 'chromium'
+
+
 async def _read(payload, context, gate, proxy):
     from playwright.async_api import async_playwright
     blocked, failure, navigation = 0, [], _NavigationGuard()
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(channel=payload.get('channel', 'chromium'), headless=payload.get('headless', True), chromium_sandbox=True,
-            proxy={'server': proxy, 'bypass': '<-loopback>', 'username': 'ir-search', 'password': gate.password},
-            args=['--disable-background-networking', '--disable-component-update', '--disable-quic',
-                  '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
-                  '--disable-features=MediaRouter,OptimizationHints', '--js-flags=--max-old-space-size=512'])
+        browser = await pw.chromium.launch(**_launch_options(payload, proxy, gate.password))
         try:
-            session = await browser.new_context(ignore_https_errors=False, accept_downloads=False,
-                service_workers='block', viewport={'width':1280, 'height':900})
+            session = await browser.new_context(**_context_options())
             if payload.get('cookie'): await session.add_cookies(_cookie_rows(payload['cookie']))
             page = await session.new_page()
             def response_received(response):
@@ -156,7 +178,7 @@ async def _read(payload, context, gate, proxy):
 def main():
     payload = json.loads(sys.stdin.read(65536))
     context = RequestContext(timeout_seconds=payload['timeout'], max_operations=payload['operations'])
-    gate = _Gate(context)
+    gate = _Gate(context, bundled_chromium=_bundled_chromium(payload))
     server = _server(gate)
     thread = Thread(target=server.serve_forever, daemon=True); thread.start()
     try:

@@ -182,7 +182,7 @@ def fetch_feed(url, *, context) -> RSSPage:
         if parsed.scheme != 'https' or current in seen:
             raise DataAdapterError('blocked_url')
         seen.add(current)
-        reply = _request(current, context=context, max_bytes=_MAX_BYTES,
+        reply = _request(current, context=context, max_bytes=_MAX_BYTES, anonymous=True,  # a public feed, no credential
                          headers={'Accept': 'application/rss+xml,application/atom+xml,application/xml,text/xml'})
         if reply.status == 200:
             if reply.content_type.split(';', 1)[0].strip().lower() not in {

@@ -5,6 +5,7 @@ import pytest
 from ir_search import Query, search
 
 
+@pytest.mark.live
 @pytest.mark.skipif(os.environ.get("IR_SEARCH_RUN_LIVE_TESTS") != "1", reason="live wechat opencli smoke test disabled")
 def test_wechat_opencli_live_smoke():
     result = search(Query(text="公众号 最新文章", sources=["wechat"], count=3))

@@ -243,7 +243,7 @@ if importlib.util.find_spec("mcp"):
         assert material_result['required_inputs'] == materials['required_inputs'] and material_result['diagnostics']
         response = await server.call_tool('source_health', {'providers':['xhs']})
         assert json.loads(response[0].text)['operational_status']['source_calls_started'] == 0
-        response = await server.call_tool('search_materials', {'question':'demand', 'audit_dir':str(Path('mcp-runs').absolute())})
+        response = await server.call_tool('search_materials', {'question':'demand', 'audit_dir':'mcp-runs'})
         assert json.loads(response[0].text)['audit']['status'] == 'recorded'
         response = await server.call_tool("get_data", {"dataset":"securities"})
         assert json.loads(response[0].text)["status"] == "unavailable"
@@ -414,7 +414,7 @@ if mcp_checked:
         response=await server.call_tool('search_materials',wechat_request.to_dict())
         assert json.loads(response[0].text)['items'][0]['versions'][0]['channel']=='wechat'
         response=await server.call_tool('retrieve',{'question':'demand','urls':[wechat_url],'wechat_cache_mode':'use',
-            'archive_dir':str(Path('local-archive').absolute())})
+            'archive_dir':'local-archive'})  # relative to the MCP output root
         cached=json.loads(response[0].text)['materials'][0]
         assert cached['read_details']['cache_state']=='hit' and cached['text_provider']=='dajiala'
         assert cached['article']['blocks'] and cached['archive']['status']=='ok'
@@ -486,7 +486,7 @@ if mcp_checked:
         response=await server.call_tool('search_materials',wisburg_request.to_dict())
         assert json.loads(response[0].text)['items'][0]['versions'][0]['text_scope']=='abstract'
         response=await server.call_tool('retrieve',{'question':'demand','urls':['wisburg://report/101'],
-            'archive_dir':str(Path('wisburg-archive').absolute())})
+            'archive_dir':'wisburg-archive'})  # relative to the MCP output root
         m=json.loads(response[0].text)['materials'][0]
         assert m['text_origin']=='provider_summary' and m['archive']['status']=='ok'
         assert all(s['text']==m['text'][s['start_char']:s['end_char']] for s in m['evidence_spans'])
@@ -502,6 +502,7 @@ rss.fetch_feed=lambda url,**kw:rss.parse_feed(feed_xml,url,fetched_at=datetime.n
 # The adapter resolves its default client from the module import; patch that alias too.
 import ir_search.adapters.rss_materials as rss_adapter
 rss_adapter.fetch_feed=rss.fetch_feed
+from ir_search.services import material_search
 material_search.build_material_registry=ir_search.build_material_registry
 rss_request=ir_search.MaterialSearchRequest('Revenue',providers=['rss'],published_start='2026-09-01',published_end='2026-09-18',text_reads_per_source=0)
 feed_result=ir_search.search_materials(rss_request).to_dict()
