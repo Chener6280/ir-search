@@ -42,14 +42,17 @@ class DuckDuckGoAdapter(_SearchAdapter):
     def _search(self, query, limit, context, key):
         reply = self._request(self.endpoint + '?' + urlencode({'q': query}), context,
                               method='GET', headers={'Accept': 'text/html'})
-        if reply.status in {202, 429}: raise DataAdapterError('rate_limit')
-        if reply.status != 200:
+        if reply.status == 429: raise DataAdapterError('rate_limit')
+        if reply.status not in {200, 202}:
             from ir_search.infrastructure.web_search import _search_value
             _search_value(reply)
         if 'text/html' not in reply.content_type: raise DataAdapterError('upstream_schema')
         parser = _Results()
         parser.feed(reply.body.decode('utf-8'))
-        if parser.challenge: raise DataAdapterError('rate_limit')
+        if parser.challenge:
+            context._mark_public_host_limited('html.duckduckgo.com')
+            raise DataAdapterError('web_content_challenge')
+        if reply.status == 202: raise DataAdapterError('rate_limit')
         if not parser.rows and not parser.empty: raise DataAdapterError('upstream_schema')
         from ir_search.infrastructure.web_engine import _rows
         return _rows(parser.rows[:limit], (('title', 'title'), ('url', 'url'), ('snippet', 'snippet'))), reply.fetched_at

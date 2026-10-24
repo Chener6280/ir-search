@@ -14,7 +14,7 @@ from ir_search.context import RequestStopped
 from ir_search.infrastructure.public_web import _Reply
 from ir_search.registry import DataAdapterError
 
-_POST = {('api.bochaai.com','/v1/web-search'), ('api.anysearch.com','/v1/search'),
+_POST = {('api.bocha.cn','/v1/web-search'), ('api.anysearch.com','/v1/search'),
          ('api.exa.ai','/search'), ('api.tavily.com','/search'),
          ('api.perplexity.ai','/search'), ('google.serper.dev','/search')}
 _MCP = {('agent-toolkit.app.baizhi.cloud','/mcp'), ('open.bigmodel.cn','/api/mcp/web_search_prime/mcp')}

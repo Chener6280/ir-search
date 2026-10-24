@@ -120,7 +120,7 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
     if type(search_api_errors) is not bool or (search_api_errors and (
             method != 'POST' or parsed.scheme != 'https' or parsed.query or parsed.fragment
             or (host, parsed.path) not in {
-                ('api.bochaai.com', '/v1/web-search'), ('api.anysearch.com', '/v1/search'),
+                ('api.bocha.cn', '/v1/web-search'), ('api.anysearch.com', '/v1/search'),
                 ('api.exa.ai', '/search'), ('api.tavily.com', '/search'),
                 ('api.firecrawl.dev', '/v2/search')})):
         raise DataAdapterError('blocked_url')

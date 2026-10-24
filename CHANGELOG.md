@@ -2,6 +2,7 @@
 
 ## 0.2.0rc2 — 2026-10-24，本地候选
 
+- 后续修复：博查迁移当前官方 `api.bocha.cn` 固定端点，c-mac 系统 Python 3.9/LibreSSL 中英文真实搜索通过；TLS/主机名校验和系统网络保持原样。DuckDuckGo 明确验证页改为 `web_content_challenge` 并阻止同一请求再次联网访问该站，保留在线不可用状态；见[补测报告](docs/web_search_transport_repair.md)。
 - `search_materials(providers=['web'])` 新增按地区的有序搜索链：国内默认百智/智谱/博查/Exa/Perplexity/DuckDuckGo，海外默认 Exa/Perplexity/Brave/Serper/AnySearch/Tavily/DuckDuckGo。每机私有 env 可改顺序，无 key 跳过；旧 regional/fixed 单引擎保持兼容。
 - 每次尝试记录引擎、地区、归一化状态和耗时。成功空结果默认停止；整链失败且曾有 quota 才生成原有 caller_web_search 交接，新增 attempted_providers，保持共享最多 10 条候选预算。
 - 新增固定 HTTPS 搜索传输及百智/智谱 MCP 生命周期；禁止重定向和原始供应商错误外泄，无匿名 API 重试或自动付费。智谱日期未知，Exa 类型只接受 auto/lite；Perplexity 仅 Search API。

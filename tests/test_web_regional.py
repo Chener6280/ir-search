@@ -90,7 +90,7 @@ def test_bocha_wire_fields_key_isolation_and_publication_not_crawl_time():
     client=BochaWebClient(PROFILE,transport=transport)
     page=client.search('中国人工智能',limit=2,context=RequestContext())
     url,kw=calls[0]
-    assert url=='https://api.bochaai.com/v1/web-search'
+    assert url=='https://api.bocha.cn/v1/web-search'
     assert kw['headers']['Authorization']=='Bearer '+PROFILE.bocha_api_key
     assert PROFILE.api_key not in json.dumps(kw['headers'])
     assert json.loads(kw['body'])=={'query':'中国人工智能','count':2,'freshness':'noLimit','summary':False}

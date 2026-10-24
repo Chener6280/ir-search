@@ -183,7 +183,7 @@ class BochaWebClient:
         payload = {"query": query, "count": limit, "freshness": "noLimit", "summary": False}
         if allowed_domains:
             payload['include'] = '|'.join(allowed_domains)
-        reply = self._transport("https://api.bochaai.com/v1/web-search", method="POST",
+        reply = self._transport("https://api.bocha.cn/v1/web-search", method="POST",
             body=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json", "Accept": "application/json", "Authorization": "Bearer " + key},
             max_bytes=_MAX_BYTES, context=context, search_api_errors=True)

@@ -123,3 +123,7 @@ C 的观察方法：每次研究调用将 request_id、地区、scans 的 provid
 最终仓库已跟踪/待提交文件凭证扫描通过；后续 pytest、冒烟、接续/MCP 结果和 MCP stderr 的已知凭证扫描通过。这些检查不能撤销此前已记录的测试输出泄露。
 
 本报告随本地功能提交保存；提交号可由 `git log -1` 查看。本轮没有 merge/push。
+
+## 同日后续排查（保留上文历史）
+
+随后按用户要求，在不改网络、不关闭 TLS 校验、不绕过验证的条件下继续排查。博查迁移当前官方端点后，原系统 Python 3.9 中英文补测通过；DuckDuckGo 仍有真实验证挑战，现返回明确的 `web_content_challenge` 并阻止同一请求再次联网访问该站。详见[补测记录](web_search_transport_repair.md)。A 项仍未全部通过（DuckDuckGo 未成功）；B 项此前泄露事件不能撤销；C、D 保持待观察、待 b-mac 验证。

@@ -53,4 +53,4 @@ HTTP 是基础路径；Crawl4AI 是可选动态渲染，Scrapling 仅可选解�
 
 新增百智、智谱、Brave、Serper、Perplexity Search、DuckDuckGo，接入已有 Tavily，并保留博查/Exa/AnySearch。默认国内链 `baizhi,zai,bocha,exa,perplexity,duckduckgo`；海外链 `exa,perplexity,brave,serper,anysearch,tavily,duckduckgo`。仅 `WEB_SEARCH_PROVIDER=chain` 启用；地区、顺序、无 key 跳过和逐次耗时均有诊断。成功空结果默认停止；整链失败且曾有 quota 才交接。
 
-智谱搜索没有发布日期；百智固定 month 发现范围且不采用返回的生成摘要。Exa 类型可选 auto/lite，拒绝 deep。8 家中英文发现成功；博查 TLS 与 DuckDuckGo 验证挑战在本次样本未通过，不能因其 adapter 存在宣称在线可用。详细冒烟、测试、泄露事件和稳定性状态见[本机报告](web_search_chain_validation.md)。本次未部署其他电脑、未推送，3 天/10 次使用观察与 b-mac 验证仍待完成。
+智谱搜索没有发布日期；百智固定 month 发现范围且不采用返回的生成摘要。Exa 类型可选 auto/lite，拒绝 deep。首轮 8 家中英文发现成功，博查 TLS 与 DuckDuckGo 验证挑战未通过；同日后续已通过迁移当前官方博查端点修复系统 Python 3.9 的 TLS 握手失败，中英文补测通过，因此当前有 9 家双语有限成功样本。DuckDuckGo 仍未在线成功，明确挑战返回 `web_content_challenge` 并阻止同一请求再次访问该站。不能据 adapter 存在宣称全部在线可用。详细历史、泄露事件和补测分别见[首轮报告](web_search_chain_validation.md)与[传输补测](web_search_transport_repair.md)。本次未部署其他电脑、未推送，3 天/10 次使用观察与 b-mac 验证仍待完成。

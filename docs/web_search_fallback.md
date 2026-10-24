@@ -40,6 +40,10 @@ quota、限流、认证/权限失败、网络/TLS 错误、超时、5xx、格式
 
 固定搜索 API 经本机现有 TLS/代理/TUN 路径访问，禁止重定向，鉴权只发送给固定 HTTPS 端点。不修改系统网络、DNS、代理或出口规则。普通网页仍使用原有公开地址检查及独立 reader，不携带搜索凭证。供应商错误正文只在内存中用于归一化，不返回或记录原文，尤其不能暴露 AnySearch 402 自动生成的凭证。
 
+博查固定端点已随[当前官方 SDK](https://github.com/bocha-ai/dsh-web-search-bocha)迁移为 `https://api.bocha.cn/v1/web-search`。c-mac 系统 Python 3.9/LibreSSL 对旧 `api.bochaai.com` 出现握手 EOF，新端点在相同网络路径和证书校验下通过；不自动重试旧域名、不降低 TLS 要求，详见[补测报告](web_search_transport_repair.md)。
+
+DuckDuckGo 的明确验证页（HTML challenge 标识，即使 HTTP 为 200/202）记为 `web_content_challenge`，failure_kind 为 `blocked_by_policy`；无明确标识的 202 或普通 429 仍为 `rate_limit`。验证页不当空结果、quota 或证据，不请求挑战表单/图片，也不换 UA、Cookie、代理、浏览器或站点变体。遇到明确挑战后，该请求的 host 限制会阻止再次访问 DuckDuckGo；之后的研究请求仍需接受网站验证状态可能持续的事实。
+
 百智和智谱的 Bearer、Streamable HTTP 初始化与调用参考本机只读的 pi-web-access 0.44.0 源码，运行时没有该依赖。工具分别为 `websearch_search` 和 `web_search_prime`。百智遵循该实现的 `need_summary=false/time_range=month`；即使返回 summary，也丢弃生成摘要，仅保留链接、标题、明确日期及普通 snippet（若有）。因此百智不是任意历史窗口的穷尽检索，英文结果质量需单独判断。智谱 `count` 是请求提示，本机样本曾返回超过请求数，客户端会截断；**没有发布日期，始终未知**，不使用抓取日代替。
 
 其他供应商只映射声明的发现字段。相对日期、不支持的日期字符串保留未知/无效日期警告，不编造日期。搜索摘录始终是 `search_snippet` 或 metadata；原文须经过独立 reader，来源权威、证据类型、发布日期和业务期间分别判断。

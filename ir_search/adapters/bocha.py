@@ -17,7 +17,7 @@ from ir_search.network import bool_env, open_url
 class BochaAdapter:
     name = "bocha"
     mode = "live"
-    endpoint = "https://api.bochaai.com/v1/web-search"
+    endpoint = "https://api.bocha.cn/v1/web-search"
 
     def query(self, q: Query) -> list[Hit]:
         key = os.environ.get("BOCHA_API_KEY")

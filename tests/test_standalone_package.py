@@ -344,7 +344,7 @@ regional_adapter=regional_registry.entries()[0]
 from ir_search.infrastructure.web_search import BochaWebClient
 def offline_bocha(url,**kwargs):
     from ir_search.infrastructure.public_web import _Reply
-    assert url=='https://api.bochaai.com/v1/web-search'
+    assert url=='https://api.bocha.cn/v1/web-search'
     assert kwargs['headers']['Authorization']=='Bearer package_bocha_key'
     return _Reply(200,'application/json','',json.dumps({'code':200,'data':{'webPages':{'value':[
         {'name':'智能家居政策','url':'https://example.gov.cn/policy','snippet':'智能家居政策'}]}}}).encode(),datetime.now(timezone.utc))
