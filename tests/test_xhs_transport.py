@@ -5,6 +5,7 @@ import socket
 
 import pytest
 
+from _platform import requires_posix_permissions
 from ir_search.context import RequestContext, RequestStopped
 from ir_search.infrastructure.xhs import MAX_BYTES, XhsClient, XhsProfile
 from ir_search.registry import DataAdapterError
@@ -107,6 +108,7 @@ def test_cancellation_prevents_connect(monkeypatch, tmp_path):
     assert not connections
 
 
+@requires_posix_permissions
 def test_insecure_cache_and_symlink_rejected(monkeypatch, tmp_path):
     client, connections = wire(monkeypatch, tmp_path)
     client.cache.root.parent.mkdir(mode=0o755)

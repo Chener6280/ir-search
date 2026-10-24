@@ -1,6 +1,6 @@
 # 当前能力、实测与限制
 
-交接版本 0.2.0rc1，汇总截至 2026-09-18 的既有验收。本轮整理文档没有重新调用所有供应商。`configured_unverified` 仅表示本机配置/依赖，不能抹去历史失败，也不能保证凭证现在有效。每台电脑须按用户选择重新实测。
+当前整合候选 0.2.0rc2（`release/rc2-merge`）；网页链于 2026-10-24 在 c-mac 验证，其余为截至 2026-09-18 的既有验收。Windows 修复与本机搜索链的整合结果见[本轮记录](rc2_merge_validation.md)。本轮没有重新调用所有数据供应商。`configured_unverified` 仅表示本机配置/依赖，不能抹去历史失败，也不能保证凭证现在有效。每台电脑须按用户选择重新实测。
 
 ## 数值服务 get_data
 
@@ -20,7 +20,7 @@
 
 | provider | 当前用途及真实样本 | 限制 / 接手重点 | 指南 / 最新相关验收 |
 |---|---|---|---|
-| web | 博查、Exa、兼容 AnySearch 发现；原站读取和精确引用 | 搜索摘录非原文；域名/日期/目录链接分别验证；额度交接由 Agent 执行 | [网页](web_material_adapter.md) / [回退实测](web_search_fallback.md) |
+| web | 可选国内/海外有序多引擎链，兼容旧单引擎；原站读取和精确引用 | 搜索摘录非原文；域名/日期/目录链接分别验证；额度交接由 Agent 执行 | [网页](web_material_adapter.md) / [回退实测](web_search_fallback.md) |
 | rss | 配置的 RSS/Atom 快照与有界原文读取 | 非全历史存档，不后台轮询；feed 摘录与正文分开 | [指南](web_toolkit.md) / [验收](web_toolkit_acceptance.md) |
 | jydb | A 股公告元数据与正文 | 日期精度/业务期间限制；先指定证券 | [素材说明](material_search.md) |
 | tushare_corpus | 研报摘要、新闻、政策正文 | 摘要不当全文；工具、机构、时间及调用数受限 | [指南](tushare_corpus_adapter.md) / [验收](tushare_corpus_acceptance.md) |
@@ -41,8 +41,16 @@
 
 ## 可选读取工具
 
-HTTP 是基础路径；Crawl4AI 是可选动态渲染，Scrapling 仅可选解析器，Firecrawl 是显式远程 rawHtml 读取。Tavily 已做对照实测，但尚未纳入新 `web` 搜索路由。不要因存在 Key 或外部参考卡片就宣称已接入功能。
+HTTP 是基础路径；Crawl4AI 是可选动态渲染，Scrapling 仅可选解析器，Firecrawl 是显式远程 rawHtml 读取。Tavily 已纳入显式 `web` 路线的海外链。不要因存在 Key 或外部参考卡片就宣称已接入功能。
 
 ## 尚未承诺
 
+2026-10-03 增强：来源诊断支持分操作样本，Scrapling 提供有界 DOM 表格与结构指纹，雪球可显式选择 Patchright 1.62.1。美联储单篇原文和 RSS 快照已通过有限实测；Patchright 雪球匿名样本返回 `blocked_url`，原自动取文失败状态未升级为通过。新能力、预算和环境限制见[增强指南](reach_scrapling_patchright.md)。
+
 跨电脑实测、GitHub 远端 CI、长期在线率、全市场/全历史覆盖、历史日内、统一 PIT、自动语义向量库、完整视频/音频文稿、自动后台调度、无人值守会话续期和跨进程统一费用账本均不在当前已验收承诺中。`partial`、`unavailable`、未知日期/单位和额度交接是正常契约的一部分；调用 skill 必须向用户披露。
+
+## 0.2.0rc2 网页链（c-mac 本轮）
+
+新增百智、智谱、Brave、Serper、Perplexity Search、DuckDuckGo，接入已有 Tavily，并保留博查/Exa/AnySearch。默认国内链 `baizhi,zai,bocha,exa,perplexity,duckduckgo`；海外链 `exa,perplexity,brave,serper,anysearch,tavily,duckduckgo`。仅 `WEB_SEARCH_PROVIDER=chain` 启用；地区、顺序、无 key 跳过和逐次耗时均有诊断。成功空结果默认停止；整链失败且曾有 quota 才交接。
+
+智谱搜索没有发布日期；百智固定 month 发现范围且不采用返回的生成摘要。Exa 类型可选 auto/lite，拒绝 deep。首轮 8 家中英文发现成功，博查 TLS 与 DuckDuckGo 验证挑战未通过；同日后续通过迁移当前官方博查端点取得系统 Python 3.9 的中英文成功样本。但整合版本在 Python 3.12 的单次博查冒烟仍报 `tls_error`，不能把历史通过当成所有解释器均可用。其余 8 家整合冒烟通过。DuckDuckGo 按用户要求未重试，保留此前的 `web_content_challenge` 诊断并阻止同一请求再次访问该站。详细历史、泄露事件和补测分别见[首轮报告](web_search_chain_validation.md)、[传输补测](web_search_transport_repair.md)与[整合记录](rc2_merge_validation.md)。本次仅发布候选分支供后续下载，未部署其他电脑；3 天/10 次使用观察与 b-mac 验证仍待完成。

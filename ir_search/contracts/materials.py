@@ -100,6 +100,7 @@ class MaterialSearchRequest(JsonModel):
     video_platforms: tuple[str, ...] = ('bilibili', 'youtube')
     video_languages: tuple[str, ...] = ('zh-Hans', 'zh-CN', 'zh', 'en')
     zsxq_group_ids: tuple[str, ...] = ()
+    zsxq_timeline_export: bool = False
     source_cursors: tuple[str, ...] = ()
     sec_ciks: tuple[str, ...] = ()
     sec_forms: tuple[str, ...] = ()
@@ -109,6 +110,8 @@ class MaterialSearchRequest(JsonModel):
 
     def __post_init__(self):
         _text(self.question, "question")
+        if type(self.zsxq_timeline_export) is not bool:
+            raise ValueError('zsxq_timeline_export must be boolean')
         if self.xhs_sort not in {'latest','relevance','likes'} or self.xhs_cache_mode not in {'use','refresh'}:
             raise ValueError('Invalid XHS options')
         if type(self.xhs_comment_limit) is not int or not 0<=self.xhs_comment_limit<=19:
@@ -125,6 +128,8 @@ class MaterialSearchRequest(JsonModel):
         if len(groups) > 20 or any(not re.fullmatch(r'[1-9][0-9]{0,29}',v) for v in groups):
             raise ValueError('Invalid group IDs')
         object.__setattr__(self, 'zsxq_group_ids', groups)
+        if self.zsxq_timeline_export and (tuple(self.providers) != ('zsxq',) or not groups):
+            raise ValueError('ZSXQ timeline export requires only provider zsxq and explicit group IDs')
         # Encoded cursors have their own 12,000-character bound; ordinary search
         # strings have a smaller 2,000-character limit and must not truncate them.
         cursors = self.source_cursors
@@ -190,7 +195,7 @@ class MaterialSearchRequest(JsonModel):
                                 ("text_reads_per_source", 0, 10), ("max_chars", 1, 50000), ("web_read_workers", 1, 4)):
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:
-                raise ValueError("Search budget out of range")
+                raise ValueError(f"Search budget out of range: {name} must be an integer between {low} and {high}")
 
 
 @dataclass(frozen=True)
@@ -371,8 +376,13 @@ class MaterialSourceScan(JsonModel):
     search_query: Optional[str] = None
     fetched_at: Optional[datetime] = None
     cache_state: Optional[str] = None
+    elapsed_ms: Optional[float] = None
 
     def __post_init__(self):
+        if self.elapsed_ms is not None:
+            import math
+            if isinstance(self.elapsed_ms, bool) or not isinstance(self.elapsed_ms, (int, float)) or not math.isfinite(self.elapsed_ms) or self.elapsed_ms < 0:
+                raise ValueError('Invalid scan duration')
         object.__setattr__(self, 'fetched_at', _instant(self.fetched_at))
         if self.cache_state not in (None, 'hit', 'fresh'): raise ValueError('Invalid scan cache state')
         _identifier(self.operation)
@@ -421,10 +431,16 @@ class WebSearchFallback(JsonModel):
     after_search: str = field(default='retrieve', init=False)
     max_attempts: int = field(default=1, init=False)
     max_text_reads: int = 0
+    attempted_providers: tuple[str, ...] = ()
 
     def __post_init__(self):
-        if self.failed_provider not in {'bocha', 'anysearch', 'exa', 'tavily', 'firecrawl', 'searxng'}:
+        if self.failed_provider not in {'bocha', 'anysearch', 'exa', 'tavily', 'firecrawl', 'searxng', 'baizhi', 'zai', 'brave', 'serper', 'perplexity', 'duckduckgo'}:
             raise ValueError('Invalid web discovery provider')
+        if (not isinstance(self.attempted_providers, tuple) or len(self.attempted_providers)>10
+                or len(set(self.attempted_providers)) != len(self.attempted_providers)
+                or any(p not in {'bocha', 'anysearch', 'exa', 'tavily', 'baizhi', 'zai', 'brave', 'serper', 'perplexity', 'duckduckgo'} for p in self.attempted_providers)
+                or self.attempted_providers and self.attempted_providers[-1] != self.failed_provider):
+            raise ValueError('Invalid attempted providers')
         if not isinstance(self.query, str) or not self.query.strip() or len(self.query) > 4000:
             raise ValueError('Invalid fallback query')
         if self.web_region not in {'cn', 'overseas'}:
@@ -469,3 +485,6 @@ class MaterialSearchResult(JsonModel):
     source_text_trust: str = "untrusted"
     audit: dict = field(default_factory=dict)
     fallback_requests: list[WebSearchFallback] = field(default_factory=list)
+    # Wall-clock observations. Like request_id they differ between identical requests, so they
+    # live apart from items/coverage, which stay comparable across runs.
+    timing: dict = field(default_factory=dict)

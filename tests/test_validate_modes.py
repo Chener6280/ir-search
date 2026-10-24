@@ -5,6 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
+from _platform import requires_posix_workspace
 from scripts.bootstrap_cursor_research_workspace import main as bootstrap_main
 
 
@@ -41,6 +42,7 @@ def test_generated_mode_rejects_unreplaced_placeholders(tmp_path):
     assert any("Unreplaced placeholder" in error for error in errors)
 
 
+@requires_posix_workspace
 def test_bootstrap_output_validates_in_generated_mode(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_ir_search_runtime(tmp_path)

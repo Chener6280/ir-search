@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from importlib.util import find_spec
+import hashlib
 import json
 
 from ir_search.infrastructure.credentials import read_credentials, SourceConfigError
@@ -58,6 +59,69 @@ def _scrapling_selector():
         raise DataAdapterError('dependency_missing') from None
 
 
+def _span(value):
+    """Retain HTML span semantics without expanding or inferring a financial grid."""
+    if value is None: return 1
+    if isinstance(value, str) and len(value) <= 4 and value.isascii() and value.isdigit() and 1 <= int(value) <= 1000:
+        return int(value)
+    return None
+
+
+def _table_details(body, *, max_chars):
+    tables = body.css('table')
+    result, remaining, truncated = [], min(max_chars, 10000), len(tables) > 5
+    for table in tables[:5]:
+        if remaining <= 0:
+            truncated = True
+            break
+        caption = table.xpath('./caption')
+        caption_text = str(caption[0].get_all_text(separator=' ', strip=True)) if caption else ''
+        clipped_caption = caption_text[:min(500, remaining)]
+        remaining -= len(clipped_caption)
+        table_truncated = len(clipped_caption) < len(caption_text)
+        rows = table.xpath('./tr | ./thead/tr | ./tbody/tr | ./tfoot/tr')
+        row_data, spans_invalid = [], False
+        for row in rows[:100]:
+            cells = row.xpath('./th | ./td')
+            cell_data = []
+            for cell in cells[:30]:
+                if remaining <= 0:
+                    table_truncated = True
+                    break
+                text = str(cell.get_all_text(separator=' ', strip=True,
+                    ignore_tags=('script', 'style', 'noscript', 'svg'), valid_values=True)).strip()
+                clipped = text[:min(500, remaining)]
+                remaining -= len(clipped)
+                rowspan, colspan = _span(cell.attrib.get('rowspan')), _span(cell.attrib.get('colspan'))
+                spans_invalid |= rowspan is None or colspan is None
+                cell_data.append({'cell_type': cell.tag, 'text': clipped, 'rowspan': rowspan,
+                                  'colspan': colspan, 'truncated': len(clipped) < len(text)})
+                table_truncated |= len(clipped) < len(text)
+            table_truncated |= len(cells) > len(cell_data)
+            row_data.append({'cells': cell_data})
+            if remaining <= 0: break
+        table_truncated |= len(rows) > len(row_data)
+        result.append({'caption': clipped_caption, 'rows': row_data, 'truncated': table_truncated,
+                       'invalid_spans': spans_invalid, 'nested_tables': len(table.css('table')) > 1})
+        truncated |= table_truncated
+    return {'tables': result, 'table_count': len(tables), 'tables_truncated': truncated,
+            'table_scope': 'selected_body_dom_cells_not_normalized_financial_data',
+            'table_text_budget': min(max_chars, 10000)}
+
+
+def _structure(body, selector, matches):
+    nodes = body.css('*')
+    # Tag order only: a text/date change is not a layout change. This is a
+    # bounded comparison aid, not a learned selector or completeness verdict.
+    shape = {'selector': selector, 'matches': matches,
+             'tags': [(node.tag, _span(node.attrib.get('rowspan')), _span(node.attrib.get('colspan')))
+                      if node.tag in {'td', 'th'} else node.tag for node in nodes[:5000]],
+             'truncated': len(nodes) > 5000}
+    return {'structure_hash': hashlib.sha256(json.dumps(shape, sort_keys=True).encode()).hexdigest(),
+            'structure_hash_basis': 'selector_bounded_dom_tag_order_and_cell_spans_v1',
+            'structure_truncated': shape['truncated']}
+
+
 def extract_scrapling_document(raw: bytes, url: str, *, max_chars=20000):
     """Select an unambiguous semantic body, retaining full-page source metadata.
 
@@ -84,12 +148,23 @@ def extract_scrapling_document(raw: bytes, url: str, *, max_chars=20000):
             details.update(selector='article' if articles else 'main, [role="main"]', matches=len(nodes))
             details['state'] = 'ambiguous_or_missing_body'
             if len(nodes) == 1:
+                body = nodes[0]
+                details.update(_structure(body, details['selector'], len(nodes)))
+                details['page_table_count'] = len(root.css('table'))
+                table_details = _table_details(body, max_chars=max_chars)
+                details['omitted_table_count'] = max(0, details['page_table_count'] - table_details['table_count'])
                 text = str(nodes[0].get_all_text(separator='\n\n', strip=True,
                            ignore_tags=('script', 'style', 'noscript', 'svg'), valid_values=True)).strip()
-                if len(text) >= 80:
+                if details['omitted_table_count']:
+                    details['state'] = 'tables_outside_selected_body'
+                elif len(text) >= 80:
                     document.text = text
                     document.extraction_method = 'scrapling_semantic_body'
-                    details.update(selected='scrapling', state='selected')
+                    details.update(selected='scrapling', state='selected', **table_details)
+                    if table_details['tables_truncated']:
+                        document.warnings.append('scrapling_tables_truncated')
+                    if any(t['invalid_spans'] or t['nested_tables'] for t in table_details['tables']):
+                        document.warnings.append('scrapling_table_layout_unresolved')
                 else:
                     details['state'] = 'body_too_short'
         except Exception:
@@ -131,9 +206,11 @@ def fetch_firecrawl_document(url, *, context, max_chars=20000, allowed_domains=(
         raise DataAdapterError('source_config_error') from None
     if profile is None:
         raise DataAdapterError('source_disabled')
-    # This does not assert that remote DNS resolves identically to local DNS.
+    # This does not assert that remote DNS resolves identically to local DNS. The URL's own scheme
+    # is stated so that an https target may pass a fake-ip placeholder when the opt-in is on; this
+    # process never connects to the target, the remote provider does (skipTlsVerification: False).
     try:
-        _resolve(host, port, context)
+        _resolve(host, port, context, parsed.scheme)
     except OSError:
         raise DataAdapterError('network') from None
     payload = {'url': url, 'formats': ['rawHtml'], 'onlyMainContent': False,
@@ -167,7 +244,7 @@ def fetch_firecrawl_document(url, *, context, max_chars=20000, allowed_domains=(
     if not _allowed_domain(final_host, allowed_domains) or (parsed.scheme == 'https' and final.scheme != 'https'):
         raise DataAdapterError('blocked_url')
     try:
-        _resolve(final_host, final_port, context)
+        _resolve(final_host, final_port, context, final.scheme)  # the reported URL's own scheme
     except OSError:
         raise DataAdapterError('network') from None
     context.check_active()

@@ -45,6 +45,8 @@ MCP 复用现有 `source_health(providers=["xhs"], live=true, timeout_seconds=40
 
 当前轻量 live 探测只实现小红书登录状态，其他来源返回 `live_probe_not_implemented`，不发送付费数据请求。实际搜索/正文/数据可用性应以具体任务结果判断。一次登录成功不会将 `search_live_verified`、`retrieve_live_verified`、`get_data_live_verified` 改成 true。报告顶层 `status=ok` 仅表示诊断流程完成，不表示所有来源已联网验收。
 
+2026-10-03 扩展：`operation_status` 分操作报告观察结果；显式 live RSS 检查配置的 feed 快照，`search_samples` 可执行指定来源的一条候选查询，`read_samples` 可验证一个普通公开网页。查询可能产生供应商费用，必须显式提供样本；默认检查仍零网络。旧段落保留历史范围，当前参数、预算及失败记录见[增强指南](reach_scrapling_patchright.md)。
+
 同一台电脑的不同 Python 环境可能有不同依赖。体检应在实际运行 SDK/MCP 的环境执行；安装提示面向该环境，不会自动修改系统 Python、网络代理或浏览器配置。XHS 显式 live 检查会使用既有私有缓存锁；默认本地检查不创建会话文件。
 
 ## 中断、限流与续取

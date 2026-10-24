@@ -8,9 +8,10 @@ import ipaddress
 import re
 import socket
 import ssl
-from threading import Event, Thread
+from threading import BoundedSemaphore, Event, Thread
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
+from ._interrupt import wake_blocked_socket
 from ir_search.context import RequestStopped
 from ir_search.contracts.materials import _reference
 from ir_search.documents.html import extract_html_document
@@ -76,14 +77,112 @@ def _allowed_domain(host, domains):
     return not domains or any(host == domain or host.endswith("." + domain) for domain in domains)
 
 
-def _resolve(host, port, context):
-    context.check_active()
-    rows = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    context.check_active()
-    if not rows or any(not ipaddress.ip_address(row[4][0].split("%", 1)[0]).is_global for row in rows):
+_DNS_SLOTS = BoundedSemaphore(8)
+
+# A local proxy running in "fake-ip" mode answers every DNS question with a placeholder from this
+# block (RFC 2544 benchmarking space) and resolves the real name itself, so on such a computer no
+# public name can pass the public-address check in _checked_lookup. The block is a constant on purpose:
+# nothing configurable can widen it to loopback, LAN or metadata addresses.
+_FAKE_IP_BLOCK = ipaddress.ip_network("198.18.0.0/15")
+
+
+def _fake_ip_https_enabled():
+    """Read the opt-in from the private credentials file only.
+
+    It takes no argument and reads no environment variable, so a request, a tool argument or a
+    URL cannot turn it on.
+    """
+    from .credentials import read_credentials, SourceConfigError
+    try:
+        value = read_credentials().get("PUBLIC_WEB_FAKE_IP_HTTPS", "false")
+    except SourceConfigError:
+        raise DataAdapterError("source_config_error") from None
+    if value not in {"true", "false"}:
+        raise DataAdapterError("source_config_error")
+    return value == "true"
+
+
+# The fixed origins the Xueqiu browser gate may tunnel to. Defined once: the gate's CONNECT
+# allow-list, the worker's request filter and the placeholder waiver of _resolve_browser_tunnel
+# are this one set, so they cannot drift apart. Matching is exact: no suffix, no case folding.
+_BROWSER_TUNNEL_HOSTS = frozenset({'xueqiu.com', 'assets.imedao.com', 'xqdoc.imedao.com',
+                                   'g.alicdn.com', 'o.alicdn.com'})
+
+
+def _resolve(host, port, context, scheme=None):
+    # A placeholder may pass only where a certificate check replaces the address check: the caller
+    # states a scheme that means "this process performs TLS with hostname verification on this
+    # very connection". The set is closed and spelled out here, in one place, on purpose. Plain
+    # http and ws, any other spelling, and callers that state no scheme stay blocked.
+    return _checked_lookup(host, port, context, peer_verified=scheme in {"https", "wss"}, real_dns=True)
+
+
+def _resolve_browser_tunnel(host, port, context, bundled_chromium=False):
+    """DNS door of the Xueqiu CONNECT gate; the only door that gate may use.
+
+    This process performs no TLS on a tunnelled connection, so no scheme describes it. What
+    replaces the address check here is the browser: it verifies the origin certificate and name
+    end to end while the gate only relays bytes. That premise is pinned in code for the Chromium
+    build Playwright ships and for nothing else, so only that build, only the fixed origins and
+    only port 443 can pass a placeholder. Every other rule is the shared one below.
+    """
+    if host not in _BROWSER_TUNNEL_HOSTS or port != 443:
         raise DataAdapterError("blocked_url")
-    # Connect to the checked numeric address without a second hostname resolution.
+    return _checked_lookup(host, port, context, peer_verified=bundled_chromium is True)
+
+
+def _checked_lookup(host, port, context, *, peer_verified, real_dns=False):
+    # OS resolvers have no portable timeout. Bound the caller's wait and the number
+    # of outstanding resolver workers; never resolve the host again when connecting.
+    context.check_active()
+    if not _DNS_SLOTS.acquire(blocking=False):
+        raise DataAdapterError("dns_busy")
+    done, answer = Event(), {}
+    def lookup():
+        try:
+            answer["rows"] = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except Exception:
+            answer["failed"] = True
+        finally:
+            _DNS_SLOTS.release()
+            done.set()
+    worker = Thread(target=lookup, daemon=True)
+    try:
+        worker.start()
+    except Exception:
+        _DNS_SLOTS.release()
+        raise DataAdapterError("network") from None
+    while not done.wait(min(.05, context.remaining_seconds())):
+        context.check_active()
+    context.check_active()
+    if answer.get("failed"):
+        raise DataAdapterError("network")
+    rows = answer["rows"]
+    # Keep the independent, exact-host real-DNS opt-in from c-mac. It resolves
+    # fresh public addresses rather than waiving their validation. Browser
+    # CONNECT gates never enter this path; their tighter Windows gate remains.
+    if real_dns and rows and all(ipaddress.ip_address(row[4][0].split('%', 1)[0]) in _FAKE_IP_BLOCK for row in rows):
+        from .fake_ip_dns import _real_rows
+        fresh = _real_rows(host, port, context)
+        if fresh is not None:
+            rows = fresh
+    addresses = [ipaddress.ip_address(row[4][0].split("%", 1)[0]) for row in rows]
+    # Every address outside the placeholder block keeps the original rule: one non-public answer
+    # rejects the whole set, so a placeholder can never bring a private address in with it.
+    if not rows or any(not address.is_global for address in addresses if address not in _FAKE_IP_BLOCK):
+        raise DataAdapterError("blocked_url")
+    if any(address in _FAKE_IP_BLOCK for address in addresses):
+        # A placeholder says nothing about where the proxy will connect, so its address check is
+        # waived only where a certificate check replaces it, so that the peer must hold a publicly
+        # trusted certificate for this exact name, and only when the opt-in is on. Which
+        # connections qualify is decided by the two doors above, never here.
+        if not peer_verified or not _fake_ip_https_enabled():
+            raise DataAdapterError("fake_ip_blocked")
     return rows[0]
+
+
+class _HandshakeInterrupted(Exception):
+    """TCP was connected and the connection ended inside the TLS handshake, before any TLS answer."""
 
 
 class _Connection(http.client.HTTPConnection):
@@ -101,19 +200,40 @@ class _Connection(http.client.HTTPConnection):
         self.sock.settimeout(self.timeout)
         self.sock.connect(sockaddr)
         if self._tls is not None:
-            self.sock = self._tls.wrap_socket(self.sock, server_hostname=self.host)
+            try:
+                self.sock = self._tls.wrap_socket(self.sock, server_hostname=self.host)
+            except ssl.SSLCertVerificationError:
+                raise  # the peer answered and its identity was not accepted: tls_error
+            except (ConnectionError, ssl.SSLEOFError, ssl.SSLZeroReturnError):
+                # Decided by where it happened, not by the exception class: the same event is a
+                # reset or an abort on Windows and an SSL end-of-file elsewhere. Caught here, ahead
+                # of the general ssl.SSLError mapping in _request, which would call it tls_error.
+                raise _HandshakeInterrupted() from None
+            except ssl.SSLError as exc:
+                if getattr(exc, "reason", None) == "UNEXPECTED_EOF_WHILE_READING":
+                    raise _HandshakeInterrupted() from None
+                raise  # an alert or a protocol mismatch is a TLS answer: tls_error
 
 
 def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_MAX_BYTES, signed_download=False,
              scoped_download_headers=None, public_feed=False, preserve_headers=False, dns_mode='system',
-             search_api_errors=False):
+             search_api_errors=False, anonymous=False):
     parsed, host, port = _url(url, signed_download=signed_download or public_feed)
+    # anonymous=True is the caller's statement that this request carries no credential of any
+    # kind. It only changes how a 403 is reported. A statement the transport can see to be false is
+    # refused before any connection: a plain GET with nothing but these headers is all it may be.
+    if type(anonymous) is not bool or (anonymous and (
+            method != "GET" or body is not None or signed_download or public_feed
+            or scoped_download_headers is not None
+            or any(not isinstance(name, str) or name.lower() not in {"accept", "accept-language", "user-agent"}
+                   for name in (headers or {})))):
+        raise DataAdapterError("blocked_url")
     # Only fixed search APIs may return a bounded error body to their own parser.
     # Generic page readers retain strict non-200 rejection; no error body is evidence.
     if type(search_api_errors) is not bool or (search_api_errors and (
             method != 'POST' or parsed.scheme != 'https' or parsed.query or parsed.fragment
             or (host, parsed.path) not in {
-                ('api.bochaai.com', '/v1/web-search'), ('api.anysearch.com', '/v1/search'),
+                ('api.bocha.cn', '/v1/web-search'), ('api.anysearch.com', '/v1/search'),
                 ('api.exa.ai', '/search'), ('api.tavily.com', '/search'),
                 ('api.firecrawl.dev', '/v2/search')})):
         raise DataAdapterError('blocked_url')
@@ -152,7 +272,7 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
             from .public_dns import _google_public_address
             address = _google_public_address(host, port, context)
         else:
-            address = _resolve(host, port, context)
+            address = _resolve(host, port, context, parsed.scheme)
         tls = None
         if parsed.scheme == "https":
             tls = ssl.create_default_context()
@@ -165,11 +285,7 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
                     context.check_active()
                 except RequestStopped:
                     sock = active_socket or connection.sock
-                    if sock is not None:
-                        try:
-                            sock.shutdown(socket.SHUT_RDWR)
-                        except OSError:
-                            pass
+                    wake_blocked_socket(sock)
                     return
 
         watcher = Thread(target=stop_socket, daemon=True)
@@ -192,6 +308,10 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
         if response.status != 200 and not error_reply:
             code = {401: "authentication_failed", 402: "entitlement_denied", 403: "entitlement_denied",
                     404: "not_found", 429: "rate_limit"}.get(response.status, "network")
+            if response.status == 403 and anonymous:
+                # No account is involved, so this is not an entitlement: the site refused this
+                # anonymous client. Why it did is not known here and is not guessed.
+                code = "anonymous_access_refused"
             error = DataAdapterError(code)
             error.http_status = response.status  # Safe numeric context, never response bodies or credentials.
             raise error
@@ -223,6 +343,9 @@ def _request(url, *, context, method="GET", body=None, headers=None, max_bytes=_
         return _Reply(response.status, response.getheader("Content-Type", ""), "", bytes(raw), datetime.now(timezone.utc), safe_headers)
     except (DataAdapterError, RequestStopped):
         raise
+    except _HandshakeInterrupted:
+        context.check_active()  # a stop that closed the socket mid-handshake stays a stop
+        raise DataAdapterError("tls_handshake_interrupted") from None
     except ssl.SSLError:
         context.check_active()
         raise DataAdapterError("tls_error") from None
@@ -261,7 +384,7 @@ def fetch_public_document(url: str, *, context, max_chars: int = 20000, allowed_
         if current in visited:
             raise DataAdapterError("web_redirect_limit")
         visited.add(current)
-        reply = _request(current, context=context)
+        reply = _request(current, context=context, anonymous=True)  # a public page, read with no credential
         if reply.status != 200:
             if not reply.location or hops >= 3:
                 raise DataAdapterError("web_redirect_limit")

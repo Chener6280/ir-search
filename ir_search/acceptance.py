@@ -124,6 +124,8 @@ def run_data_acceptance(probes=None, *, live=False, env_file=None, repeats=2,
     deadline = time.monotonic() + total_timeout_seconds
     blocked = {}
     fatal = {"tls_error", "tls_not_supported", "entitlement_denied", "no_credential", "source_credentials_missing",
+             "tls_handshake_interrupted",  # recurs for the same host and egress, so a repeat cannot help
+             "anonymous_access_refused",  # a 403 was entitlement_denied, fatal above, before it had its own code
              "dependency_missing", "source_config_error", "quota", "rate_limit"}
     for probe in probes:
         request = probe.request

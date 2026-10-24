@@ -67,7 +67,11 @@ def test_keyset_cursor_bound_to_date_and_share_class():
 
 
 def test_duplicate_source_identity_not_silently_deduped():
-    r,_=run([NAV,NAV]);assert r.status.value=='error' and not r.records
+    r,_=run([NAV,NAV])  # 整行完全一致：去重、保留一行，但必须留下显式诊断
+    assert r.status.value=='ok' and len(r.records)==1
+    assert 'duplicate_source_rows_dropped' in [d.code for d in r.diagnostics]
+    r,_=run([NAV,dict(NAV,F_NAV_UNIT='5')])  # 同键不同值=源数据冲突，仍然报错
+    assert r.status.value=='error' and not r.records
 
 
 def test_jydb_nav_rejects_ambiguous_code_and_does_not_invent_currency():

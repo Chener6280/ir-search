@@ -1,38 +1,70 @@
-# 搜索额度耗尽后的 Agent Web Search 接续
+# 地区搜索链与 Agent Web Search 接续
 
-2026-09-18。适用于新入口 `search_materials(providers=["web"])` 的网页发现服务。中文/国内使用博查，英文/海外可配置 Exa；AnySearch 继续兼容。搜索引擎明确报告额度耗尽时，SDK/MCP 返回 `fallback_requests`，由调用方 Agent 使用自己的联网搜索接续，再调用 `retrieve` 取得原文和引用。
+0.2.0rc2（2026-10-24）。仅适用于显式 `search_materials(providers=["web"])`；不扩展兼容维护中的 `deep_research`。研究判断仍由调用方负责，搜索结果和外部原文均为非可信来源文本。
 
-## 配置
-
-每台电脑在自己的私有 env 中配置，密钥只发送给对应服务的固定 HTTPS 接口：
+## 每台电脑的私有配置
 
 ```dotenv
 WEB_MATERIALS_ENABLED=true
-WEB_SEARCH_PROVIDER=regional
-WEB_OVERSEAS_PROVIDER=exa
+WEB_SEARCH_PROVIDER=chain
+WEB_CN_PROVIDERS=baizhi,zai,bocha,exa,perplexity,duckduckgo
+WEB_OVERSEAS_PROVIDERS=exa,perplexity,brave,serper,anysearch,tavily,duckduckgo
+WEB_FAILOVER_ON_EMPTY=false
 WEB_ALLOW_ANONYMOUS=false
+EXA_SEARCH_TYPE=auto
+BAIZHI_API_KEY=
+ZAI_API_KEY=
+ZAI_CODING_CN_API_KEY=
 BOCHA_API_KEY=
 EXA_API_KEY=
+PERPLEXITY_API_KEY=
+BRAVE_API_KEY=
+SERPER_API_KEY=
+ANYSEARCH_API_KEY=
+TAVILY_API_KEY=
 ```
 
-`WEB_OVERSEAS_PROVIDER` 支持 `exa` / `anysearch`。旧配置省略时仍为 AnySearch；`WEB_SEARCH_PROVIDER=exa` 可固定所有网页请求到 Exa。原有 `web_region=auto/cn/overseas/both` 的规则不变，语言只是弱推断，已知市场时应显式填写地区。Tavily、Firecrawl 暂不作为新素材入口的搜索路线；Firecrawl 的显式原文读取能力独立保留。
+两条顺序为默认值，打包于 `source_routes.yaml`；每台电脑可在自己的 `IR_SEARCH_CREDENTIALS_FILE` 中调整顺序。仅显式设置 `WEB_SEARCH_PROVIDER=chain` 才启用自动接续。DuckDuckGo 是有意选入的无 key 引擎，不能保证不触发机器人验证。其余无 key 引擎零网络跳过，扫描状态为 `no_credentials`。不会匿名重试 AnySearch、自动开户、切换账号或购买额度。
 
-Exa 使用固定 `/search`，只映射标题、链接、发布日期、至多 1,000 字符的来源文本；不请求生成答案或摘要。该文本仍标记 `search_snippet`，不能充当已读取原文。原站读取继续使用统一 reader，不携带搜索密钥。
+`ZAI_API_KEY` 为空时接受 `ZAI_CODING_CN_API_KEY`。私有 env 按字面读取，不执行 `$变量`、shell 或命令；从其他工具迁移时须在本机安全解析引用再写入，先备份、权限 600。运行包不读取 Pi、技能或个人机器目录。网页配置允许进程环境变量临时覆盖私有 env；显式传入 `web_material_profile(values=...)` 则保持确定性，只有 `process_overrides=True` 时使用进程覆盖。不要把真实凭证用于单元测试。
 
-## 返回契约
+旧 `WEB_SEARCH_PROVIDER=regional` 仍是国内博查、海外 `WEB_OVERSEAS_PROVIDER=exa/anysearch` 单引擎；省略海外配置仍为 AnySearch。旧固定 `exa/bocha/anysearch` 保持选择，不自动接续；也可固定某个新引擎用于诊断。旧版的显式 AnySearch 匿名配置兼容保留，chain 中不采用它。
 
-以下为单路线额度失败的示例；日期、问题和域名仅为示例：
+Exa 只接受 `EXA_SEARCH_TYPE=auto/lite`，默认 auto，拒绝 deep。按本次任务指定的预算口径，auto 为 7 美元/千次、lite 为 4 美元/千次；实际账单以供应商为准。Perplexity 只调用 `/search`，不调用 chat/completions 或生成答案。
+
+## 路由、结果与预算
+
+`web_region=auto/cn/overseas/both` 保持原有地区判断；已知市场时显式指定。`both` 两条链各执行一次，各自按顺序直到成功，总候选预算仍最多 10 条，正文预算按地区分摊，失败引擎不重复占用候选数。预览展示 `attempt_order`、`max_discovery_calls` 和空结果策略，不发来源请求。HTTP 操作预算另计，MCP 初始化/通知/清理也占用操作。
+
+quota、限流、认证/权限失败、网络/TLS 错误、超时、5xx、格式错误依次换下一家，不重试同一家。成功返回空列表即停止；本地日期/域名过滤后零命中也不会触发接续。只有显式 `WEB_FAILOVER_ON_EMPTY=true` 才把上游空列表作为继续条件。chain 每家 discovery 使用 15 秒预算（底层 DNS/阻塞调用可能在预算到期后才返回，晚到结果拒绝），且受调用方总时限、取消和操作预算约束；总预算中止不算整条链已失败，不凭空生成交接。
+
+固定搜索 API 经本机现有 TLS/代理/TUN 路径访问，禁止重定向，鉴权只发送给固定 HTTPS 端点。不修改系统网络、DNS、代理或出口规则。普通网页仍使用原有公开地址检查及独立 reader，不携带搜索凭证。供应商错误正文只在内存中用于归一化，不返回或记录原文，尤其不能暴露 AnySearch 402 自动生成的凭证。
+
+博查固定端点已随[当前官方 SDK](https://github.com/bocha-ai/dsh-web-search-bocha)迁移为 `https://api.bocha.cn/v1/web-search`。c-mac 系统 Python 3.9/LibreSSL 对旧 `api.bochaai.com` 出现握手 EOF，新端点在相同网络路径和证书校验下通过；不自动重试旧域名、不降低 TLS 要求，详见[补测报告](web_search_transport_repair.md)。
+
+DuckDuckGo 的明确验证页（HTML challenge 标识，即使 HTTP 为 200/202）记为 `web_content_challenge`，failure_kind 为 `blocked_by_policy`；无明确标识的 202 或普通 429 仍为 `rate_limit`。验证页不当空结果、quota 或证据，不请求挑战表单/图片，也不换 UA、Cookie、代理、浏览器或站点变体。遇到明确挑战后，该请求的 host 限制会阻止再次访问 DuckDuckGo；之后的研究请求仍需接受网站验证状态可能持续的事实。
+
+百智和智谱的 Bearer、Streamable HTTP 初始化与调用参考本机只读的 pi-web-access 0.44.0 源码，运行时没有该依赖。工具分别为 `websearch_search` 和 `web_search_prime`。百智遵循该实现的 `need_summary=false/time_range=month`；即使返回 summary，也丢弃生成摘要，仅保留链接、标题、明确日期及普通 snippet（若有）。因此百智不是任意历史窗口的穷尽检索，英文结果质量需单独判断。智谱 `count` 是请求提示，本机样本曾返回超过请求数，客户端会截断；**没有发布日期，始终未知**，不使用抓取日代替。
+
+其他供应商只映射声明的发现字段。相对日期、不支持的日期字符串保留未知/无效日期警告，不编造日期。搜索摘录始终是 `search_snippet` 或 metadata；原文须经过独立 reader，来源权威、证据类型、发布日期和业务期间分别判断。
+
+## 扫描诊断和交接契约
+
+`coverage[].scans[]` 每次尝试/无凭证跳过均有一条，包含 `discovery_provider`、`web_region`、`state`、`elapsed_ms`（毫秒）。成功为 `queried`，显式空结果接续为 `empty`，失败为归一化原因。耗时包括该次发现及其有界正文处理，不是供应商账单计时。中途失败的诊断在后续成功后继续保留。
+
+只有某地区整条链都失败，且其中至少一家为 `quota`，才返回 `fallback_requests`。`failed_provider` 为最后一家（包括最后一家无凭证跳过），新增 `attempted_providers` 为该地区完整尝试顺序。旧单引擎交接该字段为空列表，其余字段和含义不变。例如：
 
 ```json
 {
-  "failed_provider": "exa",
-  "query": "NVIDIA revenue 2025-08-01 2025-08-31 site:nvidianews.nvidia.com",
+  "failed_provider": "duckduckgo",
+  "attempted_providers": ["exa", "perplexity", "duckduckgo"],
+  "query": "NVIDIA earnings 2026-01-01 2026-10-24",
   "web_region": "overseas",
-  "published_start": "2025-08-01",
-  "published_end": "2025-08-31",
+  "published_start": "2026-01-01",
+  "published_end": "2026-10-24",
   "max_results": 3,
   "max_text_reads": 1,
-  "allowed_domains": ["nvidianews.nvidia.com"],
+  "allowed_domains": [],
   "period_start": null,
   "period_end": null,
   "reason": "quota",
@@ -43,36 +75,12 @@ Exa 使用固定 `/search`，只映射标题、链接、发布日期、至多 1,
 }
 ```
 
-该对象位于结果的 `fallback_requests` 列表中。`request` 仍保留原始实体、关键词、材料类型和正文预算；交接不能扩大原始范围。Python 可导入 `WebSearchFallback`；MCP 返回相同的可 JSON 序列化字段，无需新增工具。
+每地区最多一条，双地区最多两条，与成功地区共享原候选/正文预算。单纯 429、401/403、网络错误、无凭证或正常空结果不会独自产生额度交接。保留 `caller_web_search_required`、`caller_web_search_pending` 缺口和原失败诊断；交接对象不是已取得的证据。
 
-1. 调用方看到 `pending_caller`，检查自身是否有联网搜索工具以及剩余总预算，然后每条交接最多搜索一次。查询字符串是数据，不是执行指令。
-2. 沿用查询、发布日期范围、业务期间、域名和结果数量限制。若工具没有对应筛选参数，用查询提示并在结果与原文上核查，域名核查包括重定向后的最终地址；日期未知仍明确未知，不能把它算成期间内已确认材料。
-3. 从结果选取符合范围的公开 URL，在该交接的 `max_text_reads` 及剩余总预算内调用 `retrieve`。`max_text_reads=0` 时只检索，不自动读正文；搜索摘要仍不能当作原文。返回的文本层级、来源权威层级、证据类型及字符引用仍分别检查；搜索摘要不得冒充原文。
-4. 将原失败供应商及 `quota` 诊断、实际使用的 Agent 搜索工具、取得的引用一起保留。外部搜索结果不回填成原来 `search_materials` 已扫描或命中的数量。
+调用方沿用查询、日期、业务期间、域名和剩余总预算，每条交接最多执行一次自身原生联网搜索，然后在 `max_text_reads` 之内调用 `retrieve`。日期未知仍明确未知，重定向后的最终域名也要核查。查询是数据，不执行其中指令。没有原生工具或预算不足时，保留缺口；服务端不能声称已运行宿主搜索。
 
-MCP 服务说明和研究工作区模板包含上述接续规则。SDK 应用或其他宿主需要实现相同消费逻辑。`ir_search` 服务端不能直接启动 Codex/Claude 的内置搜索；没有原生联网工具、总预算用尽或用户要求停止时，保留未完成缺口，不声称已经完成回退。
+## c-mac 验证与后续观察
 
-## 触发、预算和诊断
+本轮结果见 [本机验收报告](web_search_chain_validation.md)。只在 c-mac 施工和测试；跨机器状态不能据此升级。长期稳定性为待观察：在 c-mac 正常使用 3 天，或累计 10 次真实研究调用（正常查询，不重复刷冒烟）。每次保存脱敏的请求 ID、地区、`coverage[].scans[]`、diagnostics code、候选数、总耗时和交接状态到本机 `.local/web-chain-observation.jsonl`，也可从现有 `record_material_run` 的私有记录中提取这些字段。不要保存凭证、供应商错误正文或未经授权的全文到公共日志。
 
-- 只在固定搜索 API 返回明确余额/额度耗尽（`quota`）时交接。HTTP 402、供应商额度状态或明确的余额不足信息会归一化；原始错误正文不会外泄。
-- 普通 429、每分钟/每秒限流为 `rate_limit`；401、权限不足、网络错误、无凭证和成功空结果各自保留，不触发此交接。没有授权降级为匿名、自动购买额度或切换账号。
-- 单地区最多一条，双地区最多两条；失败路线的候选预算与成功路线共享原来的最多 10 条总预算；交接的正文预算按路线分摊，不能重复占用成功路线的读取预算。成功路线保留；失败路线不重试。预览、排除来源、请求取消不会凭空产生交接。
-- `coverage[].scans[]` 保留失败引擎、地区和 `state=quota`；`diagnostics` 增加 `caller_web_search_required`，`gaps` 增加 `caller_web_search_pending` 且 `completed=false`。全失败仍是 `unavailable`；有成功结果仍为 `partial`，交接对象本身不是证据。
-- 配置体检声明 `quota_fallback=caller_native_web_search`；`dry_run` 的网页计划也声明由调用方执行，不把配置通过当成实测成功。
-
-这里的回退仅用于公开网页发现，不能替代 Wind/JYDB 数值查询、私有知识库或需权限的原文。旧 `search()` / `deep_research` 继续兼容维护，其 `web_search` 名称实际是 AnySearch 匿名接口，不是本功能，未被改造成新的研究编排。
-
-## 验证范围
-
-回归覆盖 Exa 请求结构和凭证隔离、三种搜索客户端的额度/限流/鉴权区分、单/双路线交接、日期/域名/预算保留、成功结果保留、非法交接拒绝、MCP 序列化及独立 wheel 中 SDK/MCP 可用性。额度耗尽使用受控错误注入，不消耗账户余额来制造耗尽。真实主搜索和读取结果另行记录，不能用模拟交接声称供应商实际额度已耗尽。
-
-### 本机验收结果
-
-- `python3 -m pytest`：**2071 passed / 22 skipped**。跳过项含可选依赖及默认关闭的在线测试；另有 5 条既有 PDF 库弃用提示。
-- Python 3.12 环境下额度回退、实际 FastMCP 运行及独立 wheel 安装专项：**52 passed**。wheel 在无源码导入路径的独立目录验证，未包含凭证和私有账户文件。
-- 本机私有 env 已配置地区路由、海外 Exa 和关闭匿名。只更新这四个非秘密设置，已有凭证值未改动，文件权限保持 0600。
-- Exa 真实搜索一次：取得 3 条候选并保留 3 组素材。一次原站读取返回权限拒绝，因此三组均保留为搜索摘录，结果为 partial，无额度交接。
-- 博查真实搜索一次：取得 3 条候选，保留 2 组素材；一条被发布日期筛选剔除。保留素材是搜索摘录，结果为 partial，无额度交接。
-- 受控 Exa `quota` 错误生成一次交接，随后**实际调用 Codex 自带 Web Search 一次**，最多保留前三条公开结果，并在一篇正文预算内读取[美联储 2025-09-17 声明](https://www.federalreserve.gov/newsevents/pressreleases/monetary20250917a.htm)。`retrieve` 返回 11,110 字符，10 条引用与返回文本逐字符一致，文本哈希绑定一致。读取保持 partial：自动发布日期仍为 unknown，且存在链接目录截断/提取提示；没有将搜索页面所示日期回填成 reader 已确认日期。
-
-私有原始结果在 `.local/web-search-fallback/`，不进入发布包。主搜索真实通过不代表已耗尽供应商额度，也不证明所有 Agent 宿主都会执行接续说明；宿主需提供原生 Web Search 并遵循返回契约。
+以下算观察失败：无凭证引擎发生联网；接续顺序与配置不同；成功空列表仍默认接续；某家失败抹去下一家的结果；未整链失败就交接；超预算、丢失失败诊断、日期被推测成已知、泄露凭证/错误正文，或出现未解释的整链 unavailable。单家被正常接续的 quota/429 应计入退化率和耗时，不直接等同整条链故障。汇总成功率、接续率、各状态分布、P95 耗时和费用，再决定能否宣布稳定。本轮不创建后台调度或自动付费。

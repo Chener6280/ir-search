@@ -15,6 +15,7 @@ import ssl
 import time
 from threading import Event, Thread, Lock
 
+from ._interrupt import wake_blocked_socket
 from .credentials import SourceConfigError, read_credentials
 from .mcp_protocol import _decode, _response_for
 from ir_search.context import RequestStopped
@@ -118,11 +119,7 @@ def _post(profile, route, payload, *, session_id, version, context):
                     context.check_active()
                 except RequestStopped:
                     sock = active_socket or connection.sock
-                    if sock is not None:
-                        try:
-                            sock.shutdown(socket.SHUT_RDWR)
-                        except OSError:
-                            pass
+                    wake_blocked_socket(sock)
                     return
 
         watcher = Thread(target=stop_socket, daemon=True)

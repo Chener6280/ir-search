@@ -56,6 +56,29 @@ def test_recent_bar_contract_timezone_units_and_source_provenance(frequency):
     json.dumps(result.to_dict(), allow_nan=False)
 
 
+def test_index_bars_always_use_sina_and_stay_index_points():
+    source = Source([{"day": "2026-09-11 14:59:00", "open": 4440.1, "high": 4441, "low": 4439, "close": 0,
+                      "volume": 9, "amount": 1}, {"day": "2026-09-11 15:00:00", "open": 4440, "high": 4441,
+                                                  "low": 4439, "close": 4439.1443, "volume": 9, "amount": 1}])
+    result = source.run(DataRequest("index_intraday", symbols=["000300.SH"], start="2026-09-11", end="2026-09-11",
+                                    market="CN_INDEX", frequency="1m", adjustment="raw"))
+    assert result.status.value == "partial" and len(result.records) == 2
+    assert source.calls == [("stock_zh_a_minute", {"symbol": "sh000300", "period": "1", "adjust": ""})]
+    assert set(result.records[1]) == {"symbol", "bar_time", "trade_date", "open", "high", "low", "close", "currency"}
+    assert result.records[0]["close"] is None and result.records[1]["close"] == Decimal("4439.1443")
+    codes = {d.code for d in result.diagnostics}
+    assert {"index_level_not_tradable_price", "zero_source_price_replaced_with_null", "sina_activity_units_not_exposed"} <= codes
+    assert result.provenance.publisher == "Sina via AKShare"
+
+
+@pytest.mark.parametrize("symbols,market", [(["600000.SH"], "CN_INDEX"), (["000300.SH"], "A_SHARE"), (["932000.CSI"], "CN_INDEX")])
+def test_index_bars_reject_stock_codes_and_wrong_markets(symbols, market):
+    source = Source([])
+    result = source.run(DataRequest("index_intraday", symbols=symbols, start="2026-09-11", end="2026-09-11",
+                                    market=market, frequency="1m", adjustment="raw"))
+    assert not result.records and not source.calls
+
+
 def test_intraday_default_frequency_and_coverage_metadata_validate():
     assert request().frequency == "1m" and request().adjustment == "raw"
     cap = AKShareIntradayAdapter().capabilities[0]
@@ -190,7 +213,7 @@ def test_registry_configuration_is_lazy_and_safe(tmp_path, monkeypatch):
     path.chmod(0o600)
     monkeypatch.setitem(sys.modules, "akshare", None)
     registry = build_data_registry(env_file=path)
-    assert {cap.dataset for cap, _ in registry.entries()} == {'prices_intraday','futures_intraday','options_intraday'}
+    assert {cap.dataset for cap, _ in registry.entries()} == {'prices_intraday','index_intraday','futures_intraday','options_intraday'}
     status = next(s for s in source_configuration_status(env_file=path)["sources"] if s["provider"] == "akshare")
     assert status["enabled"] and not status["requires_key"] and not status["live_verified"]
     path.write_text("AKSHARE_ENABLED=invalid\n")

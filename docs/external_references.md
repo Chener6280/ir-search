@@ -88,6 +88,12 @@
 
 ## 安装依赖与参考资料分开
 
+2026-10-03 后续采用记录：Agent Reach 的分操作实测与修复提示、Scrapling 的 DOM 表格/结构诊断，以及 [patchright-enhanced](https://github.com/whaleyxbt/patchright-enhanced) 的短期会话思路。直接可选运行依赖为 [Patchright Python](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python) 1.62.1；没有引入 Agent Reach 或 Enhanced 运行源码。采用范围和实际失败见[增强指南](reach_scrapling_patchright.md)，不覆盖此前固定 revision 的历史记录。
+
 依赖声明以 [pyproject.toml](../pyproject.toml) 为准：基础仅 PyYAML 及 Windows 时区数据；MCP、MySQL、AKShare、提取、Playwright、Crawl4AI、Scrapling、字幕和 WebSocket 音频分别属于 extras。小红书需独立后端，音频另需 FFmpeg，浏览器另需二进制。见[部署指南](standalone_deployment.md)。
 
 本地参考快照、原文件、技能库存不进入交接包，也不是运行依赖。接手者可按公开 URL 与 revision 复核。无公开地址的条目只列技能名称，不分发私有路径、原文、凭证、真实响应或会话。
+
+## rc2 测试依赖补充
+
+开发 extra 增加 cryptography，用于在临时目录生成本机 TLS 取消测试的一次性证书；它不是搜索热路径或基础 SDK 的依赖，测试私钥不提交。HTTP/PyMySQL 缓冲测试使用标准库与已有可选 MySQL 驱动，不访问供应商。

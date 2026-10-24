@@ -11,6 +11,9 @@ from .models import FailureKind
 class DataAdapterError(Exception):
     """Safe typed errors; raw upstream exception text never crosses this boundary."""
     KINDS = {
+        "cursor_state_unavailable": FailureKind.BLOCKED_BY_POLICY,
+        "dns_busy": FailureKind.BUDGET_EXHAUSTED,
+        "wechat_browser_budget_insufficient": FailureKind.BUDGET_EXHAUSTED,
         'xhs_login_required': FailureKind.NO_CREDENTIAL,
         'xhs_backend_unavailable': FailureKind.NETWORK,
         'xhs_backend_error': FailureKind.UPSTREAM_SCHEMA,
@@ -34,6 +37,8 @@ class DataAdapterError(Exception):
         'sec_company_scope_required': FailureKind.BLOCKED_BY_POLICY,
         'material_cursor_stale': FailureKind.UPSTREAM_SCHEMA,
         'audio_source_changed': FailureKind.UPSTREAM_SCHEMA,
+        'audio_retry_requires_confirmation': FailureKind.BLOCKED_BY_POLICY,
+        'audio_duration_exceeds_budget': FailureKind.BUDGET_EXHAUSTED,
         'audio_dependency_missing': FailureKind.UNIMPLEMENTED,
         'audio_format_invalid': FailureKind.UPSTREAM_SCHEMA,
         'audio_provider_error': FailureKind.UPSTREAM_SCHEMA,
@@ -66,18 +71,21 @@ class DataAdapterError(Exception):
         "web_content_extractor_error": FailureKind.UPSTREAM_SCHEMA,
         "web_content_empty": FailureKind.UPSTREAM_SCHEMA,
         "ima_upstream_rejected": FailureKind.BLOCKED_BY_POLICY,
+        "ima_daily_quota_exhausted": FailureKind.QUOTA,
         "ima_original_unavailable": FailureKind.UNIMPLEMENTED,
         "wechat_account_unresolved": FailureKind.UPSTREAM_SCHEMA,
         "wechat_account_mismatch": FailureKind.UPSTREAM_SCHEMA,
         "wechat_article_mismatch": FailureKind.UPSTREAM_SCHEMA,
         "wechat_origin_unavailable": FailureKind.BLOCKED_BY_POLICY,
         "entitlement_denied": FailureKind.BLOCKED_BY_POLICY,
+        "anonymous_access_refused": FailureKind.BLOCKED_BY_POLICY,
         "authentication_failed": FailureKind.BLOCKED_BY_POLICY,
         "fmp_request_budget_exceeded": FailureKind.BUDGET_EXHAUSTED,
         "tushare_call_budget_exhausted": FailureKind.BUDGET_EXHAUSTED,
         "tushare_response_too_large": FailureKind.UPSTREAM_SCHEMA,
         "tushare_response_too_many_rows": FailureKind.UPSTREAM_SCHEMA,
         "no_credential": FailureKind.NO_CREDENTIAL,
+        "no_credentials": FailureKind.NO_CREDENTIAL,
         "quota": FailureKind.QUOTA,
         "rate_limit": FailureKind.RATE_LIMIT,
         "network": FailureKind.NETWORK,
@@ -86,11 +94,13 @@ class DataAdapterError(Exception):
         "upstream_schema": FailureKind.UPSTREAM_SCHEMA,
         "response_too_large": FailureKind.UPSTREAM_SCHEMA,
         "blocked_url": FailureKind.BLOCKED_BY_POLICY,
+        "fake_ip_blocked": FailureKind.BLOCKED_BY_POLICY,
         "web_redirect_limit": FailureKind.BLOCKED_BY_POLICY,
         "web_content_unsupported": FailureKind.UNIMPLEMENTED,
         "no_extracted_text": FailureKind.UPSTREAM_SCHEMA,
         "dependency_missing": FailureKind.UNIMPLEMENTED,
         "tls_error": FailureKind.BLOCKED_BY_POLICY,
+        "tls_handshake_interrupted": FailureKind.NETWORK,
         "tls_not_supported": FailureKind.BLOCKED_BY_POLICY,
         "units_not_configured": FailureKind.BLOCKED_BY_POLICY,
         "invalid_cursor": FailureKind.BLOCKED_BY_POLICY,
@@ -239,26 +249,44 @@ def build_data_registry(*, env_file=None) -> DataRegistry:
         registry.diagnostics.append(Diagnostic(exc.code, "configure",
                                                failure_kind=FailureKind.BLOCKED_BY_POLICY))
         return registry
+    from .adapters.wind_mysql import WindMySQLAdapter
+    from .adapters.jydb_market import JYDBMarketAdapter
+    from .adapters.financial_statements import FinancialStatementsAdapter
+    from .adapters.domestic_derivatives import DomesticDerivativesAdapter
+    from .adapters.funds import FundAdapter
+    from .contracts.expanded_data import FUND_DATASETS
     for provider in ("wind_mysql", "jydb"):
         try:
-            profile = mysql_profile(provider, values=values)
-            if profile:
-                if provider == "wind_mysql":
-                    wind_calendar_profile = profile
-                    from .adapters.wind_mysql import WindMySQLAdapter
-                    registry.register(WindMySQLAdapter(profile))
-                else:
-                    from .adapters.jydb_market import JYDBMarketAdapter
-                    registry.register(JYDBMarketAdapter(profile))
-                from .adapters.financial_statements import FinancialStatementsAdapter
-                registry.register(FinancialStatementsAdapter(profile))
-                from .adapters.domestic_derivatives import DomesticDerivativesAdapter
-                registry.register(DomesticDerivativesAdapter(profile))
-                from .adapters.funds import FundAdapter
-                registry.register(FundAdapter(profile))
+            common = mysql_profile(provider, values=values, datasets=())
         except SourceConfigError as exc:
             registry.diagnostics.append(Diagnostic(exc.code, "configure", provider=provider,
                                                    failure_kind=FailureKind.BLOCKED_BY_POLICY))
+            continue
+        if not common:
+            continue
+        if provider == "wind_mysql": wind_calendar_profile = common
+        # Isolate units/currency and constructor errors to the affected dataset.
+        for factory in (WindMySQLAdapter if provider == "wind_mysql" else JYDBMarketAdapter,
+                        FinancialStatementsAdapter, DomesticDerivativesAdapter, FundAdapter):
+            scopes = {FinancialStatementsAdapter: ("financial_statements",),
+                      DomesticDerivativesAdapter: ("futures_contracts", "options_contracts", "futures_daily", "options_daily", "trading_calendar"),
+                      FundAdapter: tuple(FUND_DATASETS)}
+            try:
+                template = factory(common)
+            except SourceConfigError as exc:
+                registry.diagnostics.append(Diagnostic(exc.code, "configure", provider=provider,
+                    failure_kind=FailureKind.BLOCKED_BY_POLICY, datasets=scopes.get(factory, ("prices_daily", "securities"))))
+                continue
+            for capability in template.capabilities:
+                dataset = capability.dataset
+                try:
+                    profile = mysql_profile(provider, values=values, datasets=(dataset,))
+                    adapter = factory(profile)
+                    adapter.capabilities = tuple(cap for cap in adapter.capabilities if cap.dataset == dataset)
+                    registry.register(adapter)
+                except SourceConfigError as exc:
+                    registry.diagnostics.append(Diagnostic(exc.code, "configure", provider=provider,
+                        failure_kind=FailureKind.BLOCKED_BY_POLICY, datasets=(dataset,)))
     try:
         from .infrastructure.credentials import fmp_profile
         profile = fmp_profile(values=values)
@@ -307,11 +335,14 @@ def list_capabilities(*, registry: DataRegistry = None, account_scope: str = "de
     from .material_registry import list_material_capabilities
     from .infrastructure.web_browser import _browser_status
     from .infrastructure.web_toolkit import WEB_READ_MODES, web_toolkit_status
-    from .adapters.global_macro import _catalog as macro_catalog
+    from .adapters.global_macro import _catalog as macro_catalog, _ECB_EXR_DAILY, SEMANTICS_RULES
     return {
         "schema_version": "1.0",
         "operation": "query_data",
-        "macro_series_catalog": {"curated_not_exhaustive": True, "series": list(macro_catalog().values()), "symbol_patterns": ["FRED.<series_id>", "WB.<ISO3>.<series_id>", "ECB.EXR.D.<CCY>.EUR.SP00.A"]},
+        "macro_series_catalog": {"curated_not_exhaustive": True, "series": list(macro_catalog().values()), "symbol_patterns": ["FRED.<series_id>", "WB.<ISO3>.<series_id>", "ECB.EXR.D.<CCY>.EUR.SP00.A"],
+            # Timestamp semantics are declared per series with their source and the day they were checked.
+            "semantics_rules": dict(SEMANTICS_RULES),
+            "pattern_series": [dict(_ECB_EXR_DAILY, symbol_pattern="ECB.EXR.D.<CCY>.EUR.SP00.A")]},
         "datasets": list(_DATASETS),
         "capabilities": [cap.to_dict() for cap, _ in registry.entries(account_scope=account_scope)],
         "verification_basis": "registration_metadata_not_live_probe",

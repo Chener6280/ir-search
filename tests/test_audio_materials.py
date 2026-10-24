@@ -266,7 +266,7 @@ def test_cancel_before_asr(tmp_path):
 
 
 @pytest.mark.parametrize('failure,expected', [(None,None),(401,'authentication_failed'),(403,'entitlement_denied'),
-    (429,'quota'),(302,'audio_provider_error'),('early','audio_incomplete')])
+    (429,'quota'),(302,'audio_provider_error'),('early','audio_incomplete'),('frame_budget','response_too_large')])
 def test_scoped_tls_stream_and_no_redirect_retry(tmp_path,monkeypatch,failure,expected):
     class InvalidStatus(Exception):
         def __init__(self,status): self.response=SimpleNamespace(status_code=status)
@@ -280,7 +280,7 @@ def test_scoped_tls_stream_and_no_redirect_retry(tmp_path,monkeypatch,failure,ex
     class WS:
         socket=Socket()
         def send(self,payload):packets.append(payload)
-        def recv(self,timeout):return frame({'result':{'text':'测试'}})
+        def recv(self,timeout):return frame({'result':{'text':'测试'}}, flags=0 if failure=='frame_budget' else 3)
         def close(self):pass
     def connect(url,**kw):
         captures.append((url,kw))
@@ -292,7 +292,13 @@ def test_scoped_tls_stream_and_no_redirect_retry(tmp_path,monkeypatch,failure,ex
     monkeypatch.setattr(asr.socket,'socket',Socket)
     profile=asr.AudioProfile('test-key',tmp_path)
     if expected:
-        with pytest.raises(DataAdapterError,match=expected):asr._stream(b'\0'*(6402 if failure=='early' else 2),profile,RequestContext())
+        with pytest.raises(DataAdapterError,match=expected) as caught:
+            asr._stream(b'\0'*(6402 if failure=='early' else 2),profile,RequestContext())
+        if failure=='frame_budget':
+            metrics=caught.value.response_metrics
+            assert metrics['frames_received']==4097 and metrics['frame_limit']==4096
+            assert metrics['pcm_bytes_sent']==metrics['pcm_bytes_total']==2
+            assert all(type(v) is int for v in metrics.values())
     else:
         assert asr._stream(b'\0\0',profile,RequestContext())['result']['text']=='测试'
         assert packets[-1][1]==0x23

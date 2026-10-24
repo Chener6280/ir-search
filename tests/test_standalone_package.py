@@ -68,6 +68,12 @@ def test_built_wheel_runs_sdk_search_and_mcp_outside_checkout(tmp_path):
     with zipfile.ZipFile(next(wheels.glob("*.whl"))) as archive:
         names = archive.namelist()
         assert "ir_search/configs/source_routes.yaml" in names
+        assert "ir_search/configs/fallback_routes.yaml" in names
+        assert "ir_search/configs/source_capabilities.yaml" in names
+        for engine in ('baizhi','zai','brave','serper','perplexity','duckduckgo'):
+            assert 'ir_search/adapters/' + engine + '.py' in names
+        assert 'ir_search/infrastructure/search_transport.py' in names
+        assert 'ir_search/infrastructure/web_engine.py' in names
         assert "ir_search/entities/a_share_companies.csv" in names
         assert "ir_search/entities/institutions.csv" in names
         assert "ir_search/clients/wechat_articles.py" in names
@@ -123,6 +129,9 @@ from ir_search.config_validation import validate_configs
 from ir_search.entity import load_entities
 assert len(ir_search.list_institutions()['institutions']) == 14
 doctor = ir_search.diagnose_sources(['xhs','video'])
+assert all(s['operation_status']['retrieve']['state']=='not_probed' for s in doctor['sources'])
+from ir_search.infrastructure.xueqiu_browser import xueqiu_read_profile
+assert xueqiu_read_profile(values={'XUEQIU_BROWSER_DRIVER':'patchright'}).browser_driver == 'patchright'
 assert doctor['source_calls_started'] == 0
 assert all(not s['search_live_verified'] for s in doctor['sources'])
 empty_run = ir_search.search_materials(ir_search.MaterialSearchRequest('demand'))
@@ -160,6 +169,21 @@ from ir_search import mcp_server
 from ir_search.adapters.web_materials import WebMaterialAdapter
 from ir_search.infrastructure.web_search import ExaWebClient
 assert ir_search.WebSearchFallback.__module__ == 'ir_search.contracts.materials'
+from ir_search.infrastructure.credentials import web_material_profile
+from ir_search.config import load_yaml
+chain_profile = web_material_profile(values={'WEB_MATERIALS_ENABLED':'true','WEB_SEARCH_PROVIDER':'chain'})
+assert list(chain_profile.cn_providers)==load_yaml('source_routes.yaml')['web_material_chains']['cn']
+assert chain_profile.cn_providers[0]=='baizhi' and chain_profile.overseas_providers[0]=='exa'
+assert set(load_yaml('source_capabilities.yaml')['sources']) >= {'baizhi','zai','brave','serper','perplexity','duckduckgo'}
+chain_registry = ir_search.MaterialRegistry()
+chain_registry.register(WebMaterialAdapter(chain_profile))
+chain_preview = ir_search.search_materials(ir_search.MaterialSearchRequest('NVIDIA', providers=['web'],
+    web_region='both', published_start='2026-01-01', published_end='2026-10-24',dry_run=True),registry=chain_registry)
+assert len(chain_preview.plan['source_plans'][0]['routes'])==2
+assert chain_preview.plan['source_calls_started']==0
+for name in ('baizhi','zai','brave','serper','perplexity','duckduckgo'):
+    __import__('ir_search.adapters.' + name)
+
 class ExhaustedSearch:
     def search(self, *args, **kwargs):
         raise ir_search.DataAdapterError('quota')
@@ -184,7 +208,7 @@ from ir_search.adapters.akshare_options import AKShareOptionsAdapter
 from ir_search.infrastructure.credentials import MySQLProfile
 profile=MySQLProfile('wind_mysql','test-host','test-db','test-user','package_test_only',tls_mode='disabled')
 assert FinancialStatementsAdapter(profile).capabilities[0].dataset=='financial_statements'
-assert len(DomesticDerivativesAdapter(profile).capabilities)==5
+assert len(DomesticDerivativesAdapter(profile).capabilities)==9
 assert AKShareOptionsAdapter().capabilities[0].dataset=='options_intraday'
 from ir_search.adapters.fmp import FMPAdapter
 from ir_search.infrastructure.credentials import FMPProfile, source_configuration_status
@@ -243,7 +267,10 @@ if importlib.util.find_spec("mcp"):
         assert material_result['required_inputs'] == materials['required_inputs'] and material_result['diagnostics']
         response = await server.call_tool('source_health', {'providers':['xhs']})
         assert json.loads(response[0].text)['operational_status']['source_calls_started'] == 0
-        response = await server.call_tool('search_materials', {'question':'demand', 'audit_dir':str(Path('mcp-runs').absolute())})
+        response = await server.call_tool('source_health', {
+            'providers':['web'], 'read_samples':{'web':'https://example.com/report'}, 'web_read_mode':'http'})
+        assert json.loads(response[0].text)['status'] == 'error'  # Samples require explicit live=True.
+        response = await server.call_tool('search_materials', {'question':'demand', 'audit_dir':'mcp-runs'})
         assert json.loads(response[0].text)['audit']['status'] == 'recorded'
         response = await server.call_tool("get_data", {"dataset":"securities"})
         assert json.loads(response[0].text)["status"] == "unavailable"
@@ -317,7 +344,7 @@ regional_adapter=regional_registry.entries()[0]
 from ir_search.infrastructure.web_search import BochaWebClient
 def offline_bocha(url,**kwargs):
     from ir_search.infrastructure.public_web import _Reply
-    assert url=='https://api.bochaai.com/v1/web-search'
+    assert url=='https://api.bocha.cn/v1/web-search'
     assert kwargs['headers']['Authorization']=='Bearer package_bocha_key'
     return _Reply(200,'application/json','',json.dumps({'code':200,'data':{'webPages':{'value':[
         {'name':'智能家居政策','url':'https://example.gov.cn/policy','snippet':'智能家居政策'}]}}}).encode(),datetime.now(timezone.utc))
@@ -414,7 +441,7 @@ if mcp_checked:
         response=await server.call_tool('search_materials',wechat_request.to_dict())
         assert json.loads(response[0].text)['items'][0]['versions'][0]['channel']=='wechat'
         response=await server.call_tool('retrieve',{'question':'demand','urls':[wechat_url],'wechat_cache_mode':'use',
-            'archive_dir':str(Path('local-archive').absolute())})
+            'archive_dir':'local-archive'})  # relative to the MCP output root
         cached=json.loads(response[0].text)['materials'][0]
         assert cached['read_details']['cache_state']=='hit' and cached['text_provider']=='dajiala'
         assert cached['article']['blocks'] and cached['archive']['status']=='ok'
@@ -486,7 +513,7 @@ if mcp_checked:
         response=await server.call_tool('search_materials',wisburg_request.to_dict())
         assert json.loads(response[0].text)['items'][0]['versions'][0]['text_scope']=='abstract'
         response=await server.call_tool('retrieve',{'question':'demand','urls':['wisburg://report/101'],
-            'archive_dir':str(Path('wisburg-archive').absolute())})
+            'archive_dir':'wisburg-archive'})  # relative to the MCP output root
         m=json.loads(response[0].text)['materials'][0]
         assert m['text_origin']=='provider_summary' and m['archive']['status']=='ok'
         assert all(s['text']==m['text'][s['start_char']:s['end_char']] for s in m['evidence_spans'])
@@ -502,6 +529,7 @@ rss.fetch_feed=lambda url,**kw:rss.parse_feed(feed_xml,url,fetched_at=datetime.n
 # The adapter resolves its default client from the module import; patch that alias too.
 import ir_search.adapters.rss_materials as rss_adapter
 rss_adapter.fetch_feed=rss.fetch_feed
+from ir_search.services import material_search
 material_search.build_material_registry=ir_search.build_material_registry
 rss_request=ir_search.MaterialSearchRequest('Revenue',providers=['rss'],published_start='2026-09-01',published_end='2026-09-18',text_reads_per_source=0)
 feed_result=ir_search.search_materials(rss_request).to_dict()
@@ -526,7 +554,7 @@ from ir_search.adapters.official_materials import HKEXMaterialAdapter, CompanyIR
 from ir_search.infrastructure.public_web import _Reply
 assert len(_issuers())==3
 assert len(FundAdapter(MySQLProfile('wind_mysql','test-host','test-db','test-user','package_test_only')).capabilities)==5
-assert len(FionaAdapter(FionaProfile('package-fiona-test')).capabilities)==4
+assert len(FionaAdapter(FionaProfile('package-fiona-test')).capabilities)==5
 Path(os.environ['IR_SEARCH_CREDENTIALS_FILE']).write_text('GLOBAL_MACRO_ENABLED=true\nHKEX_ENABLED=true\nCOMPANY_IR_ENABLED=true\n')
 import ir_search.adapters.global_macro as macro_module
 macro_module._request=lambda url,**kw:_Reply(200,'text/csv','',b'observation_date,CPIAUCSL\n2025-01-01,300\n',datetime.now(timezone.utc))

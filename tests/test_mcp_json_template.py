@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from _platform import requires_posix_workspace
 from scripts.bootstrap_cursor_research_workspace import main as bootstrap_main
 
 
@@ -19,6 +20,7 @@ def test_mcp_json_template_declares_stdio_server():
     assert server["args"] == ["{{WORKSPACE_ROOT}}/scripts/run_ir_search_mcp.sh"]
 
 
+@requires_posix_workspace
 def test_bootstrap_output_mcp_json_declares_stdio_server(tmp_path):
     target = tmp_path / "research"
     python_path, ir_search_path = _fake_runtime(tmp_path)

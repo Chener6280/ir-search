@@ -11,7 +11,7 @@ from ir_search import (MaterialAttachment, MaterialCandidate, MaterialRegistry, 
                        MaterialSection, RequestContext, build_material_registry, search_materials)
 from ir_search.adapters.zsxq_materials import ZsxqMaterialAdapter, _candidate
 from ir_search.infrastructure.credentials import ZsxqProfile, zsxq_profile, SourceConfigError, source_configuration_status
-from ir_search.infrastructure.zsxq import ZsxqClient, ZsxqResponse, _RPCResponse
+from ir_search.infrastructure.zsxq import ZsxqClient, ZsxqResponse, _RPCResponse, _error_code
 from ir_search.registry import DataAdapterError
 
 NOW = datetime(2026, 9, 15, tzinfo=timezone.utc)
@@ -82,6 +82,26 @@ def test_timeline_excerpt_survives_failed_detail_without_promotion():
     reg,client=setup(); result=search_materials(request(text_reads_per_source=0),registry=reg)
     assert [c[0] for c in client.calls]==['get_group_topics']
     assert result.items[0]['versions'][0]['text_scope']=='source_excerpt'
+
+
+def test_explicit_timeline_export_returns_unmatched_records_and_requires_scope():
+    reg,client=setup()
+    result=search_materials(request(question='时间线归档',keywords=[],zsxq_group_ids=['100'],
+        zsxq_timeline_export=True),registry=reg)
+    version=result.items[0]['versions'][0]
+    assert version['source_ref']=='zsxq://topic/100/101'
+    assert version['match']=={'topic_terms':[],'related_terms':[],
+        'classification':'source_timeline_record','business_period':'not_requested',
+        'interpretation':'bounded_timeline_selection_not_query_match'}
+    assert not result.required_inputs and [call[0] for call in client.calls][:2]==['get_group_topics','get_topic_info']
+    assert not {'candidate_rejected', 'related_terms_only_not_direct_topic_evidence',
+                'partial_topic_term_matches_only'} & {gap['code'] for gap in result.gaps}
+    with pytest.raises(ValueError):
+        request(zsxq_timeline_export=True,zsxq_group_ids=[])
+    with pytest.raises(ValueError):
+        request(zsxq_timeline_export=True,zsxq_group_ids=['100'],providers=['zsxq','web'])
+    with pytest.raises(ValueError):
+        request(zsxq_timeline_export=1,zsxq_group_ids=['100'])
 
 
 def test_group_failures_and_sharing_candidate_and_read_budgets():
@@ -186,6 +206,10 @@ def test_new_contracts_validate_offsets_attachments_and_identifiers():
     with pytest.raises(ValueError): MaterialSection('post','','zsxq://topic/100/101',1,1)
     candidate=_candidate(topic(),'100',NOW,max_chars=100)
     with pytest.raises(ValueError): replace(candidate,sections=(MaterialSection('post','','zsxq://topic/100/101',0,100),))
+
+
+def test_expired_membership_is_reported_as_collection_entitlement():
+    assert _error_code(message='{"code":14210,"error":"成员体验已到期"}')=='entitlement_denied'
 
 
 def test_actual_fastmcp_material_call(monkeypatch):

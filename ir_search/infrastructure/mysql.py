@@ -9,6 +9,7 @@ import socket
 import threading
 from pathlib import Path
 
+from ._interrupt import wake_blocked_socket
 from .credentials import MySQLProfile
 from ir_search.context import RequestStopped
 from ir_search.registry import DataAdapterError
@@ -18,12 +19,13 @@ _TABLES = {"asharedescription", "ashareeodprices", "SecuMain", "LC_Announcement"
 _TABLES.update({'ashareincome', 'asharebalancesheet', 'asharecashflow', 'LC_IncomeStatementAll',
     'LC_BalanceSheetAll', 'LC_CashFlowStatementAll', 'LC_STIBIncomeState', 'LC_STIBBalanceSheet', 'LC_STIBCashFlowState',
     'cfuturesdescription', 'cfuturescalendar', 'chinaoptiondescription', 'cindexfutureseodprices',
-    'cbondfutureseodprices', 'ccommodityfutureseodprices', 'chinaoptioneodprices',
+    'cbondfutureseodprices', 'ccommodityfutureseodprices', 'chinaoptioneodprices', 'aindexeodprices',
     'Fut_ContractMain', 'Fut_TradingQuote', 'Fut_DailyQuote', 'Opt_OptionContract', 'Opt_DailyQuote'})
 
 
 _TABLES.update({'chinamutualfunddescription','chinamutualfundnav','chinamutualfundshare',
-                'chinamutualfundstockportfolio','chinaclosedfundeodprice','MF_NetValue'})
+                'chinamutualfundstockportfolio','chinaclosedfundeodprice','MF_NetValue',
+                'aindexvaluation','windbenchmarkinterestrate'})
 
 def _tls_context(profile):
     try:
@@ -104,11 +106,7 @@ def _select(profile: MySQLProfile, sql: str, params: tuple, *, max_rows: int, co
                     context.check_active()
                 except RequestStopped:
                     sock = getattr(connection, "_sock", None)
-                    if sock is not None:
-                        try:
-                            sock.shutdown(socket.SHUT_RDWR)
-                        except OSError:
-                            pass
+                    wake_blocked_socket(sock)
                     return
         watcher = threading.Thread(target=interrupt_socket, name="ir-search-sql-budget", daemon=True)
         watcher.start()

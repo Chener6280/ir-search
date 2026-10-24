@@ -9,6 +9,7 @@ import time
 
 import pytest
 
+from _platform import POSIX_PERMISSIONS, symlinks_supported
 from ir_search import MaterialRequest, RequestContext, retrieve
 from ir_search.context import RequestStopped
 from ir_search.infrastructure import wechat as wc
@@ -162,7 +163,7 @@ def test_head_refresh_reuses_unchanged_tail_and_invalidates_it_on_new_posts(tmp_
     c.history(ACCOUNT, context=RequestContext())
     assert c.history(ACCOUNT,cursor='tail',context=RequestContext()).cache_state == 'fresh'
     assert len(calls) == 5
-    assert all('MUST_NOT_PERSIST' not in p.read_text() for p in cache.root.glob('*.json'))
+    assert all('MUST_NOT_PERSIST' not in p.read_text(encoding='utf-8') for p in cache.root.glob('*.json'))
 
 
 def test_persisted_account_resolution_expires_and_refresh_overrides_it(tmp_path):
@@ -184,18 +185,19 @@ def test_cache_private_permissions_corruption_failure_and_bounds(tmp_path):
         assert enabled
         cache._put('article',URL, {'ok':True})
         assert cache._get('article',URL,60) == {'ok':True}
-        cache._path('article',URL).write_text('{bad-json')
+        cache._path('article',URL).write_text('{bad-json',encoding='utf-8')
         assert cache._get('article',URL,60) is None
         assert cache.warning == 'wechat_cache_invalid'
-    if os.name == 'posix':
+    if POSIX_PERMISSIONS:
         assert cache.root.stat().st_mode & 0o777 == 0o700
         assert cache._path('article',URL).stat().st_mode & 0o777 == 0o600
         cache.root.chmod(0o755)
         d = wc.fetch_wechat_document(URL, context=RequestContext(), cache=cache, transport=transport())
         assert 'wechat_cache_unavailable' in d.warnings
-    target = tmp_path/'target'; target.mkdir()
-    symlink = tmp_path/'linked'; symlink.symlink_to(target, target_is_directory=True)
-    with _WechatCache(symlink)._guard(RequestContext()) as enabled: assert not enabled
+    if symlinks_supported():
+        target = tmp_path/'target'; target.mkdir()
+        symlink = tmp_path/'linked'; symlink.symlink_to(target, target_is_directory=True)
+        with _WechatCache(symlink)._guard(RequestContext()) as enabled: assert not enabled
 
 
 def test_waiting_cache_lock_respects_deadline_and_releases_fd(tmp_path):
@@ -244,7 +246,15 @@ def test_cache_evicts_oldest_entries_and_never_stores_off_reads(tmp_path):
     d = wc.fetch_wechat_document(URL,context=RequestContext(),cache=cache,cache_mode='off',transport=transport())
     assert not cache.root.exists() and d.extra['web_read']['cache_state'] == 'off'
     with cache._guard(RequestContext()):
-        for n in range(513): cache._put('item',str(n),n)
+        # Eviction is oldest-mtime-first. Windows stamps files written in a tight
+        # loop with the same mtime (the file-time clock ticks every ~15ms), which
+        # makes the tie-break arbitrary, so pin each entry's mtime explicitly and
+        # assert the same eviction order on every platform.
+        base = time.time() - 100000
+        for n in range(513):
+            cache._put('item',str(n),n)
+            path = cache._path('item',str(n))
+            if path.exists(): os.utime(path,(base+n,base+n))
         assert len(list(cache.root.glob('*.json'))) == 512
         assert cache._get('item','0',86400) is None
         assert cache._get('item','512',86400) == 512

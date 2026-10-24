@@ -15,12 +15,27 @@ _READS = {
     'search_knowledge_base': 'wiki', 'get_knowledge_base': 'wiki',
     'search_knowledge': 'wiki', 'get_media_info': 'wiki',
     'search_note': 'note', 'get_doc_content': 'note',
+    'get_knowledge_list': 'wiki',
 }
 _ERRORS = {110001:'upstream_schema', 110002:'source_config_error', 110010:'network',
            110020:'entitlement_denied', 110021:'rate_limit', 110030:'entitlement_denied',
            210001:'upstream_schema', 210002:'authentication_failed', 210003:'network',
            210004:'quota', 210005:'entitlement_denied', 210006:'not_found',
-           210011:'entitlement_denied', 210012:'not_found', 220030:'entitlement_denied'}
+           210011:'entitlement_denied', 210012:'not_found', 220030:'entitlement_denied',
+           # Official get_knowledge_list response: daily retrieval allowance used;
+           # retry tomorrow. This is not library permission denial.
+           220021:'ima_daily_quota_exhausted'}
+
+
+def error_diagnostics(error):
+    """Optional public exception/result metadata; no messages, URLs or headers."""
+    data = getattr(error, 'diagnostics', {})
+    if not isinstance(data, dict): return {}
+    result = {}
+    if data.get('operation') in _READS: result['operation'] = data['operation']
+    for key, low, high in [('httpStatus', 100, 599), ('providerCode', -2147483648, 2147483647)]:
+        if type(data.get(key)) is int and low <= data[key] <= high: result[key] = data[key]
+    return result
 
 
 def _id(value):
@@ -64,6 +79,7 @@ class IMAClient:
         if context.account_scope != 'default': raise DataAdapterError('entitlement_denied')
         _validate_parameters(operation, parameters)
         context.check_active()
+        diagnostic = {'operation': operation}
         try:
             reply = self._transport('https://ima.qq.com/openapi/'+_READS[operation]+'/v1/'+operation,
                 context=context, method='POST', body=json.dumps(parameters,ensure_ascii=False).encode('utf-8'),
@@ -71,6 +87,7 @@ class IMAClient:
                          'ima-openapi-apikey':self._profile.api_key,'ima-openapi-ctx':'skill_version=1.1.10'},
                 max_bytes=2*1024*1024)
             context.check_active()
+            diagnostic['httpStatus'] = reply.status
             if reply.status != 200: raise DataAdapterError('blocked_url')
             if len(reply.body)>2*1024*1024: raise DataAdapterError('response_too_large')
             # Refuse credential echoes even on successful responses. Do not publish upstream msg.
@@ -79,6 +96,7 @@ class IMAClient:
                 raise DataAdapterError('upstream_schema')
             obj=json.loads(raw)
             if not isinstance(obj,dict) or type(obj.get('code')) is not int: raise DataAdapterError('upstream_schema')
+            diagnostic['providerCode'] = obj['code']
             if obj['code'] != 0: raise DataAdapterError(_ERRORS.get(obj['code'],'ima_upstream_rejected'))
             if not isinstance(obj.get('data'),dict): raise DataAdapterError('upstream_schema')
             # Escaped JSON strings can conceal a credential echo in the wire encoding.
@@ -86,7 +104,11 @@ class IMAClient:
             if any(secret in normalized for secret in (self._profile.api_key,self._profile.client_id)):
                 raise DataAdapterError('upstream_schema')
             return IMAReply(obj['data'], reply.fetched_at)
-        except (DataAdapterError,RequestStopped): raise
+        except DataAdapterError as exc:
+            exc.diagnostics = diagnostic
+            exc.diagnostics = error_diagnostics(exc)
+            raise
+        except RequestStopped: raise
         except (ValueError,TypeError,UnicodeError,AttributeError):
             raise DataAdapterError('upstream_schema') from None
         except Exception:
@@ -95,6 +117,16 @@ class IMAClient:
 
 def _validate_parameters(operation, p):
     if not isinstance(p,dict): raise DataAdapterError('unsupported')
+    if operation == 'get_knowledge_list':
+        if not {'knowledge_base_id', 'cursor', 'limit'} <= set(p) or set(p) - {'knowledge_base_id', 'cursor', 'limit', 'folder_id'}:
+            raise DataAdapterError('unsupported')
+        _id(p['knowledge_base_id'])
+        if 'folder_id' in p: _id(p['folder_id'])
+        if not isinstance(p['cursor'], str) or len(p['cursor']) > 512:
+            raise DataAdapterError('invalid_cursor')
+        if type(p['limit']) is not int or not 1 <= p['limit'] <= 20:
+            raise DataAdapterError('unsupported')
+        return
     fields={'search_knowledge_base':{'query','cursor','limit'},'get_knowledge_base':{'ids'},
             'search_knowledge':{'query','knowledge_base_id','cursor'},'get_media_info':{'media_id'},
             'search_note':{'search_type','sort_type','query_info','start','end'},

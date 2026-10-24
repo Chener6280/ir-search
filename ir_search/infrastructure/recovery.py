@@ -25,12 +25,33 @@ _rule('quota rate_limit', 'access_or_limit',
       '检查访问权限或供应商限额；限流后等待恢复再发起新请求。', True)
 _rule('entitlement_denied', 'scope_permission',
       '当前资源权限不足；保留缺口，仅继续调用方已选择且独立授权的其他资源。')
+_rule('anonymous_access_refused', 'access_or_limit',
+      '站点拒绝了这次不带任何凭证的公开访问（HTTP 403）。这里没有账户或套餐可言，不是权限不足；'
+      '站点为何拒绝，这里并不知道，也不作推测。本次请求内停止该来源，不重试，不尝试任何绕过，如实记录缺口；'
+      '需要该内容时由本人在浏览器中阅读，或改用已声明的其他来源。', True)
 _rule('tls_error tls_not_supported blocked_url browser_robots_denied', 'transport_policy',
       '检查目标、传输配置和平台访问条件，保持现有安全边界。', True)
+_rule('fake_ip_blocked', 'transport_policy',
+      '本机 DNS 返回的是代理 fake-ip 模式的占位地址（198.18.0.0/15），公网地址校验因此拦截了本次连接；'
+      '这是本机网络环境所致，不是目标站点的问题。由本人在私有 credentials.env 中设置 PUBLIC_WEB_FAKE_IP_HTTPS=true 后，'
+      '只有对端身份由证书与主机名校验确认的连接可以放行：ir-search 进程自己直接发出的 HTTPS/WSS 连接（网页与接口读取、'
+      '浏览器模式网页读取、语音转写，以及 Firecrawl 读取对 https 目标的本地核对）；雪球浏览器读取（仅限 5 个固定域名的 443 端口，'
+      '且仅限 Playwright 自带的 Chromium，由浏览器端到端校验证书）。以下情形不适用该开关，开启后仍报本错误码：'
+      '明文 http 目标（含交给 Firecrawl 的 http 目标及其报告的 http 最终地址）；雪球浏览器读取改用系统 Chrome 时。', True)
+_rule('tls_handshake_interrupted', 'availability',
+      'TCP 已连通，但 TLS 握手在收到服务器任何应答之前连接就结束了。这不是证书问题，也不是一般的网络抖动：'
+      '同一主机、同一出口下通常会重复出现，重试无益。本次请求内停止该来源并如实记录缺口；'
+      '需要该数据时改用已声明的其他来源。', True)
 _rule('timeout network xhs_backend_unavailable browser_unavailable', 'availability',
       '检查服务是否运行及网络状况；保留已得结果，按诊断决定下一次有界请求。', True)
 _rule('cancelled deadline_exceeded operation_budget_exhausted browser_budget_exhausted', 'budget',
       '使用已返回的续取位置继续，或缩小范围；需要时显式调整下次预算。', True)
+_rule('archive_path_too_long', 'configuration',
+      '归档路径超过 Windows 的 260 字符上限：把归档根目录改到更短的路径（如用户目录下的一层文件夹），或在系统中启用长路径支持。')
+_rule('source_time_share_exceeded', 'budget',
+      '该来源用完了本次请求分给它的时间份额，其余来源已继续执行；需要时单独查询该来源或显式增大 timeout_seconds。')
+_rule('candidate_rejected', 'schema',
+      '个别记录未通过契约校验已被丢弃，同一来源的其余记录已保留；结合 rejected_count 判断是否需要核对上游结构。')
 _rule('dependency_missing browser_dependency_missing browser_version_unsupported video_dependency_missing audio_dependency_missing',
       'dependency', '在当前运行 ir-search 的 Python 环境安装对应可选依赖，并重新验收。', True)
 _rule('source_config_error invalid_source_config unsafe_credentials_file source_disabled', 'configuration',

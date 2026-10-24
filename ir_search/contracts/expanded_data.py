@@ -44,7 +44,10 @@ MACRO_DATASETS = {
    _f('period','string',nullable=False),_f('value'),_f('unit','string',nullable=False),
    _f('frequency','string',nullable=False),_f('seasonal_adjustment','string',nullable=False),
    _f('source_series_id','string',nullable=False),_f('source_url','string',nullable=False),
-   _f('observation_status','string'),_f('source_updated_on','date')),
+   _f('observation_status','string'),_f('source_updated_on','date'),
+   _f('period_end','date','Last day, inclusive, of the observation period; null unless the source labels calendar periods'),
+   _f('is_period_average','boolean','Declared: a time average of higher-frequency observations of the same quantity; null means not declared, never false'),
+   _f('release_lag_days','number','Declared convention, not a source fact: days after period_end until available; never turned into a date here','days')),
   ('symbol','observation_date'), 'observation_date')
 }
 FIONA_DATASETS = {

@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 
+from _platform import POSIX_PERMISSIONS, requires_symlinks, symlinks_supported
 from ir_search import build_data_registry, get_data, DataRequest
 from ir_search.infrastructure.credentials import (
     SourceConfigError, credentials_path, read_credentials, mysql_profile, source_configuration_status,
@@ -13,7 +14,7 @@ from ir_search.infrastructure.credentials import (
 
 def env_file(tmp_path, text):
     path = tmp_path / "credentials.env"
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     path.chmod(0o600)
     return path
 
@@ -47,15 +48,17 @@ def test_missing_permissions_symlinks_and_config_status_are_safe(tmp_path, monke
     with pytest.raises(SourceConfigError, match="credentials_file_missing"):
         read_credentials(tmp_path / "missing")
     path = env_file(tmp_path, "PASSWORD=must_not_escape")
-    path.chmod(0o644)
-    with pytest.raises(SourceConfigError, match="credentials_permissions_unsafe"):
-        read_credentials(path)
+    if POSIX_PERMISSIONS:
+        path.chmod(0o644)
+        with pytest.raises(SourceConfigError, match="credentials_permissions_unsafe"):
+            read_credentials(path)
     assert "must_not_escape" not in json.dumps(source_configuration_status(env_file=path))
     path.chmod(0o600)
-    link = tmp_path / "link"
-    link.symlink_to(path)
-    with pytest.raises(SourceConfigError):
-        read_credentials(link)
+    if symlinks_supported():
+        link = tmp_path / "link"
+        link.symlink_to(path)
+        with pytest.raises(SourceConfigError):
+            read_credentials(link)
     monkeypatch.setenv("IR_SEARCH_CREDENTIALS_FILE", str(tmp_path / "missing"))
     result = get_data(DataRequest("securities"))
     assert result.diagnostics[0].code == "credentials_file_missing"
@@ -91,7 +94,8 @@ def test_registry_and_status_load_enabled_file_without_connecting(tmp_path, monk
     monkeypatch.setattr("ir_search.infrastructure.mysql._connect", lambda *a: pytest.fail("Unexpected network"))
     registry = build_data_registry(env_file=path)
     assert {cap.dataset for cap,_ in registry.entries()} == {'securities','prices_daily','financial_statements',
-        'futures_contracts','options_contracts','futures_daily','options_daily','trading_calendar','fund_profile','fund_nav','fund_shares','fund_holdings','fund_exchange_daily'}
+        'futures_contracts','options_contracts','futures_daily','options_daily','trading_calendar','fund_profile','fund_nav','fund_shares','fund_holdings','fund_exchange_daily',
+        'index_daily','index_valuation','benchmark_rate','options_chain'}
     status = source_configuration_status(env_file=path)
     assert status["sources"][0]["configured"] and not status["sources"][0]["live_verified"]
     assert not status["sources"][1]["enabled"]
@@ -127,6 +131,7 @@ def test_non_tls_is_explicit_wind_only_and_visible_without_credentials(tmp_path)
         mysql_profile('jydb', values=config)
 
 
+@requires_symlinks
 def test_symlink_rejected_even_when_platform_has_no_nofollow_flag(tmp_path, monkeypatch):
     path = env_file(tmp_path, "PRIVATE_KEY=must_not_escape\n")
     link = tmp_path / "link"

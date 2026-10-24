@@ -18,10 +18,13 @@ from ir_search.models import EvidenceType, SourceTier
 from ir_search.registry import DataAdapterError
 
 
-def _download(url, headers, *, context):
+def _download(url, headers, *, context, max_bytes=8 * 1024 * 1024):
+    if type(max_bytes) is not int or max_bytes < 1:
+        raise ValueError('max_bytes must be a positive integer')
     _, host, _ = _url(url, signed_download=True)
     if not _allowed_domain(host, ('ima.qq.com','myqcloud.com')): raise DataAdapterError('blocked_url')
-    reply = _request(url, context=context, signed_download=True, scoped_download_headers=headers)
+    reply = _request(url, context=context, signed_download=True,
+                     scoped_download_headers=headers, max_bytes=max_bytes)
     if reply.status != 200: raise DataAdapterError('blocked_url')
     return reply
 

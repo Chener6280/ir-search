@@ -90,7 +90,7 @@ class BrowserNetwork:
         cached = next((entry for entry in self._robots if entry[0] == origin), None)
         if cached is None:
             try:
-                reply = self._read(robots_url)
+                reply = self._read(robots_url, anonymous=True)
                 if reply.status != 200:
                     # Avoid unbounded/unsafe robots redirects; refuse this render.
                     raise DataAdapterError("browser_robots_denied")
@@ -117,7 +117,10 @@ class BrowserNetwork:
         if body and (not public_feed or len(body) > 65536):
             raise DataAdapterError("blocked_url")
         headers = {"Content-Type": "application/json"} if method == "POST" else None
-        reply = self._read(url, method=method, body=body, headers=headers, public_feed=public_feed)
+        # A plain page or subresource read carries no credential. A fixed public feed may take a
+        # request body and a signed-looking query, so nothing is stated for it.
+        reply = self._read(url, method=method, body=body, headers=headers, public_feed=public_feed,
+                           anonymous=method == "GET" and body is None and not public_feed)
         if reply.status != 200:
             target = urljoin(url, reply.location)
             self._validate(target, "GET", main)

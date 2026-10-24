@@ -65,6 +65,7 @@ def _candidate(row, tool, *, fetched_at, max_chars, read_text):
     tier, evidence = {"research_report": (SourceTier.BROKER, EvidenceType.BROKER_REPORT),
                       "major_news": (SourceTier.MEDIA, EvidenceType.NEWS),
                       "npr": (SourceTier.REGULATOR, EvidenceType.POLICY_DOC)}[tool]
+    if publisher == "unknown": tier = None
     code = _string(row, "ts_code") if tool == "research_report" else ""
     if code and not re.fullmatch(r"\d{6}\.(SH|SZ|BJ)", code):
         raise ValueError("Unsupported report symbol")
@@ -103,7 +104,9 @@ def _candidate(row, tool, *, fetched_at, max_chars, read_text):
         Provenance("tushare_corpus", publisher, fetched_at, authority=SourceAuthority.DATA_VENDOR,
                    source_tier=tier, evidence_type=evidence, adapter_mode=AdapterMode.LIVE),
         text=text, text_scope=scope, original_url=url, symbols=(code,) if code else (),
-        published_on=published, published_at=instant, warnings=tuple(warnings), authors=authors, source_document_id=document_id)
+        published_on=published, published_at=instant, warnings=tuple(warnings + ["original_publisher_unverified"]), authors=authors, source_document_id=document_id,
+        read_details={"transmission": "vendor_transcription", "publisher_verification": "vendor_claim_unverified",
+                      "original_file_verified": False})
 
 
 class TushareCorpusAdapter:

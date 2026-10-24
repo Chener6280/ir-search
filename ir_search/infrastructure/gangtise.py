@@ -12,7 +12,8 @@ import ssl
 from threading import Event, Thread
 from urllib.parse import unquote, urlencode
 
-from .credentials import SourceConfigError, read_credentials
+from ._interrupt import wake_blocked_socket
+from .credentials import SourceConfigError, read_credentials, require_local_path
 from ir_search.context import RequestStopped
 from ir_search.registry import DataAdapterError
 
@@ -49,6 +50,7 @@ def gangtise_profile(*, values=None, env_file=None):
     enabled = v.get('GANGTISE_MATERIALS_ENABLED', 'false').lower()
     if enabled not in {'true', 'false'}: raise SourceConfigError()
     if enabled == 'false': return None
+    require_local_path(v, 'GANGTISE_BROWSER_EXECUTABLE', 'GANGTISE_STATE_DIR')
     try:
         return GangtiseProfile(v.get('GANGTISE_PHONE') or v.get('GANTISE_PHONE', ''),
             v.get('GANGTISE_PASSWORD') or v.get('GANTISE_PWD', ''),
@@ -202,9 +204,7 @@ def _http(path, payload, token, *, context, text=False):
                 try: context.check_active()
                 except RequestStopped:
                     sock = active_socket or connection.sock
-                    if sock is not None:
-                        try: sock.shutdown(socket.SHUT_RDWR)
-                        except OSError: pass
+                    wake_blocked_socket(sock)
                     return
         watcher = Thread(target=cancel, daemon=True); watcher.start()
         connection.connect(); active_socket = connection.sock

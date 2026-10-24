@@ -21,6 +21,21 @@ search_materials
 
 `search_materials.providers` must reflect the user’s chosen sources. Omitted or empty lists return `required_inputs` and `plan.source_options` with zero source calls, including dry-run. Reuse existing user choices when applicable; do not automatically select all configured sources or alphabetical defaults. Numeric routing remains unchanged. See [the contract](source_selection.md) and [handoff](../HANDOFF.md).
 
+## Errors: whose problem is it
+
+Core wrappers distinguish argument and execution failures so an agent does not rewrite valid arguments to fix an environment problem:
+
+- `invalid_request` — the arguments were rejected **before any source was contacted**. `detail`, when available, contains only an allow-listed field name (for example `max_chars`) or a fixed `unknown_argument` label. Arbitrary exception text is discarded. Values and URLs are never echoed.
+- `internal_error` — the arguments were accepted and the service or a source failed while running. `exception_type` is included; exception text is not, because it can contain URLs, SQL or tokens. Check `source_health`, then retry or report; do not change the arguments.
+
+`audit_dir` and `archive_dir` are confined to one local output root (`IR_SEARCH_OUTPUT_ROOT`, default `.local/exports` beside the private credentials file). Pass a relative folder name. The Python SDK is not restricted.
+
+## Core-only registration (rc2)
+
+Set the MCP **server process environment** `IR_SEARCH_MCP_MODE=core` for new integrations. It exposes the seven tools from `source_health` through `search_materials` listed above. The default `legacy` mode retains all twelve tools for existing clients; no legacy research expansion is implied.
+
+A bad local output root returns `invalid_output_root` with key `IR_SEARCH_OUTPUT_ROOT`; a caller path outside that root returns `invalid_request`. Foreign volumes/UNC targets are rejected before resolution. Private-network access through legacy fetch tools requires trusted server environment `IR_SEARCH_ALLOW_PRIVATE_NETWORK=1`; a tool argument alone cannot grant it.
+
 ## Tool Notes
 
 - `alphapai` is an opt-in shared-meeting source for `search_materials`, using account login and the optional browser dependency. `retrieve` accepts `alphapai://meeting/<ID>/summary` and `/transcript`; stored AI summaries and partial machine transcripts retain separate scope, exact citations and completeness warnings. No Open API key is required. See [AlphaPai configuration and limits](alphapai_material_adapter.md).
@@ -124,6 +139,8 @@ YouTube 字幕需可选 `[video]` 安装；平台挑战、非公网解析、缺�
 ## 来源体检与私有运行摘要
 
 `source_health` 新增可选 `providers`、`live`、`timeout_seconds`，在 `operational_status` 中返回配置、依赖、后端声明和处理建议。默认零来源调用；`live=true` 必须指定来源，目前只有 XHS 支持登录状态探测，其他来源明确未实现轻量探测。登录通过不等于搜索/正文通过。原 `sources`、`configured_sources` 保持兼容，工具总数不变。
+
+2026-10-03 扩展：支持 `search_samples`（已选来源→查询和发布日期窗口）、`read_samples`（仅一个普通公开 `web` URL）及 `web_read_mode=http/scrapling/browser`。查询限制一条候选、零正文读取，可能计费；live RSS 读取已配置 feed 快照。新增 `operation_status` 分别报告查询、原文、登录和 feed 验证范围；`sample_verified` 不表示所有操作或全量历史通过。使用与验收见[增强指南](reach_scrapling_patchright.md)。
 
 `search_materials` 新增可选 `audit_dir`，将字段白名单构成的私有运行摘要写入本地，并通过结果的 `audit` 返回回执；默认关闭。记录不含查询、正文、URL、作者、账户名或游标，存储失败不影响已返回素材。来源续取仍传 `source_cursors`；Python 调用方另可使用 `next_material_request(result)` 只继续提供有效位置的来源。见 [使用与限制](platform_reliability.md)。
 

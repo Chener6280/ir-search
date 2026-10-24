@@ -203,5 +203,9 @@ def test_real_fastmcp_web_output_matches_sdk(monkeypatch):
     async def check():
         response=await server.call_tool("search_materials",request().to_dict())
         actual=json.loads(response[0].text)
+        for payload in (actual, expected):
+            for coverage in payload['coverage']:
+                for scan in coverage.get('scans', []):
+                    assert scan.pop('elapsed_ms') >= 0
         assert actual["items"]==expected["items"] and actual["coverage"]==expected["coverage"]
     asyncio.run(check())

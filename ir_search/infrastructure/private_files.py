@@ -7,6 +7,20 @@ import tempfile
 import time
 
 
+def _stamp_written(path):
+    """Use actual wall time for TTLs; never manufacture future timestamps for ordering."""
+    try:
+        stamp = time.time_ns()
+        os.utime(path, ns=(stamp, stamp))
+    except OSError:
+        pass  # The atomic write has already succeeded.
+
+
+def _oldest_first(paths):
+    """Stable eviction order: modification time, then name."""
+    return sorted(paths, key=lambda p: (p.lstat().st_mtime_ns, p.name))
+
+
 def _private_dir(path):
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -29,7 +43,7 @@ def _directory_lock(root, context):
             raise OSError('unsafe_lock')
         if os.name == 'nt':
             import msvcrt
-            if not info.st_size: os.write(fd, b'0')
+            # Byte-range locks may extend past EOF; avoid racing to initialize a byte.
         else: import fcntl
         while not locked:
             context.check_active()
@@ -69,6 +83,7 @@ def _private_write(path, data):
     try:
         with os.fdopen(fd, 'wb') as stream: stream.write(data)
         os.replace(temporary, path)
+        _stamp_written(path)
     finally:
         try: os.unlink(temporary)
         except FileNotFoundError: pass

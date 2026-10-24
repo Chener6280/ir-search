@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from time import monotonic
 from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 
@@ -15,7 +16,8 @@ from ir_search.contracts.materials import (MaterialCandidate, MaterialCapability
 from ir_search.infrastructure.credentials import WebMaterialProfile
 from ir_search.infrastructure.public_web import _url, _allowed_domain
 from ir_search.infrastructure.web_documents import read_web_document, _VALID
-from ir_search.infrastructure.web_search import AnySearchWebClient, BochaWebClient, ExaWebClient
+from ir_search.infrastructure.web_search import AnySearchWebClient, BochaWebClient, ExaWebClient, TavilyWebClient
+from ir_search.infrastructure.web_engine import _EngineContext
 from ir_search.infrastructure.web_routing import route_web_search
 from ir_search.infrastructure.web_material_plan import _web_plan, _web_query, _effective_domains
 from ir_search.institutions import _institution_for_url
@@ -66,17 +68,28 @@ def _field(row, key, *, required=False):
 class WebMaterialAdapter:
     name = "web"
 
-    def __init__(self, profile: WebMaterialProfile, *, client=None, bocha_client=None, exa_client=None, reader=None):
+    def __init__(self, profile: WebMaterialProfile, *, client=None, bocha_client=None, exa_client=None, reader=None, clients=None):
         if not isinstance(profile, WebMaterialProfile):
             raise ValueError("WebMaterialProfile required")
         self._profile = profile
         self._client = client if client is not None else AnySearchWebClient(profile)
         self._bocha_client = bocha_client if bocha_client is not None else BochaWebClient(profile)
         self._exa_client = exa_client if exa_client is not None else ExaWebClient(profile)
+        from .baizhi import BaizhiAdapter
+        from .zai import ZaiAdapter
+        from .brave import BraveAdapter
+        from .serper import SerperAdapter
+        from .perplexity import PerplexityAdapter
+        from .duckduckgo import DuckDuckGoAdapter
+        self._clients = {'anysearch': self._client, 'bocha': self._bocha_client, 'exa': self._exa_client,
+            **{cls.name: cls(profile) for cls in (BaizhiAdapter, ZaiAdapter, BraveAdapter, SerperAdapter,
+                                                PerplexityAdapter, DuckDuckGoAdapter)}, 'tavily': TavilyWebClient(profile)}
+        self._client_overrides = dict(clients or {})
+        self._clients.update(self._client_overrides)
         self._reader = reader or read_web_document
         self.capability = MaterialCapability(self.name, "web", _KINDS, supports_publication_filter=False,
             search_basis="remote_web_discovery_then_local_matching", coverage_notes=(
-                "Regional discovery: CN Bocha, configured overseas Exa/AnySearch; explicit web_region overrides inferred region",
+                "Regional ordered engine chains are opt-in; legacy regional/fixed configurations retain behavior",
                 "Exhausted search quota produces a pending caller-native Web Search handoff; no anonymous retry",
                 "Fixed-provider configurations retain their selection; cross-region queries share a total 10-URL budget",
                 "Publication dates are filtered locally; requested dates in query text are hints, not upstream guarantees",
@@ -144,26 +157,47 @@ class WebMaterialAdapter:
                     date_filter_basis="local_publication_metadata", discovery_provider=route.provider,
                     web_region=route.region, routing_basis=route.basis))
                 continue
-            try:
-                part = self._search_once(replace(request, candidates_per_source=candidates, text_reads_per_source=reads),
-                                         route=route, context=context)
-                page.candidates.extend(part.candidates)
-                page.scanned_count += part.scanned_count
-                page.scans.extend(part.scans)
-                page.diagnostics.extend(part.diagnostics)
-            except DataAdapterError as exc:
-                page.diagnostics.append(Diagnostic(exc.code, "search_materials", "web", adapter_mode=AdapterMode.LIVE,
-                    failure_kind=exc.failure_kind, message=f"discovery_provider={route.provider};web_region={route.region}"))
-                page.scans.append(MaterialSourceScan(route.provider + "_web_search", MaterialKind.WEB_PAGE,
-                    request.published_start, request.published_end, exc.code, date_filter_basis="local_publication_metadata",
-                    discovery_provider=route.provider, web_region=route.region, routing_basis=route.basis))
-                if exc.code == 'quota':
-                    domains, _ = _effective_domains(request, self._profile)
-                    page.fallback_requests.append(WebSearchFallback(
-                        route.provider, _web_query(request, domains), route.region,
-                        request.published_start, request.published_end, candidates, domains,
-                        request.period_start, request.period_end, max_text_reads=min(reads, candidates)))
-                    page.diagnostics.append(_diag('caller_web_search_required'))
+            chain = route.providers or (route.provider,)
+            attempted, had_quota, succeeded = [], False, False
+            for provider in chain:
+                context.check_active()
+                attempted.append(provider)
+                current = replace(route, provider=provider, providers=())
+                started = monotonic()
+                try:
+                    if route.providers and provider != 'duckduckgo' and not self._profile.credential(provider):
+                        raise DataAdapterError('no_credentials')
+                    part = self._search_once(replace(request, candidates_per_source=candidates, text_reads_per_source=reads),
+                                             route=current, context=context)
+                    elapsed = round((monotonic() - started) * 1000, 2)
+                    part.scans = [replace(scan, elapsed_ms=elapsed) for scan in part.scans]
+                    # Empty means an upstream empty list, not local date/domain filtering.
+                    if route.providers and self._profile.failover_on_empty and part.scanned_count == 0:
+                        page.scans.extend(replace(scan, state='empty') for scan in part.scans)
+                        page.diagnostics.extend(part.diagnostics)
+                        continue
+                    page.candidates.extend(part.candidates)
+                    page.scanned_count += part.scanned_count
+                    page.scans.extend(part.scans)
+                    page.diagnostics.extend(part.diagnostics)
+                    succeeded = True
+                    break
+                except DataAdapterError as exc:
+                    had_quota |= exc.code == 'quota'
+                    page.diagnostics.append(Diagnostic(exc.code, 'search_materials', 'web', adapter_mode=AdapterMode.LIVE,
+                        failure_kind=exc.failure_kind, message=f'discovery_provider={provider};web_region={route.region}'))
+                    page.scans.append(MaterialSourceScan(provider + '_web_search', MaterialKind.WEB_PAGE,
+                        request.published_start, request.published_end, exc.code, date_filter_basis='local_publication_metadata',
+                        discovery_provider=provider, web_region=route.region, routing_basis=route.basis,
+                        elapsed_ms=round((monotonic() - started) * 1000, 2)))
+            if not succeeded and had_quota:
+                domains, _ = _effective_domains(request, self._profile)
+                page.fallback_requests.append(WebSearchFallback(
+                    attempted[-1], _web_query(request, domains), route.region,
+                    request.published_start, request.published_end, candidates, domains,
+                    request.period_start, request.period_end, max_text_reads=min(reads, candidates),
+                    attempted_providers=tuple(attempted) if route.providers else ()))
+                page.diagnostics.append(_diag('caller_web_search_required'))
         page.diagnostics = list(dict.fromkeys(page.diagnostics))
         return page
 
@@ -173,9 +207,10 @@ class WebMaterialAdapter:
             raise DataAdapterError('unsupported')
         query = _web_query(request, domains)
         limit = min(request.candidates_per_source, 10)
-        client = {'bocha': self._bocha_client, 'exa': self._exa_client, 'anysearch': self._client}[route.provider]
+        client = self._client_overrides.get(route.provider) or {'bocha': self._bocha_client,
+            'exa': self._exa_client, 'anysearch': self._client}.get(route.provider) or self._clients[route.provider]
         options = {'allowed_domains': domains} if isinstance(client, (BochaWebClient, ExaWebClient)) else {}
-        found = client.search(query, limit=limit, context=context, **options)
+        found = client.search(query, limit=limit, context=_EngineContext(context) if self._profile.search_provider == 'chain' else context, **options)
         context.check_active()
         if not isinstance(found.rows, list) or len(found.rows) > 100 or any(not isinstance(r, dict) for r in found.rows):
             raise DataAdapterError("upstream_schema")
@@ -185,8 +220,7 @@ class WebMaterialAdapter:
                 route.provider + "_web_search", MaterialKind.WEB_PAGE, request.published_start, request.published_end,
                 "queried", len(found.rows), len(rows), date_filter_basis="local_publication_metadata",
                 discovery_provider=route.provider, web_region=route.region, routing_basis=route.basis)])
-        authenticated = bool({'bocha': self._profile.bocha_api_key, 'exa': self._profile.exa_api_key,
-                              'anysearch': self._profile.api_key}[route.provider])
+        authenticated = bool(self._profile.credential(route.provider))
         if not authenticated:
             page.diagnostics.append(_diag("anonymous_web_discovery"))
         if len(found.rows) > limit or request.candidates_per_source > 10:

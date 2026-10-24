@@ -14,13 +14,14 @@ class WebRoute:
     provider: str
     region: str
     basis: str
+    providers: tuple[str, ...] = ()
 
 
 def route_web_search(request: MaterialSearchRequest, profile: WebMaterialProfile) -> tuple[WebRoute, ...]:
     """Prefer explicit scope; expose market/entity rules and weak language defaults."""
     if not isinstance(request, MaterialSearchRequest) or not isinstance(profile, WebMaterialProfile):
         raise ValueError("Typed material request and web profile required")
-    if profile.search_provider != "regional":
+    if profile.search_provider not in {"regional", "chain"}:
         region = request.web_region if request.web_region in {"cn", "overseas"} else "cn" if profile.search_provider == "bocha" else "overseas"
         return (WebRoute(profile.search_provider, region, "configured_provider"),)
     if request.web_region != "auto":
@@ -43,4 +44,7 @@ def route_web_search(request: MaterialSearchRequest, profile: WebMaterialProfile
         if not regions:
             regions = ("cn",) if re.search(r"[\u3400-\u9fff]", text) else ("overseas",)
             basis = "language_default_unverified"
+    if profile.search_provider == 'chain':
+        return tuple(WebRoute('chain', r, basis, profile.cn_providers if r == 'cn' else profile.overseas_providers)
+                     for r in regions)
     return tuple(WebRoute("bocha" if r == "cn" else profile.overseas_provider, r, basis) for r in regions)

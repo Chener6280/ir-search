@@ -10,6 +10,7 @@ import socket
 import ssl
 from threading import Event, Thread
 
+from ._interrupt import wake_blocked_socket
 from .credentials import ZsxqProfile
 from .mcp_protocol import _decode, _response_for
 from ir_search.context import RequestStopped
@@ -33,7 +34,8 @@ def _error_code(status=200, message=""):
     message = str(message)[:4000].lower()
     if status == 401 or any(s in message for s in ("unauthorized", "not logged", "token expired", "invalid token", "未登录")):
         return "authentication_failed"
-    if status in {402,403} or any(s in message for s in ("权限", "permission", "not allowed", "forbidden")):
+    if status in {402,403} or any(s in message for s in ("权限", "permission", "not allowed", "forbidden",
+                                                               "成员体验已到期", "membership expired")):
         return "entitlement_denied"
     if status == 429 or any(s in message for s in ("429", "频繁", "限流", "rate limit")):
         return "rate_limit"
@@ -56,11 +58,7 @@ def _post(profile, payload, *, session_id, version, context):
                     context.check_active()
                 except RequestStopped:
                     sock = active_socket or connection.sock
-                    if sock is not None:
-                        try:
-                            sock.shutdown(socket.SHUT_RDWR)
-                        except OSError:
-                            pass
+                    wake_blocked_socket(sock)
                     return
 
         watcher = Thread(target=stop_socket, daemon=True)

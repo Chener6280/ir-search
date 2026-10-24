@@ -22,17 +22,19 @@ def _reference(value):
     return match[1], match[2], match[3], match[4]
 
 
-def _download(url, *, context):
+def _download(url, *, context, require_pdf=True, max_bytes=8 * 1024 * 1024):
     # Only the official file host observed through the authenticated download API.
     # Query signatures stay in memory and are never attached to Document or errors.
+    if type(max_bytes) is not int or max_bytes < 1:
+        raise ValueError("max_bytes must be a positive integer")
     current, seen = url, set()
     for _ in range(4):
         parsed, host, _ = _url(current, signed_download=True)
         if host != "files.zsxq.com" or current in seen: raise DataAdapterError("blocked_url")
         seen.add(current)
-        reply = _request(current, context=context, signed_download=True)
+        reply = _request(current, context=context, signed_download=True, max_bytes=max_bytes)
         if reply.status == 200:
-            if not reply.body.startswith(b"%PDF-"): raise DataAdapterError("web_content_unsupported")
+            if require_pdf and not reply.body.startswith(b"%PDF-"): raise DataAdapterError("web_content_unsupported")
             return reply.body
         if not reply.location: raise DataAdapterError("blocked_url")
         current = urljoin(current, reply.location)

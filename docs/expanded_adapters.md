@@ -69,6 +69,7 @@ MCP 使用相同数据集和字段。新宏观数据默认 `frequency="native"`�
 ## 必须保留的口径
 
 - 宏观日期是观察期首日，月度/年度不是发布日期。年度日期范围若不包含当年 1 月 1 日，就不会包含该年观测。返回最新修订快照，不支持 `as_of`，不伪装 ALFRED 或历史版本。缺失标记保留 null；不填零、不前向填充。每次最多 5 个序列、每序列最多 5,000 个观测。世界银行与 ECB 的序列身份/币种字段要与请求匹配；FRED 请求头采用标准 Python HTTP 客户端标识以兼容其 CSV 服务。
+- 宏观结果带 `series_coverage`：每个请求的 symbol 一行、按请求顺序，描述"源站对所请求窗口的应答"，在本地 `limit` 截断之前计算，不受 `fields` 选择影响。字段：`symbol`、`provider`、`source_series_id`、`frequency`、`date_field`、`requested_start`、`requested_end`、`status`、`first_date`、`last_date`、`n_obs`、`n_missing`、`n_returned`，失败时另有 `code`。`first_date`/`last_date`/`n_obs` 只计有值观测，源站返回但无值的行计入 `n_missing`；`n_returned` 是本次 `records` 里该序列的行数，与 `n_obs + n_missing` 不等说明被 `limit` 截断或被 `allow_partial=false` 扣留（此时覆盖行照常返回）。`status` 只由确定事实决定：`failed`（读取出错）、`truncated`（源站自己报告还有未读到的行）、`empty`（窗口内没有有值观测）、`ok`（其余）。这里只给事实：不设阈值，不判断"过期"或"不完整"，预期跨度由调用方自己比对。整次调用全部序列失败时没有覆盖行；其他数据集暂时返回空列表。
 - 单位净值、累计净值、复权净值是不同字段。净值日期、公告日期分开；JYDB 当前映射缺币种、复权净值和合并标记，返回 null 和 partial。不能靠名称将 A/C、场内与场外份额自动合并。
 - 基金份额源表以万份计，本接口转为份。`share_class_shares` 对应 `FUNDSHARE`；`total_shares` 对应 `F_UNIT_TOTAL`，可能涉及分级基金总份额；`combined_shares` 对应 `FUNDSHARE_TOTAL`。保留合并标记、流通份额和变化原因，不把份额变化自动视为净申购或资金流入。
 - 基金持仓日期是报告期末，公告日期另外提供。金额为源币种元、数量为股，占净值百分比除以 100 返回 ratio；季度披露可能仅十大持仓，不作全仓重建。没有自动用披露后的持仓回填历史。
@@ -76,6 +77,7 @@ MCP 使用相同数据集和字段。新宏观数据默认 `frequency="native"`�
 - Fiona 日线统一金额暂留 null：前次少量样本证明的倍率不能替代供应商单位承诺。成交量/持仓保留供应商数值并标记计数约定未确认；曾观测到的数量冲突仍显示。风险指标均用 `source_*` 命名，模型和价格类型标为未文档化，IV 与 Greeks 不擅自缩放，返回 partial。
 - `derivatives_bars` 的日期范围是**交易日**，夜盘可能在前一自然日；不同于 AKShare `futures_intraday` 的自然日边界。保留带 +08:00 的源时间以及源成交量、成交额和持仓。仅限最近 14 个自然日，历史分钟数据源仍留空。期货分钟实取已通过；期权分钟曾超时，扩大单次预算后取得 48 根，仍保留稳定性限制。
 - Fiona 仅支持已核对的具体合约表示：四位年月期货/商品期权或沪深八位期权编号，并核对源元数据。郑商所三位月码不自动猜年份；不合并跨来源行或字段。国内 EOD 默认仍为 Wind → JYDB；既有 AKShare 日内路线不变。
+- 宏观每行带三个时间戳语义字段，`observation_date` 的含义不变（仍是期初、主键和日期字段）：`period_end` 是期间最后一天（含），只在目录声明 `period_calendar=calendar` 时由频率和期初按日历推出，未核实一律为 null；`is_period_average` 是可空布尔，判据是"该值是否是对同一量更高频观测做时间平均的结果"，null 表示目录未声明、不等于 false；`release_lag_days` 是**声明的约定**（期末之后大约多少天可得），不是源站事实，服务端永不把它折算成任何日期，也不用它满足 `as_of`。这些值逐序列在目录 `entities/macro_series.csv` 里声明，附出处和核对日期，核实不了的留空；判据、各序列的声明、出处、核对日期和备注见 `list_capabilities()["macro_series_catalog"]` 的 `semantics_rules`、`series`、`pattern_series`。
 
 ## 港股原文与引用
 

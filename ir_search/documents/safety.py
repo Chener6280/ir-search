@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ipaddress
+import re
+import socket
 from dataclasses import dataclass
 from typing import Iterable, Optional
 from urllib.parse import urlparse
@@ -45,6 +47,17 @@ def is_url_allowed(
     ip = _parse_ip(host)
     if ip and _is_blocked_ip(ip):
         return UrlPolicyResult(False, f"blocked private or local IP: {ip}", normalized, host)
+    if ip is None and re.fullmatch(r"(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+))*", host):
+        # Resolvers also accept 2130706433, 0x7f000001, 0177.0.0.1 and 127.1 as addresses.
+        return UrlPolicyResult(False, "blocked ambiguous numeric host", normalized, host)
+    if ip is None and ("." not in host.rstrip(".") or host.rstrip(".").endswith(_INTERNAL_SUFFIXES)):
+        return UrlPolicyResult(False, "blocked internal host name", normalized, host)
+    try:
+        port = parsed.port
+    except ValueError:
+        return UrlPolicyResult(False, "invalid URL port", normalized, host)
+    if port not in (None, 80 if scheme == "http" else 443):
+        return UrlPolicyResult(False, "blocked non-default port", normalized, host)
     return UrlPolicyResult(True, "allowed", normalized, host)
 
 
@@ -60,6 +73,32 @@ def ensure_url_allowed(
     if not result.allowed:
         raise UrlBlockedError(result.reason)
     return result
+
+
+_INTERNAL_SUFFIXES = (".local", ".internal", ".localdomain", ".lan", ".intranet", ".corp", ".home.arpa")
+
+
+def ensure_host_resolves_public(url: str, *, resolver=socket.getaddrinfo) -> None:
+    """Reject a public-looking name that resolves to a private, loopback or link-local address.
+
+    The name check above cannot see DNS. This legacy fetcher does not pin the verified address
+    (the material reader in infrastructure.public_web does), so it narrows, not closes, rebinding.
+    """
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").strip()
+    if not host or _parse_ip(host):
+        return
+    try:
+        answers = resolver(host, parsed.port or (443 if parsed.scheme.lower() == "https" else 80), type=socket.SOCK_STREAM)
+    except (OSError, UnicodeError):
+        return  # Unresolvable: the request itself fails and nothing is reached.
+    for answer in answers:
+        try:
+            ip = ipaddress.ip_address(str(answer[4][0]).split("%")[0])
+        except (ValueError, IndexError, TypeError):
+            raise UrlBlockedError("host resolution was not understood") from None
+        if _is_blocked_ip(ip) or not ip.is_global:
+            raise UrlBlockedError("host resolves to a private or local address")
 
 
 def _parse_ip(host: str) -> Optional[ipaddress._BaseAddress]:
