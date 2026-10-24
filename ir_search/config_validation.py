@@ -42,7 +42,12 @@ def validate_configs(registry: Optional[Mapping[str, object]] = None, configs: O
     _validate_rerank_weights(cfg.get("rerank_weights", {}), errors)
     _validate_source_focus_sites(cfg.get("source_focus_sites", {}), known_sources, errors)
     _validate_fallback_routes(cfg.get("fallback_routes", {}), known_sources, errors)
-    _validate_source_capabilities(cfg.get("source_capabilities", {}), known_sources, errors)
+    from .infrastructure.credentials import WEB_ENGINES
+    _validate_source_capabilities(cfg.get("source_capabilities", {}), known_sources | set(WEB_ENGINES), errors)
+    chains = cfg.get('source_routes', {}).get('web_material_chains', {})
+    for region, chain in chains.items():
+        if region not in {'cn', 'overseas'} or not isinstance(chain, list) or not chain or len(chain)!=len(set(chain)) or any(p not in WEB_ENGINES for p in chain):
+            errors.append('source_routes.web_material_chains invalid regional chain')
     _validate_sentiment_sites(cfg.get("sentiment_sites", {}), errors)
     _validate_intent_rules(cfg.get("intent_rules", {}), errors)
     return errors

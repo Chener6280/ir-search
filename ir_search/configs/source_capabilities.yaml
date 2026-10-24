@@ -131,3 +131,39 @@ sources:
     result_kinds: [market_quote, public_snapshot]
     can_fallback_to_authorities: []
     promotable_from_discovery: false
+
+  baizhi:
+    authority: commercial_search
+    result_kinds: [web_document, discovery_url]
+    can_fallback_to_authorities: [commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  zai:
+    authority: commercial_search
+    result_kinds: [web_document, discovery_url]
+    can_fallback_to_authorities: [commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  brave:
+    authority: commercial_search
+    result_kinds: [web_document, discovery_url]
+    can_fallback_to_authorities: [commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  serper:
+    authority: commercial_search
+    result_kinds: [web_document, discovery_url]
+    can_fallback_to_authorities: [commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  perplexity:
+    authority: commercial_search
+    result_kinds: [web_document, discovery_url]
+    can_fallback_to_authorities: [commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false
+
+  duckduckgo:
+    authority: anonymous_search
+    result_kinds: [web_document, discovery_url]
+    can_fallback_to_authorities: [commercial_search, discovery, anonymous_search]
+    promotable_from_discovery: false

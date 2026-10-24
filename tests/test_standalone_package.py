@@ -68,6 +68,12 @@ def test_built_wheel_runs_sdk_search_and_mcp_outside_checkout(tmp_path):
     with zipfile.ZipFile(next(wheels.glob("*.whl"))) as archive:
         names = archive.namelist()
         assert "ir_search/configs/source_routes.yaml" in names
+        assert "ir_search/configs/fallback_routes.yaml" in names
+        assert "ir_search/configs/source_capabilities.yaml" in names
+        for engine in ('baizhi','zai','brave','serper','perplexity','duckduckgo'):
+            assert 'ir_search/adapters/' + engine + '.py' in names
+        assert 'ir_search/infrastructure/search_transport.py' in names
+        assert 'ir_search/infrastructure/web_engine.py' in names
         assert "ir_search/entities/a_share_companies.csv" in names
         assert "ir_search/entities/institutions.csv" in names
         assert "ir_search/clients/wechat_articles.py" in names
@@ -163,6 +169,21 @@ from ir_search import mcp_server
 from ir_search.adapters.web_materials import WebMaterialAdapter
 from ir_search.infrastructure.web_search import ExaWebClient
 assert ir_search.WebSearchFallback.__module__ == 'ir_search.contracts.materials'
+from ir_search.infrastructure.credentials import web_material_profile
+from ir_search.config import load_yaml
+chain_profile = web_material_profile(values={'WEB_MATERIALS_ENABLED':'true','WEB_SEARCH_PROVIDER':'chain'})
+assert list(chain_profile.cn_providers)==load_yaml('source_routes.yaml')['web_material_chains']['cn']
+assert chain_profile.cn_providers[0]=='baizhi' and chain_profile.overseas_providers[0]=='exa'
+assert set(load_yaml('source_capabilities.yaml')['sources']) >= {'baizhi','zai','brave','serper','perplexity','duckduckgo'}
+chain_registry = ir_search.MaterialRegistry()
+chain_registry.register(WebMaterialAdapter(chain_profile))
+chain_preview = ir_search.search_materials(ir_search.MaterialSearchRequest('NVIDIA', providers=['web'],
+    web_region='both', published_start='2026-01-01', published_end='2026-10-24',dry_run=True),registry=chain_registry)
+assert len(chain_preview.plan['source_plans'][0]['routes'])==2
+assert chain_preview.plan['source_calls_started']==0
+for name in ('baizhi','zai','brave','serper','perplexity','duckduckgo'):
+    __import__('ir_search.adapters.' + name)
+
 class ExhaustedSearch:
     def search(self, *args, **kwargs):
         raise ir_search.DataAdapterError('quota')

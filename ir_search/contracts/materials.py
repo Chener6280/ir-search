@@ -376,8 +376,13 @@ class MaterialSourceScan(JsonModel):
     search_query: Optional[str] = None
     fetched_at: Optional[datetime] = None
     cache_state: Optional[str] = None
+    elapsed_ms: Optional[float] = None
 
     def __post_init__(self):
+        if self.elapsed_ms is not None:
+            import math
+            if isinstance(self.elapsed_ms, bool) or not isinstance(self.elapsed_ms, (int, float)) or not math.isfinite(self.elapsed_ms) or self.elapsed_ms < 0:
+                raise ValueError('Invalid scan duration')
         object.__setattr__(self, 'fetched_at', _instant(self.fetched_at))
         if self.cache_state not in (None, 'hit', 'fresh'): raise ValueError('Invalid scan cache state')
         _identifier(self.operation)
@@ -426,10 +431,16 @@ class WebSearchFallback(JsonModel):
     after_search: str = field(default='retrieve', init=False)
     max_attempts: int = field(default=1, init=False)
     max_text_reads: int = 0
+    attempted_providers: tuple[str, ...] = ()
 
     def __post_init__(self):
-        if self.failed_provider not in {'bocha', 'anysearch', 'exa', 'tavily', 'firecrawl', 'searxng'}:
+        if self.failed_provider not in {'bocha', 'anysearch', 'exa', 'tavily', 'firecrawl', 'searxng', 'baizhi', 'zai', 'brave', 'serper', 'perplexity', 'duckduckgo'}:
             raise ValueError('Invalid web discovery provider')
+        if (not isinstance(self.attempted_providers, tuple) or len(self.attempted_providers)>10
+                or len(set(self.attempted_providers)) != len(self.attempted_providers)
+                or any(p not in {'bocha', 'anysearch', 'exa', 'tavily', 'baizhi', 'zai', 'brave', 'serper', 'perplexity', 'duckduckgo'} for p in self.attempted_providers)
+                or self.attempted_providers and self.attempted_providers[-1] != self.failed_provider):
+            raise ValueError('Invalid attempted providers')
         if not isinstance(self.query, str) or not self.query.strip() or len(self.query) > 4000:
             raise ValueError('Invalid fallback query')
         if self.web_region not in {'cn', 'overseas'}:

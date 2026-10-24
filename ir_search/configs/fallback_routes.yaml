@@ -25,3 +25,9 @@ error_classes:
     - request failed
     - urlopen
     - connection
+
+web_material_chain:
+  failover_on: [quota, rate_limit, network, timeout, tls_error, authentication_failed, entitlement_denied, upstream_schema]
+  failover_on_empty: false
+  caller_handoff: quota_after_entire_chain_failed
+  anonymous_api_retry: false

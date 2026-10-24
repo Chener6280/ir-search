@@ -73,7 +73,7 @@ def _validate_page(page, cap, request):
             or any(not isinstance(d, Diagnostic) for d in page.diagnostics)):
         raise ValueError("Invalid material page")
     seen = set()
-    if not isinstance(page.scans, list) or len(page.scans) > 16:
+    if not isinstance(page.scans, list) or len(page.scans) > (20 if cap.provider == "web" else 16):
         raise ValueError("Invalid scan details")
     for scan in page.scans:
         if not isinstance(scan, MaterialSourceScan) or replace(scan).material_type not in cap.material_types:
@@ -91,7 +91,11 @@ def _validate_page(page, cap, request):
             raise ValueError('Invalid web fallback request')
         fallback = replace(raw)
         route_key = (fallback.failed_provider, fallback.web_region)
-        if (fallback != raw or cap.provider != 'web' or route_key not in failed_routes or route_key in fallback_routes
+        attempts = [s for s in page.scans if s.web_region == fallback.web_region]
+        chain_valid = (fallback.attempted_providers and tuple(s.discovery_provider for s in attempts) == fallback.attempted_providers
+                       and any(s.state == 'quota' for s in attempts) and all(s.state not in {'queried', 'web_region_budget_exhausted'} for s in attempts)
+                       and attempts[-1].discovery_provider == fallback.failed_provider)
+        if (fallback != raw or cap.provider != 'web' or (not chain_valid and (fallback.attempted_providers or route_key not in failed_routes)) or route_key in fallback_routes
                 or fallback.published_start != request.published_start or fallback.published_end != request.published_end
                 or fallback.period_start != request.period_start or fallback.period_end != request.period_end
                 or fallback.max_results > min(request.candidates_per_source, 10)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ir-search"
-version = "0.2.0rc1"
+version = "0.2.0rc2"
 description = "Deterministic investment research search kernel"
 readme = "README.md"
 requires-python = ">=3.9"

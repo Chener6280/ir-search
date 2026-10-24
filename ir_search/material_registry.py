@@ -90,7 +90,7 @@ def build_material_registry(*, env_file=None) -> MaterialRegistry:
     except SourceConfigError as exc:
         registry.diagnostics.append(Diagnostic(exc.code, "configure", "tushare_corpus", failure_kind=FailureKind.BLOCKED_BY_POLICY))
     try:
-        profile = web_material_profile(values=values)
+        profile = web_material_profile(values=values, process_overrides=True)
         if profile:
             from .adapters.web_materials import WebMaterialAdapter
             registry.register(WebMaterialAdapter(profile))

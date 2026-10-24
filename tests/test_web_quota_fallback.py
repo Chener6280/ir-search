@@ -145,7 +145,7 @@ def test_quota_handoff_preserves_scope_without_retry_or_fake_evidence():
         'published_start':'2025-01-01','published_end':'2025-12-31','max_results':5,
         'allowed_domains':['example.com'], 'period_start':'2025-04-01', 'period_end':'2025-06-30',
         'reason':'quota', 'action':'caller_web_search',
-        'state':'pending_caller','after_search':'retrieve','max_attempts':1,'max_text_reads':0}
+        'state':'pending_caller','after_search':'retrieve','max_attempts':1,'max_text_reads':0,'attempted_providers':[]}
     assert 'site:example.com' in handoff['query']
     assert out['request']['period_start'] == '2025-04-01'
     assert out['coverage'][0]['scans'][0]['state'] == 'quota'

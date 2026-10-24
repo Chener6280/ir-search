@@ -1,6 +1,6 @@
 # 独立安装与跨电脑测试
 
-适用：0.2.0rc1 交接候选。源码入口是 [GitHub 仓库](https://github.com/Chener6280/ir-search) 的 `main` 分支；记录实际提交号，以便复现测试。先读 [HANDOFF](../HANDOFF.md)。运行不需要 Desktop、BrokerSkills 或原电脑的私有目录。
+适用：0.2.0rc2 本地交接候选（本轮未推送，不能据此假设远端已更新）。源码入口是 [GitHub 仓库](https://github.com/Chener6280/ir-search) 的 `main` 分支；记录实际提交号，以便复现测试。先读 [HANDOFF](../HANDOFF.md)。运行不需要 Desktop、BrokerSkills 或原电脑的私有目录。
 
 ## 1. 创建独立环境
 
@@ -30,7 +30,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install '.[dev,mcp]'
 ```
 
-也可安装测试包内 wheel：`python -m pip install 'dist/ir_search-0.2.0rc1-py3-none-any.whl[mcp]'`。离线源码测试仍需保留源码中的 tests/templates/configs/scripts；已安装 SDK/MCP 运行不依赖这些 checkout 文件。
+也可安装测试包内 wheel：`python -m pip install 'dist/ir_search-0.2.0rc2-py3-none-any.whl[mcp]'`。离线源码测试仍需保留源码中的 tests/templates/configs/scripts；已安装 SDK/MCP 运行不依赖这些 checkout 文件。
 
 ## 2. 按来源补充依赖
 
@@ -113,3 +113,32 @@ Windows 使用 `C:/.../.venv/Scripts/python.exe`。从无源码工作目录启�
 修改后重新构建、安装 wheel 并从无关目录测试；不要只在源码目录跑通就宣称跨电脑完成。稳定版发布前还需实际多系统 CI、隐私检查和版本/散列固定。[GitHub Actions](https://github.com/Chener6280/ir-search/actions/workflows/standalone.yml) 执行 `.github/workflows/standalone.yml`；以当前提交对应的运行结果为准，存在配置不代表检查通过。
 
 早期逐次安装记录归档在[历史部署记录](history_standalone_deployment.md)。
+
+## 网页搜索链：每台电脑分别配置
+
+显式选用 `providers=["web"]` 后，私有 env 中设置：
+
+```dotenv
+WEB_MATERIALS_ENABLED=true
+WEB_SEARCH_PROVIDER=chain
+WEB_CN_PROVIDERS=baizhi,zai,bocha,exa,perplexity,duckduckgo
+WEB_OVERSEAS_PROVIDERS=exa,perplexity,brave,serper,anysearch,tavily,duckduckgo
+WEB_FAILOVER_ON_EMPTY=false
+EXA_SEARCH_TYPE=auto
+BAIZHI_API_KEY=
+ZAI_API_KEY=
+ZAI_CODING_CN_API_KEY=
+BRAVE_API_KEY=
+SERPER_API_KEY=
+PERPLEXITY_API_KEY=
+BOCHA_API_KEY=
+EXA_API_KEY=
+ANYSEARCH_API_KEY=
+TAVILY_API_KEY=
+```
+
+每台电脑使用自己的私有凭证、两条链顺序和 `IR_SEARCH_CREDENTIALS_FILE` 路径。新 key 全部为空模板；智谱接受两种名称，首选 `ZAI_API_KEY`。缺 key 自动跳过并记录 `no_credentials`，DuckDuckGo 是显式无 key 兜底。不要把其他电脑的私有 env、Pi JSON 或账号复制进 wheel/repository。迁移引用值时只在本机解析，备份后写入权限 600 的文件，严禁打印值。
+
+旧 `regional/exa` 和 `WEB_OVERSEAS_PROVIDER` 继续兼容单引擎，不会静默启用所有新源。固定搜索端点使用现有系统 TLS/出口，不修改网络或代理设置，不随重定向发送凭证。新实现仅需基础依赖；作为 MCP 服务仍安装 `[mcp]`。协议、字段、诊断和调用方交接详见[网页链指南](web_search_fallback.md)。
+
+新 wheel 验证包含全部 adapter、三个 YAML、SDK 地区计划、MCP 和无私有文件检查，从与源码无关的目录执行。c-mac 本轮只是本机样本；b-mac 标为待验证，a-win 本轮不操作，不能推定跨机部署通过。

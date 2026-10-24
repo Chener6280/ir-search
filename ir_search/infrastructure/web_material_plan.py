@@ -41,12 +41,13 @@ def _web_plan(request, profile):
         candidates = budget // len(routes) + (index < budget % len(routes))
         reads = request.text_reads_per_source // len(routes) + (index < request.text_reads_per_source % len(routes))
         planned.append({'provider': route.provider, 'region': route.region, 'routing_basis': route.basis,
-                        'query': _web_query(request, domains), 'max_candidates': candidates,
+                        'query': _web_query(request, domains), 'attempt_order': list(route.providers or (route.provider,)),
+                        'failover_on_empty': profile.failover_on_empty if route.providers else False, 'max_candidates': candidates,
                         'domain_filter': 'api_include_and_local_check' if route.provider in {'bocha', 'exa'} and domains else 'query_hint_and_local_check' if domains else 'unrestricted_public_web',
                         'max_text_reads': min(reads, candidates)})
     return {'allowed_domains': list(domains), 'scope_conflict': conflict, 'routes': planned,
             'max_candidates': budget, 'max_text_reads': sum(r['max_text_reads'] for r in planned),
-            'max_discovery_calls': 0 if conflict else sum(bool(r['max_candidates']) for r in planned),
+            'max_discovery_calls': 0 if conflict else sum(len(r['attempt_order']) for r in planned if r['max_candidates']),
             'read_workers': request.web_read_workers if request.web_read_mode == 'http' else 1,
             'read_workers_requested': request.web_read_workers, 'read_mode': request.web_read_mode,
             'concurrency_policy': 'http_only_browser_capable_reads_remain_serial',
@@ -55,7 +56,7 @@ def _web_plan(request, profile):
             'quota_fallback': {'on': ['quota'], 'target': 'caller_native_web_search',
                 'execution_owner': 'caller', 'result_field': 'fallback_requests',
                 'max_attempts_per_failed_route': 1, 'server_executes_fallback': False,
-                'rate_limit_is_quota': False, 'after_search': 'retrieve'},
+                'requires_entire_route_failed': True, 'rate_limit_is_quota': False, 'after_search': 'retrieve'},
             'publication_filter': 'local_metadata_unknown_dates_retained_with_warning',
             'attachment_downloads': 0, 'query_dates_are_hints': True,
             'directory_seeds': [url for row in _selected_institutions(request.web_institutions) for url in row.directory_urls],

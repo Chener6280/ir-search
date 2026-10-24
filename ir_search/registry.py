@@ -81,6 +81,7 @@ class DataAdapterError(Exception):
         "tushare_response_too_large": FailureKind.UPSTREAM_SCHEMA,
         "tushare_response_too_many_rows": FailureKind.UPSTREAM_SCHEMA,
         "no_credential": FailureKind.NO_CREDENTIAL,
+        "no_credentials": FailureKind.NO_CREDENTIAL,
         "quota": FailureKind.QUOTA,
         "rate_limit": FailureKind.RATE_LIMIT,
         "network": FailureKind.NETWORK,

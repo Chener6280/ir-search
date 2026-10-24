@@ -7,7 +7,7 @@ import json
 import re
 
 from ir_search.infrastructure.credentials import WebMaterialProfile
-from ir_search.infrastructure.public_web import _request
+from ir_search.infrastructure.search_transport import _search_request as _request
 from ir_search.registry import DataAdapterError
 
 _ENDPOINT = "https://api.anysearch.com/v1/search"
@@ -28,6 +28,8 @@ def _failure_code(status, value):
     # Inspect only declared API error fields, never result/snippet text. Do not
     # expose raw messages, balances, keys or URLs in the normalized error.
     value = value if isinstance(value, dict) else {}
+    if isinstance(value.get('error'), dict):
+        value = {**value, **value['error']}
     code = value.get('code') if type(value.get('code')) is int else status
     message = ' '.join(v[:1000] for key in ('message', 'msg', 'error', 'detail', 'code')
                        if isinstance((v := value.get(key)), str)).lower()
@@ -49,6 +51,19 @@ def _failure_code(status, value):
     return 'network' if status >= 500 or code == 500 else 'upstream_schema'
 
 
+def _legacy_search_failure(exc):
+    """Keep compatibility adapters from exposing provider bodies or generated keys."""
+    import urllib.error
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            value = json.loads(exc.read(16384), parse_constant=_constant)
+        except Exception:
+            value = None
+        return _failure_code(exc.code, value)
+    reason = getattr(exc, 'reason', exc)
+    return 'timeout' if isinstance(reason, TimeoutError) else 'network'
+
+
 def _search_value(reply):
     if 300 <= reply.status < 400:
         raise DataAdapterError('blocked_url')
@@ -61,6 +76,8 @@ def _search_value(reply):
         raise DataAdapterError(_failure_code(reply.status, value))
     if not isinstance(value, dict):
         raise DataAdapterError('upstream_schema')
+    if value.get('error'):
+        raise DataAdapterError(_failure_code(reply.status, value))
     return value
 
 
@@ -83,7 +100,7 @@ class ExaWebClient:
         key = self._profile.exa_api_key
         if not key:
             raise DataAdapterError('no_credential')
-        payload = {'query': query, 'type': 'auto', 'numResults': limit,
+        payload = {'query': query, 'type': self._profile.exa_search_type, 'numResults': limit,
                    'contents': {'text': {'maxCharacters': 1000}}}
         if allowed_domains:
             payload['includeDomains'] = list(allowed_domains)
@@ -101,6 +118,8 @@ class ExaWebClient:
                  ('text', 'snippet'), ('publishedDate', 'published_at')) if src in row} for row in rows]
         if key in json.dumps(rows, ensure_ascii=False):
             raise DataAdapterError('upstream_schema')
+        from .web_engine import _rows
+        rows = _rows(rows, tuple((name, name) for name in ('title', 'url', 'snippet', 'published_at')))
         return WebSearchPage(rows, reply.fetched_at)
 
 
@@ -139,6 +158,8 @@ class AnySearchWebClient:
         rows = [{key: row[key] for key in ("title", "url", "snippet", "published_at") if key in row} for row in rows]
         if self._profile.api_key and self._profile.api_key in json.dumps(rows, ensure_ascii=False):
             raise DataAdapterError("upstream_schema")
+        from .web_engine import _rows
+        rows = _rows(rows, tuple((name, name) for name in ('title', 'url', 'snippet', 'published_at')))
         return WebSearchPage(rows, reply.fetched_at)
 
 
@@ -182,4 +203,32 @@ class BochaWebClient:
         rows = [{dest: row[src] for src, dest in (("name", "title"), ("url", "url"),
                  ("snippet", "snippet"), ("datePublished", "published_at")) if src in row} for row in rows]
         if key in json.dumps(rows, ensure_ascii=False): raise DataAdapterError("upstream_schema")
+        from .web_engine import _rows
+        rows = _rows(rows, tuple((name, name) for name in ('title', 'url', 'snippet', 'published_at')))
+        return WebSearchPage(rows, reply.fetched_at)
+
+
+class TavilyWebClient:
+    """Search-only Tavily route; answer and raw-content generation remain disabled."""
+    def __init__(self, profile, *, transport=None):
+        from .web_engine import _SearchAdapter
+        self._client = _SearchAdapter(profile, transport=transport)
+        self._client.name = 'tavily'
+        self._profile = profile
+
+    def search(self, query, *, limit, context):
+        from .web_engine import _rows
+        if not isinstance(query, str) or not query.strip() or len(query) > 4000 or type(limit) is not int or not 1 <= limit <= 10:
+            raise DataAdapterError('unsupported')
+        context.check_active()
+        key = self._client._key()
+        reply = self._client._request('https://api.tavily.com/search', context,
+            payload={'query': query, 'max_results': limit, 'search_depth': 'basic',
+                     'include_answer': False, 'include_raw_content': False}, headers={'Authorization': 'Bearer ' + key})
+        rows = _rows(_search_value(reply).get('results'), (('title', 'title'), ('url', 'url'),
+            ('content', 'snippet'), ('published_date', 'published_at')))
+        if key in json.dumps(rows, ensure_ascii=False): raise DataAdapterError('upstream_schema')
+        context.check_active()
+        from .web_engine import _rows
+        rows = _rows(rows, tuple((name, name) for name in ('title', 'url', 'snippet', 'published_at')))
         return WebSearchPage(rows, reply.fetched_at)

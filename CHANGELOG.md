@@ -1,5 +1,12 @@
 # 变更记录
 
+## 0.2.0rc2 — 2026-10-24，本地候选
+
+- `search_materials(providers=['web'])` 新增按地区的有序搜索链：国内默认百智/智谱/博查/Exa/Perplexity/DuckDuckGo，海外默认 Exa/Perplexity/Brave/Serper/AnySearch/Tavily/DuckDuckGo。每机私有 env 可改顺序，无 key 跳过；旧 regional/fixed 单引擎保持兼容。
+- 每次尝试记录引擎、地区、归一化状态和耗时。成功空结果默认停止；整链失败且曾有 quota 才生成原有 caller_web_search 交接，新增 attempted_providers，保持共享最多 10 条候选预算。
+- 新增固定 HTTPS 搜索传输及百智/智谱 MCP 生命周期；禁止重定向和原始供应商错误外泄，无匿名 API 重试或自动付费。智谱日期未知，Exa 类型只接受 auto/lite；Perplexity 仅 Search API。
+- 新增 adapter HTTP/路由测试及 wheel 资源验证。c-mac 本轮详情与未通过项见[验收报告](docs/web_search_chain_validation.md)；使用期观察与 b-mac 部署仍未验收，本轮不 merge/push。
+
 ## 未发布增强 — 2026-10-03
 
 - 借鉴 Agent Reach，来源诊断新增分操作观察、可选显式查询/网页样本和配置 RSS 快照检查；保持默认零网络、显式选源、预算和稳定失败诊断。
